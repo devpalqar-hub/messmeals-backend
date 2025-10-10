@@ -1,0 +1,29 @@
+| Key        | Type | Value                    |
+| ---------- | ---- | ------------------------ |
+| planName   | Text | Premium Plan             |
+| price      | Text | 199.99                   |
+| minPrice   | Text | 149.99                   |
+| variations | Text | (JSON string, see below) |
+
+variations
+[
+  {
+    "title": "Morning Session",
+    "timeRange": "08:00 - 12:00",
+    "description": "Best for early birds"
+  },
+  {
+    "title": "Evening Session",
+    "timeRange": "17:00 - 20:00",
+    "description": "Relax after work"
+  }
+]
+| Key        | Type | Value (File) |
+| ---------- | ---- | ------------ |
+| planImages | File | image1.jpg   |
+| planImages | File | image2.jpg   |
+
+| Key             | Type | Value (File)   |
+| --------------- | ---- | -------------- |
+| variationImages | File | variation1.jpg |
+| variationImages | File | variation2.jpg |

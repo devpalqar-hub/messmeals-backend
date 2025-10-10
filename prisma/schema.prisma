@@ -1,0 +1,135 @@
+// This is your Prisma schema file
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum DeliveryStatus {
+  PLACED
+  DISPATCHED
+  COMPLETED
+  RETURNED
+  PACKDAMAGED
+}
+
+enum Roles {
+  USER
+  SUPERADMIN
+  ADMIN
+  DELIVERYAGENT
+}
+
+model User {
+  id                     String                  @id @default(uuid())
+  name                   String
+  phone                  String                  @unique
+  email                  String                  @unique
+  password               String?                 @map("password")
+  role                   Roles                   @default(USER)
+  customerProfile        CustomerProfile?
+  deliveryPartnerProfile DeliveryPartnerProfile?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CustomerProfile {
+  id           String       @id @default(uuid())
+  start_date   DateTime
+  end_date     DateTime?
+  walletAmount Decimal      @default(0.00)
+  userId       String       @unique
+  planId       String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  user         User         @relation(fields: [userId], references: [id])
+  plan         Plans?       @relation(fields: [planId], references: [id])
+  deliveries   Deliveries[]
+}
+
+model DeliveryPartnerProfile {
+  id             String       @id @default(uuid())
+  deliveryCounts Int?
+  userId         String       @unique
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  user           User         @relation(fields: [userId], references: [id])
+  deliveries     Deliveries[]
+}
+
+model Plans {
+  id          String            @id @default(uuid())
+  planName    String
+  price       Decimal           @default(0.00)
+  minPrice    Decimal?
+  description String?           @db.Text
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  images      PlanImages[]
+  customers   CustomerProfile[]
+  deliveries  Deliveries[]
+  Variation   Variation[]
+}
+
+model PlanImages {
+  id        String   @id @default(uuid())
+  planId    String
+  url       String
+  altText   String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  plan Plans @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@map("plan_images")
+}
+
+model Variation {
+  id          String            @id @default(uuid())
+  title       String
+  timeRange   String
+  description String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  planId      String
+  images      VariationImages[]
+
+  plan Plans @relation(fields: [planId], references: [id], onDelete: Cascade)
+}
+
+model VariationImages {
+  id          String   @id @default(uuid())
+  variationId String
+  url         String
+  altText     String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  variation Variation @relation(fields: [variationId], references: [id], onDelete: Cascade)
+
+  @@map("variation_images")
+}
+
+model Deliveries {
+  id         String         @id @default(uuid())
+  date       DateTime
+  status     DeliveryStatus?
+  action     String?
+  customerId String
+  planId     String
+  partnerId  String?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  customer CustomerProfile         @relation(fields: [customerId], references: [id])
+  plan     Plans                   @relation(fields: [planId], references: [id])
+  partner  DeliveryPartnerProfile? @relation(fields: [partnerId], references: [id])
+}
