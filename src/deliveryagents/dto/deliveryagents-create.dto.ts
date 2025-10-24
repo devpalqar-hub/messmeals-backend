@@ -8,12 +8,14 @@ export class DeliveryAgentCreateDto {
     @IsString()
     phone: string;
 
+    @IsString()
+    @IsOptional()
+    address: string;
+
     @IsEmail()
     email: string;
 
-    @IsString()
-    @MinLength(6)
-    password: string;
+
 }
 
 export class DeliveryAgentUpdateDto {
@@ -29,8 +31,8 @@ export class DeliveryAgentUpdateDto {
     @IsEmail()
     email?: string;
 
-    @IsOptional()
     @IsString()
-    @MinLength(6)
-    password?: string;
+    @IsOptional()
+    address: string;
+
 }

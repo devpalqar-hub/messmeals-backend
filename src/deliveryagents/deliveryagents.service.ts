@@ -17,36 +17,81 @@ export class DeliveryAgentService {
         const existingPhone = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
         if (existingPhone) throw new BadRequestException('Phone number already registered');
 
-        const hashedPassword = await bcrypt.hash(dto.password, 10);
-
         return this.prisma.user.create({
             data: {
                 name: dto.name,
                 phone: dto.phone,
                 email: dto.email,
-                password: hashedPassword,
                 role: Roles.DELIVERYAGENT,
-                deliveryPartnerProfile: { create: {} },
+                deliveryPartnerProfile: { create: { address: dto.address } },
             },
             include: { deliveryPartnerProfile: true },
         });
     }
 
-    // Get all delivery agents
-    async findAll() {
-        const agents = await this.prisma.user.findMany({
-            where: { role: Roles.DELIVERYAGENT },
-            include: { deliveryPartnerProfile: true },
-            orderBy: { name: 'asc' }, // optional: sort by name
-        });
 
-        return agents;
+    // Get all delivery agents with pagination and delivery count
+    async findAll(page = 1, limit = 10) {
+        const skip = (page - 1) * limit;
+
+        const [agents, total] = await this.prisma.$transaction([
+            this.prisma.user.findMany({
+                where: { role: Roles.DELIVERYAGENT },
+                include: {
+                    deliveryPartnerProfile: {
+                        include: {
+                            deliveries: true, // include deliveries list
+                            _count: { select: { deliveries: true } }, // include delivery count
+                        },
+                    },
+                },
+                orderBy: { name: 'asc' },
+                skip,
+                take: limit,
+            }),
+            this.prisma.user.count({
+                where: { role: Roles.DELIVERYAGENT },
+            }),
+        ]);
+
+        const totalPages = Math.ceil(total / limit);
+
+        return {
+            message: 'Delivery agents fetched successfully',
+            currentPage: page,
+            totalPages,
+            totalRecords: total,
+            data: agents,
+        };
     }
 
 
-
-    // Get by ID
+    // Get delivery agent by ID
     async getById(id: string) {
+        const user = await this.prisma.user.findUnique({
+            where: { id },
+            include: {
+                deliveryPartnerProfile: {
+                    include: {
+                        deliveries: true,
+                        _count: { select: { deliveries: true } },
+                    },
+                },
+            },
+        });
+        if (!user || user.role !== Roles.DELIVERYAGENT) {
+            throw new NotFoundException('Delivery agent not found');
+        }
+
+        return {
+            message: 'Delivery agent fetched successfully',
+            data: user,
+        };
+    }
+
+
+    async updateDeliveryAgent(id: string, dto: DeliveryAgentUpdateDto) {
+        // 1️⃣ Check if the user exists and is a delivery agent
         const user = await this.prisma.user.findUnique({
             where: { id },
             include: { deliveryPartnerProfile: true },
@@ -56,29 +101,43 @@ export class DeliveryAgentService {
             throw new NotFoundException('Delivery agent not found');
         }
 
-        return user;
-    }
-
-    async update(id: string, dto: DeliveryAgentUpdateDto) {
-        if (dto.email) {
-            const existingEmail = await this.prisma.user.findUnique({ where: { email: dto.email } });
-            if (existingEmail && existingEmail.id !== id) throw new BadRequestException('Email already in use');
-        }
-
-        if (dto.phone) {
-            const existingPhone = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
-            if (existingPhone && existingPhone.id !== id) throw new BadRequestException('Phone number already in use');
-        }
-
-        if (dto.password) {
-            dto.password = await bcrypt.hash(dto.password, 10);
-        }
-
-        return this.prisma.user.update({
+        // 2️⃣ Update user fields
+        const updatedUser = await this.prisma.user.update({
             where: { id },
-            data: dto,
-            include: { deliveryPartnerProfile: true },
+            data: {
+                ...(dto.name ? { name: dto.name } : {}),
+                ...(dto.phone ? { phone: dto.phone } : {}),
+                ...(dto.email ? { email: dto.email } : {}),
+            },
         });
+
+        // 3️⃣ Update delivery partner profile (address)
+        if (user.deliveryPartnerProfile) {
+            await this.prisma.deliveryPartnerProfile.update({
+                where: { id: user.deliveryPartnerProfile.id },
+                data: {
+                    ...(dto.address ? { address: dto.address } : {}),
+                },
+            });
+        }
+
+        // 4️⃣ Return updated record
+        const updatedAgent = await this.prisma.user.findUnique({
+            where: { id },
+            include: {
+                deliveryPartnerProfile: {
+                    include: {
+                        deliveries: true,
+                        _count: { select: { deliveries: true } },
+                    },
+                },
+            },
+        });
+
+        return {
+            message: 'Delivery agent updated successfully',
+            data: updatedAgent,
+        };
     }
 
 

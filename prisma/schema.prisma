@@ -30,7 +30,9 @@ model User {
   name                   String
   phone                  String                  @unique
   email                  String                  @unique
-  password               String?                 @map("password")
+  otp                    String?
+  expiresAt              DateTime?
+  is_verified            Boolean                 @default(false)
   role                   Roles                   @default(USER)
   customerProfile        CustomerProfile?
   deliveryPartnerProfile DeliveryPartnerProfile?
@@ -40,27 +42,32 @@ model User {
 }
 
 model CustomerProfile {
-  id           String       @id @default(uuid())
-  start_date   DateTime
-  end_date     DateTime?
-  walletAmount Decimal      @default(0.00)
-  userId       String       @unique
-  planId       String?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  user         User         @relation(fields: [userId], references: [id])
-  plan         Plans?       @relation(fields: [planId], references: [id])
-  deliveries   Deliveries[]
+  id                       String                  @id @default(uuid())
+  start_date               DateTime
+  end_date                 DateTime?
+  walletAmount             Decimal                 @default(0.00)
+  address                  String                  @db.LongText
+  userId                   String                  @unique
+  planId                   String?
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  user                     User                    @relation(fields: [userId], references: [id])
+  plan                     Plans?                  @relation(fields: [planId], references: [id])
+  deliveries               Deliveries[]
+  DeliveryPartnerProfile   DeliveryPartnerProfile? @relation(fields: [deliveryPartnerProfileId], references: [id])
+  deliveryPartnerProfileId String?
 }
 
 model DeliveryPartnerProfile {
-  id             String       @id @default(uuid())
-  deliveryCounts Int?
-  userId         String       @unique
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  user           User         @relation(fields: [userId], references: [id])
-  deliveries     Deliveries[]
+  id              String            @id @default(uuid())
+  deliveryCounts  Int?
+  address         String?           @db.LongText
+  userId          String            @unique
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  user            User              @relation(fields: [userId], references: [id])
+  deliveries      Deliveries[]
+  customerProfile CustomerProfile[]
 }
 
 model Plans {
@@ -119,15 +126,15 @@ model VariationImages {
 }
 
 model Deliveries {
-  id         String         @id @default(uuid())
+  id         String          @id @default(uuid())
   date       DateTime
   status     DeliveryStatus?
   action     String?
   customerId String
   planId     String
   partnerId  String?
-  createdAt  DateTime       @default(now())
-  updatedAt  DateTime       @updatedAt
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
 
   customer CustomerProfile         @relation(fields: [customerId], references: [id])
   plan     Plans                   @relation(fields: [planId], references: [id])

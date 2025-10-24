@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { DeliveryStatus, PrismaClient, Roles } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { faker } from '@faker-js/faker';
 
@@ -7,25 +7,24 @@ const prisma = new PrismaClient();
 async function main() {
     console.log('🌱 Starting seed...');
 
-    // Explicitly type arrays 👇
     const users: any[] = [];
     const deliveryAgents: any[] = [];
     const plans: any[] = [];
     const customers: any[] = [];
     const deliveries: any[] = [];
 
-    // Create delivery agents
+    // 🌍 1️⃣ Create Delivery Agents + Profiles
     for (let i = 0; i < 5; i++) {
         const agent = await prisma.user.create({
             data: {
                 name: faker.person.fullName(),
                 phone: faker.phone.number(),
                 email: faker.internet.email(),
-                role: 'DELIVERYAGENT',
-                password: faker.internet.password(),
+                role: Roles.DELIVERYAGENT,
                 deliveryPartnerProfile: {
                     create: {
                         deliveryCounts: faker.number.int({ min: 10, max: 100 }),
+                        address: faker.location.streetAddress(),
                     },
                 },
             },
@@ -34,13 +33,14 @@ async function main() {
         deliveryAgents.push(agent);
     }
 
-    // Create plans with variations and images
+    // 📦 2️⃣ Create Plans (with variations & images)
     for (let i = 0; i < 5; i++) {
         const plan = await prisma.plans.create({
             data: {
                 planName: `Plan ${i + 1}`,
                 price: new Decimal(faker.number.float({ min: 100, max: 1000, multipleOf: 0.01 })),
                 minPrice: new Decimal(faker.number.float({ min: 50, max: 200, multipleOf: 0.01 })),
+                description: faker.commerce.productDescription(),
                 images: {
                     create: Array.from({ length: 3 }).map(() => ({
                         url: faker.image.urlPicsumPhotos(),
@@ -69,7 +69,7 @@ async function main() {
         plans.push(plan);
     }
 
-    // Create customers
+    // 👤 3️⃣ Create Customers + Profiles
     for (let i = 0; i < 10; i++) {
         const plan = plans[Math.floor(Math.random() * plans.length)];
         const customer = await prisma.user.create({
@@ -77,13 +77,16 @@ async function main() {
                 name: faker.person.fullName(),
                 phone: faker.phone.number(),
                 email: faker.internet.email(),
-                role: 'USER',
-                password: faker.internet.password(),
+                role: Roles.USER,
                 customerProfile: {
                     create: {
                         start_date: faker.date.past(),
-                        walletAmount: new Decimal(faker.number.float({ min: 100, max: 500, multipleOf: 0.01 })),
-                        planId: plan.id,
+                        end_date: faker.date.future(),
+                        walletAmount: new Decimal(
+                            faker.number.float({ min: 100, max: 500, multipleOf: 0.01 })
+                        ),
+                        address: faker.location.streetAddress(),
+                        plan: { connect: { id: plan.id } },
                     },
                 },
             },
@@ -92,7 +95,7 @@ async function main() {
         customers.push(customer);
     }
 
-    // Create deliveries
+    // 🚚 4️⃣ Create Deliveries
     for (let i = 0; i < 20; i++) {
         const customer = customers[Math.floor(Math.random() * customers.length)];
         const plan = plans[Math.floor(Math.random() * plans.length)];
@@ -101,7 +104,13 @@ async function main() {
         const delivery = await prisma.deliveries.create({
             data: {
                 date: faker.date.recent(),
-                status: faker.helpers.arrayElement(['DISPATCHED', 'COMPLETED', 'RETURNED', 'PACKDAMAGED']),
+                status: faker.helpers.arrayElement([
+                    DeliveryStatus.PLACED,
+                    DeliveryStatus.DISPATCHED,
+                    DeliveryStatus.COMPLETED,
+                    DeliveryStatus.RETURNED,
+                    DeliveryStatus.PACKDAMAGED,
+                ]),
                 action: faker.lorem.word(),
                 customerId: customer.customerProfile!.id,
                 planId: plan.id,

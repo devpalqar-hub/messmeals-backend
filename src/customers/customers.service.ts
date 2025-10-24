@@ -8,7 +8,9 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { UserService } from 'src/user/user.service';
 import { DeliveryStatus, Roles } from '@prisma/client';
-import { CreateCustomerDto } from './dto/create-customer.dto';
+import { CreateCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
+import { connect } from 'http2';
+import { Decimal } from '@prisma/client/runtime/binary';
 
 @Injectable()
 export class CustomerService {
@@ -36,22 +38,37 @@ export class CustomerService {
         const startDate = new Date(dto.start_date);
         const endDate = new Date(dto.end_date);
 
-        // 3️⃣ Create customer profile linked to the new user
+
+        let deliveryPartnerConnect = {};
+        if (dto.deliveryPartnerId) {
+            const partnerExists = await this.prisma.deliveryPartnerProfile.findUnique({
+                where: { id: dto.deliveryPartnerId },
+            });
+            if (!partnerExists) {
+                throw new BadRequestException('Delivery partner not found');
+            }
+            deliveryPartnerConnect = { deliveryPartnerProfile: { connect: { id: dto.deliveryPartnerId } } };
+        }
+
         const userProfile = await this.prisma.customerProfile.create({
             data: {
-                start_date: new Date(dto.start_date), // ✅ convert string to Date
+                start_date: new Date(dto.start_date),
                 end_date: new Date(dto.end_date),
                 walletAmount: dto.walletAmount,
-                user: {
-                    connect: { id: user.id },
-                },
+                address: dto.address,
+                user: { connect: { id: user.id } },
                 ...(dto.planId && { plan: { connect: { id: dto.planId } } }),
+                ...(dto.deliveryPartnerId && {
+                    DeliveryPartnerProfile: { connect: { id: dto.deliveryPartnerId } },
+                }),
             },
             include: {
                 user: true,
                 plan: true,
             },
         });
+
+
         const diffInMs = endDate.getTime() - startDate.getTime();
         let totalDays = Math.ceil(diffInMs / (1000 * 60 * 60 * 24));
         totalDays = Math.min(totalDays, 30); // cap at 30
@@ -76,53 +93,70 @@ export class CustomerService {
     }
 
 
-    async UpdateUser(id: string, dto: Partial<CreateCustomerDto>) {
+    async updateCustomerProfile(
+        userId: string,
+        dto: UpdateCustomerDto,
+    ) {
+        const { name, planId, deliveryPartnerId, walletAmount, address } = dto
         // 1️⃣ Check if user exists
         const user = await this.prisma.user.findUnique({
-            where: { id },
+            where: { id: userId },
             include: { customerProfile: true },
         });
+
         if (!user) throw new NotFoundException('User not found');
-        // 2️⃣ Update user info
-        const updatedUser = await this.prisma.user.update({
-            where: { id },
-            data: {
-                ...(dto.name ? { name: dto.name } : {}),
-                ...(dto.email ? { email: dto.email } : {}),
-                ...(dto.phone ? { phone: dto.phone } : {}),
-            },
-        });
-        // 3️⃣ Update or create profile
+
+        // 2️⃣ Update User name if provided
+        if (dto.name) {
+            await this.prisma.user.update({
+                where: { id: userId },
+                data: { name: dto.name },
+            });
+        }
+
+        // 3️⃣ Update or create CustomerProfile
         if (user.customerProfile) {
+            // If CustomerProfile exists, update fields
             await this.prisma.customerProfile.update({
-                where: { userId: id },
+                where: { id: user.customerProfile.id },
                 data: {
-                    ...(dto.start_date ? { start_date: new Date(dto.start_date) } : {}),
-                    ...(dto.end_date ? { end_date: new Date(dto.end_date) } : {}),
-                    ...(dto.walletAmount !== undefined ? { walletAmount: dto.walletAmount } : {}),
-                    ...(dto.planId ? { plan: { connect: { id: dto.planId } } } : {}),
+                    ...(dto.walletAmount !== undefined && { walletAmount: new Decimal(dto.walletAmount) }),
+                    ...(dto.address && { address: dto.address }),
+                    ...(dto.planId && { plan: { connect: { id: dto.planId } } }),
+                    ...(dto.deliveryPartnerId && {
+                        DeliveryPartnerProfile: { connect: { id: dto.deliveryPartnerId } },
+                    }),
                 },
             });
         } else {
+            // Optional: create a new CustomerProfile if not exists
             await this.prisma.customerProfile.create({
                 data: {
-                    start_date: dto.start_date ? new Date(dto.start_date) : new Date(),
-                    end_date: dto.end_date ? new Date(dto.end_date) : null,
+                    start_date: new Date(),
                     walletAmount: dto.walletAmount ?? 0,
-                    user: { connect: { id } },
-                    ...(dto.planId ? { plan: { connect: { id: dto.planId } } } : {}),
+                    address: dto.address ?? '',
+                    user: { connect: { id: userId } },
+                    ...(dto.planId && { plan: { connect: { id: dto.planId } } }),
+                    ...(dto.deliveryPartnerId && {
+                        DeliveryPartnerProfile: { connect: { id: dto.deliveryPartnerId } },
+                    }),
                 },
             });
         }
-        // 4️⃣ Return updated record
-        const updatedUserWithProfile = await this.prisma.user.findUnique({
-            where: { id },
-            include: { customerProfile: { include: { plan: true } } },
+
+        // 4️⃣ Return updated user with profile
+        const updatedUser = await this.prisma.user.findUnique({
+            where: { id: userId },
+            include: {
+                customerProfile: {
+                    include: { plan: true, DeliveryPartnerProfile: true, deliveries: true },
+                },
+            },
         });
 
         return {
-            message: 'User and profile updated successfully',
-            data: updatedUserWithProfile,
+            message: 'User and customer profile updated successfully',
+            data: updatedUser,
         };
     }
 

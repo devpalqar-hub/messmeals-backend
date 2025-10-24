@@ -16,12 +16,12 @@ export class UserService {
     // 🟢 Create a new user
     async createDeliveryAgent(data: CreateUserDto) {
         const { name, phone, email, password } = data;
-        return this.prisma.user.create({ data: { name, phone, email, password, role: Roles.DELIVERYAGENT } });
+        return this.prisma.user.create({ data: { name, phone, email, role: Roles.DELIVERYAGENT } });
     }
 
     async createAdmin(data: CreateUserDto) {
         const { name, phone, email, password } = data;
-        return this.prisma.user.create({ data: { name, phone, email, password, role: Roles.ADMIN } });
+        return this.prisma.user.create({ data: { name, phone, email, role: Roles.ADMIN } });
     }
 
     // 🟡 List all users

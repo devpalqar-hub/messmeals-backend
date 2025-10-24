@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { DeliveryAgentService } from './deliveryagents.service';
 import { DeliveryAgentCreateDto, DeliveryAgentUpdateDto } from './dto/deliveryagents-create.dto';
 
@@ -12,8 +12,13 @@ export class DeliveryAgentController {
     }
 
     @Get()
-    async getAllDeliveryAgents() {
-        return this.service.findAll();
+    async findAll(
+        @Query('page') page?: string,
+        @Query('limit') limit?: string,
+    ) {
+        const pageNum = page ? parseInt(page, 10) : 1;
+        const limitNum = limit ? parseInt(limit, 10) : 10;
+        return this.service.findAll(pageNum, limitNum);
     }
 
     @Get(':id')
@@ -23,7 +28,7 @@ export class DeliveryAgentController {
 
     @Patch(':id')
     update(@Param('id') id: string, @Body() dto: DeliveryAgentUpdateDto) {
-        return this.service.update(id, dto);
+        return this.service.updateDeliveryAgent(id, dto);
     }
 
     @Delete(':id')

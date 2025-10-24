@@ -17,3 +17,10 @@ export function generateOrderNumber(prefix = 'ORD'): string {
   // Final order number
   return `${prefix}-${timestamp}-${randomStr}`;
 }
+
+// utils/otp.util.ts
+export function generate6DigitOtp(): string {
+  // Generates a random integer between 100000 and 999999
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+

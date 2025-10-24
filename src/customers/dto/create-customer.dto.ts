@@ -12,6 +12,9 @@ export class CreateCustomerDto {
     @IsEmail()
     email: string;
 
+    @IsString()
+    address: string
+
     //customer profile model
     @IsNumber()
     walletAmount: number
@@ -20,10 +23,34 @@ export class CreateCustomerDto {
     planId: string
 
     @IsString()
+    deliveryPartnerId: string
+
+    @IsString()
     start_date: string
 
     @IsString()
     @IsOptional()
     end_date: string
+
+}
+
+
+export class UpdateCustomerDto {
+    //user model
+    @IsString()
+    name: string;
+
+    @IsString()
+    address: string
+
+    //customer profile model
+    @IsNumber()
+    walletAmount: number
+
+    @IsString()
+    planId: string
+
+    @IsString()
+    deliveryPartnerId: string
 
 }

@@ -1,6 +1,6 @@
 import { Body, Controller, Post, Get, Query, Patch, Param } from '@nestjs/common';
 import { CustomerService } from './customers.service';
-import { CreateCustomerDto } from './dto/create-customer.dto';
+import { CreateCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
 
 @Controller('customer')
 export class CustomerController {
@@ -14,9 +14,9 @@ export class CustomerController {
     @Patch(':id')
     async updateCustomer(
         @Param('id') id: string,
-        @Body() dto: Partial<CreateCustomerDto>,
+        @Body() dto: UpdateCustomerDto,
     ) {
-        return this.cusomerservice.UpdateUser(id, dto);
+        return this.cusomerservice.updateCustomerProfile(id, dto);
     }
 
     @Get()

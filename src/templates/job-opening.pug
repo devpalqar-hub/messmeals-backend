@@ -1,0 +1,47 @@
+doctype html
+html(lang="en")
+  head
+    meta(charset="UTF-8")
+    meta(name="viewport" content="width=device-width, initial-scale=1.0")
+    title New Contact Form Submission
+    style.
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #f9f9f9;
+        margin: 0;
+        padding: 20px;
+      }
+      .container {
+        max-width: 600px;
+        margin: auto;
+        background-color: #ffffff;
+        padding: 20px;
+        border: 1px solid #dddddd;
+      }
+      .header {
+        text-align: center;
+        margin-bottom: 20px;
+      }
+      .details {
+        margin-top: 20px;
+      }
+      .details p {
+        margin: 5px 0;
+      }
+  body
+    .container
+      .header
+        h1 New Academy Contact Form Submission
+      .details
+        p
+          strong Name: 
+          | #{first_name} #{last_name}
+        p
+          strong Phone: 
+          | #{phone_number}
+        p
+          strong Course ID: 
+          | #{drive_link}
+        p
+          strong Message:
+        p #{comments}
