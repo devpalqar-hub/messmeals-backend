@@ -1,4 +1,4 @@
-import { IsEmail, IsNumber, IsOptional, IsPhoneNumber, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsNumber, IsOptional, IsPhoneNumber, IsString, IsBoolean } from 'class-validator';
 
 export class CreateCustomerDto {
     //user model
@@ -15,9 +15,21 @@ export class CreateCustomerDto {
     @IsString()
     address: string
 
+    @IsString()
+    latitude_logitude: string
+
+    @IsString()
+    currentLocation: string
+
+    @IsBoolean()
+    is_active: boolean
+
     //customer profile model
-    @IsNumber()
-    walletAmount: number
+    @IsString()
+    walletAmount: string
+
+    @IsString()
+    discount: string
 
     @IsString()
     planId: string
@@ -34,23 +46,35 @@ export class CreateCustomerDto {
 
 }
 
-
 export class UpdateCustomerDto {
     //user model
     @IsString()
+    @IsOptional()
     name: string;
 
     @IsString()
+    @IsOptional()
     address: string
+
+    @IsString()
+    @IsOptional()
+    latitude_logitude: string
+
+    @IsString()
+    @IsOptional()
+    currentLocation: string
 
     //customer profile model
     @IsNumber()
+    @IsOptional()
     walletAmount: number
 
     @IsString()
+    @IsOptional()
     planId: string
 
     @IsString()
+    @IsOptional()
     deliveryPartnerId: string
 
 }

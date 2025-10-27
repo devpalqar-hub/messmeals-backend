@@ -1,131 +1,194 @@
-import { DeliveryStatus, PrismaClient, Roles } from '@prisma/client';
-import { Decimal } from '@prisma/client/runtime/library';
-import { faker } from '@faker-js/faker';
+import { PrismaClient, Roles, DeliveryStatus } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
 async function main() {
-    console.log('🌱 Starting seed...');
+    console.log('🌱 Starting full database seeding...');
 
-    const users: any[] = [];
-    const deliveryAgents: any[] = [];
-    const plans: any[] = [];
-    const customers: any[] = [];
-    const deliveries: any[] = [];
+    // 1️⃣ Create Roles and Users
+    const superAdmin = await prisma.user.upsert({
+        where: { email: 'superadmin@mess.com' },
+        update: {},
+        create: {
+            name: 'Super Admin',
+            email: 'superadmin@mess.com',
+            phone: '9999999999',
+            is_verified: true,
+            role: Roles.SUPERADMIN,
+        },
+    });
 
-    // 🌍 1️⃣ Create Delivery Agents + Profiles
-    for (let i = 0; i < 5; i++) {
-        const agent = await prisma.user.create({
-            data: {
-                name: faker.person.fullName(),
-                phone: faker.phone.number(),
-                email: faker.internet.email(),
-                role: Roles.DELIVERYAGENT,
-                deliveryPartnerProfile: {
-                    create: {
-                        deliveryCounts: faker.number.int({ min: 10, max: 100 }),
-                        address: faker.location.streetAddress(),
-                    },
-                },
+    const admin = await prisma.user.upsert({
+        where: { email: 'admin@mess.com' },
+        update: {},
+        create: {
+            name: 'Admin User',
+            email: 'admin@mess.com',
+            phone: '8888888888',
+            is_verified: true,
+            role: Roles.ADMIN,
+        },
+    });
+
+    const deliveryAgent = await prisma.user.upsert({
+        where: { email: 'agent@mess.com' },
+        update: {},
+        create: {
+            name: 'Delivery Agent',
+            email: 'agent@mess.com',
+            phone: '7777777777',
+            is_verified: true,
+            role: Roles.DELIVERYAGENT,
+        },
+    });
+
+    const customer = await prisma.user.upsert({
+        where: { email: 'customer@mess.com' },
+        update: {},
+        create: {
+            name: 'John Customer',
+            email: 'customer@mess.com',
+            phone: '6666666666',
+            is_verified: true,
+            role: Roles.USER,
+        },
+    });
+
+    console.log('✅ Users created.');
+
+    // 2️⃣ Create Profiles
+    const customerProfile = await prisma.customerProfile.create({
+        data: {
+            address: '123 Main Street, Pune',
+            current_location: 'Pune Station',
+            latitude_logitude: '18.5204,73.8567',
+            walletAmount: 200.0,
+            userId: customer.id,
+        },
+    });
+
+    const deliveryProfile = await prisma.deliveryPartnerProfile.create({
+        data: {
+            address: '45 Delivery Lane, Pune',
+            deliveryCounts: 20,
+            deliveryRegion: 'Pune East',
+            userId: deliveryAgent.id,
+        },
+    });
+
+    console.log('✅ Profiles created.');
+
+    // 3️⃣ Create Variations
+    const variations = await prisma.variation.createMany({
+        data: [
+            { title: 'Breakfast', description: 'Morning meal served 7–10 AM' },
+            { title: 'Lunch', description: 'Midday meal served 12–2 PM' },
+            { title: 'Dinner', description: 'Evening meal served 7–10 PM' },
+        ],
+        skipDuplicates: true,
+    });
+
+    console.log('✅ Variations created.');
+
+    // 4️⃣ Create Plans
+    const breakfastVar = await prisma.variation.findFirst({ where: { title: 'Breakfast' } });
+    const lunchVar = await prisma.variation.findFirst({ where: { title: 'Lunch' } });
+    const dinnerVar = await prisma.variation.findFirst({ where: { title: 'Dinner' } });
+
+    const plan1 = await prisma.plans.create({
+        data: {
+            planName: 'Healthy Breakfast Plan',
+            price: 80.0,
+            minPrice: 60.0,
+            description: 'Includes poha, upma, idli, and tea.',
+            Variation: { connect: [{ id: breakfastVar?.id }] },
+        },
+    });
+
+    const plan2 = await prisma.plans.create({
+        data: {
+            planName: 'Regular Lunch Plan',
+            price: 120.0,
+            minPrice: 100.0,
+            description: 'Includes roti, rice, dal, and sabzi.',
+            Variation: { connect: [{ id: lunchVar?.id }] },
+        },
+    });
+
+    const plan3 = await prisma.plans.create({
+        data: {
+            planName: 'Special Dinner Plan',
+            price: 150.0,
+            minPrice: 130.0,
+            description: 'Includes chapati, paneer curry, rice, and dessert.',
+            Variation: { connect: [{ id: dinnerVar?.id }] },
+        },
+    });
+
+    console.log('✅ Plans created.');
+
+    // 5️⃣ Create Plan Images
+    await prisma.planImages.createMany({
+        data: [
+            { planId: plan1.id, url: 'uploads/breakfast1.jpg', altText: 'Breakfast Meal' },
+            { planId: plan2.id, url: 'uploads/lunch1.jpg', altText: 'Lunch Meal' },
+            { planId: plan3.id, url: 'uploads/dinner1.jpg', altText: 'Dinner Meal' },
+        ],
+    });
+
+    console.log('✅ Plan images added.');
+
+    // 6️⃣ Create User Subscription
+    const userSub = await prisma.userSubscriptions.create({
+        data: {
+            start_date: new Date(),
+            end_date: new Date(new Date().setDate(new Date().getDate() + 30)),
+            totalPrice: 3000.0,
+            discount: 200.0,
+            discountedPrice: 2800.0,
+            deliveryPartnerProfileId: deliveryProfile.id,
+            planId: plan2.id,
+            customerProfileId: customerProfile.id,
+        },
+    });
+
+    console.log('✅ User subscription created.');
+
+    // 7️⃣ Create Deliveries
+    await prisma.deliveries.createMany({
+        data: [
+            {
+                date: new Date(),
+                status: DeliveryStatus.PLACED,
+                customerId: customerProfile.id,
+                planId: plan2.id,
+                partnerId: deliveryProfile.id,
             },
-            include: { deliveryPartnerProfile: true },
-        });
-        deliveryAgents.push(agent);
-    }
-
-    // 📦 2️⃣ Create Plans (with variations & images)
-    for (let i = 0; i < 5; i++) {
-        const plan = await prisma.plans.create({
-            data: {
-                planName: `Plan ${i + 1}`,
-                price: new Decimal(faker.number.float({ min: 100, max: 1000, multipleOf: 0.01 })),
-                minPrice: new Decimal(faker.number.float({ min: 50, max: 200, multipleOf: 0.01 })),
-                description: faker.commerce.productDescription(),
-                images: {
-                    create: Array.from({ length: 3 }).map(() => ({
-                        url: faker.image.urlPicsumPhotos(),
-                        altText: faker.commerce.productName(),
-                    })),
-                },
-                Variation: {
-                    create: Array.from({ length: 2 }).map(() => ({
-                        title: faker.commerce.productName(),
-                        timeRange: `${faker.number.int({ min: 5, max: 30 })} days`,
-                        description: faker.lorem.sentence(),
-                        images: {
-                            create: Array.from({ length: 2 }).map(() => ({
-                                url: faker.image.urlPicsumPhotos(),
-                                altText: faker.commerce.productMaterial(),
-                            })),
-                        },
-                    })),
-                },
+            {
+                date: new Date(),
+                status: DeliveryStatus.DISPATCHED,
+                customerId: customerProfile.id,
+                planId: plan2.id,
+                partnerId: deliveryProfile.id,
             },
-            include: {
-                images: true,
-                Variation: { include: { images: true } },
+            {
+                date: new Date(),
+                status: DeliveryStatus.COMPLETED,
+                customerId: customerProfile.id,
+                planId: plan2.id,
+                partnerId: deliveryProfile.id,
             },
-        });
-        plans.push(plan);
-    }
+        ],
+    });
 
-    // 👤 3️⃣ Create Customers + Profiles
-    for (let i = 0; i < 10; i++) {
-        const plan = plans[Math.floor(Math.random() * plans.length)];
-        const customer = await prisma.user.create({
-            data: {
-                name: faker.person.fullName(),
-                phone: faker.phone.number(),
-                email: faker.internet.email(),
-                role: Roles.USER,
-                customerProfile: {
-                    create: {
-                        start_date: faker.date.past(),
-                        end_date: faker.date.future(),
-                        walletAmount: new Decimal(
-                            faker.number.float({ min: 100, max: 500, multipleOf: 0.01 })
-                        ),
-                        address: faker.location.streetAddress(),
-                        plan: { connect: { id: plan.id } },
-                    },
-                },
-            },
-            include: { customerProfile: true },
-        });
-        customers.push(customer);
-    }
+    console.log('✅ Deliveries created.');
 
-    // 🚚 4️⃣ Create Deliveries
-    for (let i = 0; i < 20; i++) {
-        const customer = customers[Math.floor(Math.random() * customers.length)];
-        const plan = plans[Math.floor(Math.random() * plans.length)];
-        const partner = deliveryAgents[Math.floor(Math.random() * deliveryAgents.length)];
-
-        const delivery = await prisma.deliveries.create({
-            data: {
-                date: faker.date.recent(),
-                status: faker.helpers.arrayElement([
-                    DeliveryStatus.PLACED,
-                    DeliveryStatus.DISPATCHED,
-                    DeliveryStatus.COMPLETED,
-                    DeliveryStatus.RETURNED,
-                    DeliveryStatus.PACKDAMAGED,
-                ]),
-                action: faker.lorem.word(),
-                customerId: customer.customerProfile!.id,
-                planId: plan.id,
-                partnerId: partner.deliveryPartnerProfile!.id,
-            },
-        });
-        deliveries.push(delivery);
-    }
-
-    console.log('✅ Seed completed successfully!');
+    console.log('🎉 All seeding completed successfully!');
 }
 
 main()
     .catch((e) => {
-        console.error(e);
+        console.error('❌ Seeding error:', e);
         process.exit(1);
     })
     .finally(async () => {

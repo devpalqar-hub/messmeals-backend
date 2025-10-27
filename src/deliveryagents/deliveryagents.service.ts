@@ -5,6 +5,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { UserService } from 'src/user/user.service';
 import * as bcrypt from 'bcrypt';
 import { Roles } from '@prisma/client';
+import { contains } from 'class-validator';
 @Injectable()
 export class DeliveryAgentService {
     constructor(private prisma: PrismaService) { }
@@ -23,25 +24,33 @@ export class DeliveryAgentService {
                 phone: dto.phone,
                 email: dto.email,
                 role: Roles.DELIVERYAGENT,
-                deliveryPartnerProfile: { create: { address: dto.address } },
+                is_active: dto.is_active,
+                deliveryPartnerProfile: { create: { address: dto.address, deliveryRegion: dto.deliverAgentRegion } },
             },
             include: { deliveryPartnerProfile: true },
         });
     }
 
 
-    // Get all delivery agents with pagination and delivery count
-    async findAll(page = 1, limit = 10) {
+    async findAll(page = 1, limit = 10, search?: string) {
         const skip = (page - 1) * limit;
-
+        // 🔍 Dynamic where condition for search
+        const whereCondition: any = {
+            role: Roles.DELIVERYAGENT,
+            ...(search && {
+                name: {
+                    contains: search.toLowerCase()
+                },
+            }),
+        };
+        // 🧩 Fetch paginated delivery agents
         const [agents, total] = await this.prisma.$transaction([
             this.prisma.user.findMany({
-                where: { role: Roles.DELIVERYAGENT },
+                where: whereCondition,
                 include: {
                     deliveryPartnerProfile: {
                         include: {
-                            deliveries: true, // include deliveries list
-                            _count: { select: { deliveries: true } }, // include delivery count
+                            deliveries: true,
                         },
                     },
                 },
@@ -53,17 +62,47 @@ export class DeliveryAgentService {
                 where: { role: Roles.DELIVERYAGENT },
             }),
         ]);
+        // 📊 Process and add computed stats for each delivery agent
+        const agentsWithStats = agents.map((agent) => {
+            const deliveries = agent.deliveryPartnerProfile?.deliveries || [];
 
+            const totalDeliveries = deliveries.length;
+            const completedDeliveries = deliveries.filter(
+                (d) => d.status === 'COMPLETED'
+            ).length;
+            const pendingDeliveries = deliveries.filter(
+                (d) => d.status === 'PLACED'
+            ).length;
+            const totalEarnings = completedDeliveries * 100;
+            return {
+                id: agent.id,
+                name: agent.name,
+                email: agent.email,
+                phone: agent.phone,
+                is_active: agent.is_active,
+                deliveryPartnerProfile: {
+                    id: agent.deliveryPartnerProfile?.id,
+                    address: agent.deliveryPartnerProfile?.address,
+                    deliveryRegion: agent.deliveryPartnerProfile?.deliveryRegion,
+                },
+                stats: {
+                    totalDeliveries,
+                    completedDeliveries,
+                    pendingDeliveries,
+                    totalEarnings,
+                },
+            };
+        });
         const totalPages = Math.ceil(total / limit);
-
         return {
             message: 'Delivery agents fetched successfully',
             currentPage: page,
             totalPages,
             totalRecords: total,
-            data: agents,
+            data: agentsWithStats,
         };
     }
+
 
 
     // Get delivery agent by ID
@@ -79,49 +118,87 @@ export class DeliveryAgentService {
                 },
             },
         });
+
         if (!user || user.role !== Roles.DELIVERYAGENT) {
             throw new NotFoundException('Delivery agent not found');
         }
 
+        // 🧮 Compute delivery stats
+        const deliveries = user.deliveryPartnerProfile?.deliveries || [];
+
+        const totalDeliveries = deliveries.length;
+        const completedDeliveries = deliveries.filter(
+            (d) => d.status === 'COMPLETED',
+        ).length;
+        const pendingDeliveries = deliveries.filter(
+            (d) => d.status === 'PLACED',
+        ).length;
+        const totalEarnings = completedDeliveries * 100; // Adjust if you have dynamic rates
+
+        // 🧩 Format response to match findAll
+        const formattedUser = {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            phone: user.phone,
+            is_active: user.is_active,
+            deliveryPartnerProfile: {
+                id: user.deliveryPartnerProfile?.id,
+                address: user.deliveryPartnerProfile?.address,
+                deliveryRegion: user.deliveryPartnerProfile?.deliveryRegion,
+            },
+            stats: {
+                totalDeliveries,
+                completedDeliveries,
+                pendingDeliveries,
+                totalEarnings,
+            },
+        };
+
         return {
             message: 'Delivery agent fetched successfully',
-            data: user,
+            data: formattedUser,
         };
     }
 
 
+
     async updateDeliveryAgent(id: string, dto: DeliveryAgentUpdateDto) {
-        // 1️⃣ Check if the user exists and is a delivery agent
+        // 1️⃣ Verify user and role
         const user = await this.prisma.user.findUnique({
             where: { id },
             include: { deliveryPartnerProfile: true },
         });
-
         if (!user || user.role !== Roles.DELIVERYAGENT) {
             throw new NotFoundException('Delivery agent not found');
         }
-
-        // 2️⃣ Update user fields
-        const updatedUser = await this.prisma.user.update({
-            where: { id },
-            data: {
-                ...(dto.name ? { name: dto.name } : {}),
-                ...(dto.phone ? { phone: dto.phone } : {}),
-                ...(dto.email ? { email: dto.email } : {}),
-            },
+        // 2️⃣ Prepare update objects
+        const userUpdateData: any = {};
+        const profileUpdateData: any = {};
+        if (dto.name !== undefined) userUpdateData.name = dto.name;
+        if (dto.is_active !== undefined) userUpdateData.is_active = dto.is_active;
+        if (dto.address !== undefined) profileUpdateData.address = dto.address;
+        if (dto.deliverAgentRegion !== undefined)
+            profileUpdateData.deliverAgentRegion = dto.deliverAgentRegion;
+        // 3️⃣ Execute updates in a transaction (atomic)
+        await this.prisma.$transaction(async (tx) => {
+            if (Object.keys(userUpdateData).length > 0) {
+                await tx.user.update({
+                    where: { id },
+                    data: userUpdateData,
+                });
+            }
+            if (
+                user.deliveryPartnerProfile &&
+                Object.keys(profileUpdateData).length > 0
+            ) {
+                await tx.deliveryPartnerProfile.update({
+                    where: { id: user.deliveryPartnerProfile.id },
+                    data: profileUpdateData,
+                });
+            }
         });
-
-        // 3️⃣ Update delivery partner profile (address)
-        if (user.deliveryPartnerProfile) {
-            await this.prisma.deliveryPartnerProfile.update({
-                where: { id: user.deliveryPartnerProfile.id },
-                data: {
-                    ...(dto.address ? { address: dto.address } : {}),
-                },
-            });
-        }
-
-        // 4️⃣ Return updated record
+        // 4️⃣ Return updated agent with details
         const updatedAgent = await this.prisma.user.findUnique({
             where: { id },
             include: {
@@ -133,7 +210,6 @@ export class DeliveryAgentService {
                 },
             },
         });
-
         return {
             message: 'Delivery agent updated successfully',
             data: updatedAgent,
@@ -146,18 +222,17 @@ export class DeliveryAgentService {
         const existingUser = await this.prisma.user.findUnique({
             where: { id },
         });
-
         if (!existingUser || existingUser.role !== Roles.DELIVERYAGENT) {
             throw new NotFoundException('Delivery agent not found');
         }
-
         // Delete the profile first due to FK constraint
         await this.prisma.deliveryPartnerProfile.delete({
             where: { userId: id },
         });
-
         return this.prisma.user.delete({
             where: { id },
         });
     }
+
+
 }

@@ -67,4 +67,13 @@ export class DeliveriesController {
         return this.deliveriesService.updatePartner(id, updatestatusdto)
     }
 
+    @Post('create-by-date')
+    async createDeliveries(@Body('date') date: string) {
+        const parsedDate = new Date(date);
+        if (isNaN(parsedDate.getTime())) {
+            throw new Error('Invalid date format');
+        }
+        return this.deliveriesService.createDeliveriesForDate(parsedDate);
+    }
+
 }

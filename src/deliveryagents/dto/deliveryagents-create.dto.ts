@@ -1,4 +1,4 @@
-import { IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsEnum, IsOptional, IsString, IsBoolean } from 'class-validator';
 import { Roles } from '@prisma/client';
 
 export class DeliveryAgentCreateDto {
@@ -15,6 +15,12 @@ export class DeliveryAgentCreateDto {
     @IsEmail()
     email: string;
 
+    @IsString()
+    deliverAgentRegion: string
+
+    @IsBoolean()
+    is_active: boolean
+
 
 }
 
@@ -23,16 +29,15 @@ export class DeliveryAgentUpdateDto {
     @IsString()
     name?: string;
 
-    @IsOptional()
-    @IsString()
-    phone?: string;
-
-    @IsOptional()
-    @IsEmail()
-    email?: string;
-
     @IsString()
     @IsOptional()
     address: string;
 
+    @IsString()
+    @IsOptional()
+    deliverAgentRegion: string
+
+    @IsBoolean()
+    @IsOptional()
+    is_active: boolean
 }

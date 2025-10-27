@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsOptional, IsArray, ValidateNested } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsArray, ValidateNested, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class PlansDto {
@@ -17,15 +17,20 @@ export class PlansDto {
 
     @IsOptional()
     @IsArray()
-    @ValidateNested({ each: true })
-    @Type(() => PlanImagesDto)
-    images?: PlanImagesDto[];
+    @IsString({ each: true })
+    variationIds?: string[];
 
     @IsOptional()
     @IsArray()
     @ValidateNested({ each: true })
-    @Type(() => VariationDto)
-    variations?: VariationDto[];
+    @Type(() => PlanImagesDto)
+    images?: PlanImagesDto[];
+
+    // @IsOptional()
+    // @IsArray()
+    // @ValidateNested({ each: true })
+    // @Type(() => VariationDto)
+    // variations?: VariationDto[];
 }
 
 

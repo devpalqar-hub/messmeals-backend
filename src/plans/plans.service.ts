@@ -10,6 +10,7 @@ export class PlansService {
     constructor(private prisma: PrismaService) { }
 
     async createPlan(dto: PlansDto, files: any) {
+        const { planName, price, minPrice, description, variationIds } = dto
         return this.prisma.$transaction(async (tx) => {
             // 1️⃣ Handle Plan Images (optional)
             const planImagesData =
@@ -17,7 +18,6 @@ export class PlansService {
                     url: path.join('uploads', file.filename),
                     altText: file.originalname,
                 })) || [];
-
             // 2️⃣ Create Plan
             const plan = await tx.plans.create({
                 data: {
@@ -25,41 +25,13 @@ export class PlansService {
                     price: dto.price,
                     minPrice: dto.minPrice,
                     description: dto.description,
+                    Variation: { connect: dto.variationIds?.map((id) => ({ id })) || [] },
                     images: planImagesData.length ? { create: planImagesData } : undefined,
                 },
             });
-
-            // 3️⃣ Handle Variations
-            if (dto.variations?.length) {
-                for (let i = 0; i < dto.variations.length; i++) {
-                    const variation = dto.variations[i];
-                    const variationImageFile = files.variationImages?.[i];
-
-                    // Match variation[i] with variationImages[i]
-                    const variationImageData = variationImageFile
-                        ? [
-                            {
-                                url: path.join('uploads', variationImageFile.filename),
-                                altText: variationImageFile.originalname,
-                            },
-                        ]
-                        : [];
-
-                    await tx.variation.create({
-                        data: {
-                            title: variation.title,
-                            timeRange: variation.timeRange,
-                            description: variation.description,
-                            planId: plan.id,
-                            images: variationImageData.length ? { create: variationImageData } : undefined,
-                        },
-                    });
-                }
-            }
-
             return {
-                message: '✅ Plan created successfully',
-                planId: plan.id,
+                message: 'Plan created successfully',
+                planId: plan,
             };
         });
     }
@@ -74,8 +46,10 @@ export class PlansService {
                 include: {
                     images: true,
                     Variation: {
-                        include: {
-                            images: true,
+                        select: {
+                            id: true,
+                            title: true,
+                            description: true
                         },
                     },
                 },
@@ -105,8 +79,10 @@ export class PlansService {
             include: {
                 images: true,
                 Variation: {
-                    include: {
-                        images: true,
+                    select: {
+                        id: true,
+                        title: true,
+                        description: true
                     },
                 },
             },
@@ -116,80 +92,59 @@ export class PlansService {
     }
 
     async updatePlan(id: string, dto: UpdatePlanDto, files: any) {
-        const { images, variations, ...rest } = dto;
-
         return this.prisma.$transaction(async (tx) => {
-            // 1️⃣ Update main plan fields
-            const updatedPlan = await tx.plans.update({
-                where: { id },
-                data: { ...rest },
-            });
-
-            // 2️⃣ Handle plan images (replace if new images provided)
-            if (files.planImages && files.planImages.length) {
-                // Delete old images from DB (optionally from disk)
-                await tx.planImages.deleteMany({ where: { planId: id } });
-
-                const planImagesData = files.planImages.map((file) => ({
+            // 1️⃣ Handle plan images (new uploads)
+            const planImagesData =
+                files?.planImages?.map((file) => ({
                     url: path.join('uploads', file.filename),
                     altText: file.originalname,
-                    planId: id,
-                }));
+                })) || [];
 
-                await tx.planImages.createMany({ data: planImagesData });
+            // 2️⃣ Prepare update data object
+            const updateData: any = {};
+
+            if (dto.planName) updateData.planName = dto.planName;
+            if (dto.price) updateData.price = dto.price;
+            if (dto.minPrice) updateData.minPrice = dto.minPrice;
+            if (dto.description) updateData.description = dto.description;
+            if (dto.lunch !== undefined) updateData.lunch = dto.lunch;
+
+            // 3️⃣ Handle Variations (many-to-many)
+            if (dto.variationIds?.length) {
+                updateData.Variation = {
+                    set: dto.variationIds.map((id) => ({ id })), // replaces existing ones
+                };
             }
 
-            // 3️⃣ Handle variations
-            if (variations?.length) {
-                for (let i = 0; i < variations.length; i++) {
-                    const variation = variations[i];
-                    const variationImageFile = files.variationImages?.[i];
+            // 4️⃣ Handle Images (if new ones uploaded)
+            if (planImagesData.length) {
+                // Optional: delete old images before adding new
+                await tx.planImages.deleteMany({ where: { planId: id } });
 
-                    // Upsert variation
-                    const upsertedVariation = await tx.variation.upsert({
-                        where: { id: variation.id || '' }, // works now
-                        update: {
-                            title: variation.title,
-                            timeRange: variation.timeRange,
-                            description: variation.description,
-                        },
-                        create: {
-                            title: variation.title,
-                            timeRange: variation.timeRange,
-                            description: variation.description,
-                            planId: id,
-                        },
-                    });
-
-
-                    // Handle variation images
-                    if (variationImageFile) {
-                        // delete old images
-                        await tx.variationImages.deleteMany({
-                            where: { variationId: upsertedVariation.id },
-                        });
-
-                        await tx.variationImages.create({
-                            data: {
-                                url: path.join('uploads', variationImageFile.filename),
-                                altText: variationImageFile.originalname,
-                                variationId: upsertedVariation.id,
-                            },
-                        });
-                    }
-                }
+                updateData.images = {
+                    create: planImagesData,
+                };
             }
 
-            return { message: '✅ Plan updated successfully', planId: id };
+            // 5️⃣ Update plan
+            const updatedPlan = await tx.plans.update({
+                where: { id },
+                data: updateData,
+                include: { Variation: true, images: true },
+            });
+
+            return {
+                message: 'Plan updated successfully',
+                plan: updatedPlan,
+            };
         });
     }
-
-
 
 
     async remove(id: string) {
         return this.prisma.plans.delete({ where: { id } });
     }
+
 
     async updateImages(id: string, files: Express.Multer.File[]) {
         const plan = await this.prisma.plans.findUnique({ where: { id } });

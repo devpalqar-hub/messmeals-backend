@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, DefaultValuePipe, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
 import { DeliveryAgentService } from './deliveryagents.service';
 import { DeliveryAgentCreateDto, DeliveryAgentUpdateDto } from './dto/deliveryagents-create.dto';
 
@@ -13,14 +13,12 @@ export class DeliveryAgentController {
 
     @Get()
     async findAll(
-        @Query('page') page?: string,
-        @Query('limit') limit?: string,
+        @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+        @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+        @Query('search') search?: string,
     ) {
-        const pageNum = page ? parseInt(page, 10) : 1;
-        const limitNum = limit ? parseInt(limit, 10) : 10;
-        return this.service.findAll(pageNum, limitNum);
+        return this.service.findAll(page, limit, search);
     }
-
     @Get(':id')
     getById(@Param('id') id: string) {
         return this.service.getById(id);

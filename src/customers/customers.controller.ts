@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Get, Query, Patch, Param } from '@nestjs/common';
+import { Body, Controller, Post, Get, Query, Patch, Param, DefaultValuePipe, ParseIntPipe, Delete } from '@nestjs/common';
 import { CustomerService } from './customers.service';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
 
@@ -20,10 +20,24 @@ export class CustomerController {
     }
 
     @Get()
-    findAll(@Query('page') page?: string, @Query('limit') limit?: string) {
-        return this.cusomerservice.findAll(Number(page) || 1, Number(limit) || 10);
+    async findAll(
+        @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+        @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+        @Query('search') search?: string,
+    ) {
+        return this.cusomerservice.findAll(page, limit, search);
     }
 
-    //add get customer by id
+    // 🔍 GET /customers/:id
+    @Get(':id')
+    async findOne(@Param('id') id: string) {
+        return this.cusomerservice.findOne(id);
+    }
+
+    // 🔹 Delete Customer
+    @Delete(':id')
+    async deleteCustomer(@Param('id') id: string) {
+        return this.cusomerservice.deleteCustomer(id);
+    }
 
 }

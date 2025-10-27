@@ -10,6 +10,7 @@ import {
     UploadedFiles,
     Query,
     ParseUUIDPipe,
+    BadRequestException,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express'; // ✅ this one
 import { PlansService } from './plans.service';
@@ -23,36 +24,30 @@ import { extname } from 'path';
 export class PlansController {
     constructor(private readonly plansService: PlansService) { }
 
+
+    // 🔹 Create Plan with optional images
     @Post()
     @UseInterceptors(
-        FileFieldsInterceptor(
-            [
-                { name: 'planImages', maxCount: 10 },
-                { name: 'variationImages', maxCount: 50 },
-            ],
-            {
-                storage: diskStorage({
-                    destination: './uploads',
-                    filename: (req, file, cb) => {
-                        const uniqueSuffix =
-                            Date.now() + '-' + Math.round(Math.random() * 1e9);
-                        cb(null, `${uniqueSuffix}${extname(file.originalname)}`);
-                    },
-                }),
-            },
-        ),
+        FilesInterceptor('planImages', 10, {
+            storage: diskStorage({
+                destination: './uploads', // folder to store images
+                filename: (req, file, callback) => {
+                    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+                    callback(null, `${file.fieldname}-${uniqueSuffix}${extname(file.originalname)}`);
+                },
+            }),
+        }),
     )
     async createPlan(
-        @UploadedFiles()
-        files: {
-            planImages?: Express.Multer.File[];
-            variationImages?: Express.Multer.File[];
-        },
-        @Body() body: any,
+        @Body() dto: PlansDto,
+        @UploadedFiles() files: Express.Multer.File[],
     ) {
-        const dto: PlansDto = JSON.parse(body.planData);
-        return this.plansService.createPlan(dto, files);
+        if (dto.variationIds && typeof dto.variationIds === 'string') {
+            dto.variationIds = JSON.parse(dto.variationIds);
+        }
+        return this.plansService.createPlan(dto, { planImages: files });
     }
+
 
     // ✅ GET all (with pagination)
     @Get()
@@ -69,33 +64,31 @@ export class PlansController {
 
     @Patch(':id')
     @UseInterceptors(
-        FileFieldsInterceptor(
-            [
-                { name: 'planImages', maxCount: 10 },
-                { name: 'variationImages', maxCount: 50 },
-            ],
-            {
-                storage: diskStorage({
-                    destination: './uploads',
-                    filename: (req, file, cb) => {
-                        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-                        cb(null, `${uniqueSuffix}${extname(file.originalname)}`);
-                    },
-                }),
-            },
-        ),
+        FilesInterceptor('planImages', 10, {
+            storage: diskStorage({
+                destination: './uploads',
+                filename: (req, file, callback) => {
+                    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+                    callback(null, `${file.fieldname}-${uniqueSuffix}${extname(file.originalname)}`);
+                },
+            }),
+        }),
     )
     async updatePlan(
         @Param('id') id: string,
-        @UploadedFiles()
-        files: {
-            planImages?: Express.Multer.File[];
-            variationImages?: Express.Multer.File[];
-        },
-        @Body() body: any,
+        @Body() dto: UpdatePlanDto,
+        @UploadedFiles() files: Express.Multer.File[],
     ) {
-        const dto: UpdatePlanDto = JSON.parse(body.planData);
-        return this.plansService.updatePlan(id, dto, files);
+        // 🧩 Handle JSON string conversion for variationIds if sent as string
+        if (typeof dto.variationIds === 'string') {
+            try {
+                dto.variationIds = JSON.parse(dto.variationIds);
+            } catch {
+                dto.variationIds = [];
+            }
+        }
+
+        return this.plansService.updatePlan(id, { ...dto }, { planImages: files });
     }
 
     // ✅ DELETE

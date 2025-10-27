@@ -1,4 +1,51 @@
-import { PartialType } from '@nestjs/mapped-types';
-import { PlansDto } from './create-plan.dto';
+import { Type } from 'class-transformer';
+import {
+    IsArray,
+    IsBoolean,
+    IsNumber,
+    IsOptional,
+    IsString,
+    ValidateNested,
+} from 'class-validator';
 
-export class UpdatePlanDto extends PartialType(PlansDto) { }
+class PlanImagesDto {
+    @IsString()
+    url: string;
+
+    @IsOptional()
+    @IsString()
+    altText?: string;
+}
+
+export class UpdatePlanDto {
+    @IsOptional()
+    @IsString()
+    planName?: string;
+
+    @IsOptional()
+    @IsNumber()
+    price?: number;
+
+    @IsOptional()
+    @IsNumber()
+    minPrice?: number;
+
+    @IsOptional()
+    @IsString()
+    description?: string;
+
+    @IsOptional()
+    @IsBoolean()
+    lunch?: boolean;
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    variationIds?: string[];
+
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => PlanImagesDto)
+    images?: PlanImagesDto[];
+}

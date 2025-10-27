@@ -5,12 +5,8 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
-import * as bcrypt from 'bcrypt';
 import { UserService } from 'src/user/user.service';
-import { DeliveryStatus, Roles } from '@prisma/client';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
-import { connect } from 'http2';
-import { Decimal } from '@prisma/client/runtime/binary';
 
 @Injectable()
 export class CustomerService {
@@ -22,82 +18,80 @@ export class CustomerService {
 
 
     async CreateUser(dto: CreateCustomerDto) {
+
+        const { name, phone, email, address, currentLocation, latitude_logitude, is_active, walletAmount, discount, planId, deliveryPartnerId, start_date, end_date } = dto
         // 1️⃣ Check if user already exists
         const existing = await this.prisma.user.findUnique({
             where: { email: dto.email },
         });
         if (existing) throw new BadRequestException('Email already registered');
 
+        const Partnerexisting = await this.prisma.user.findUnique({
+            where: { id: dto.deliveryPartnerId },
+        });
+        if (Partnerexisting) throw new BadRequestException('Delivery Partner not found');
+
+        const plan = await this.prisma.plans.findUnique({
+            where: { id: dto.planId },
+        });
+        if (!plan) throw new BadRequestException('Plan not found');
         // 2️⃣ Create user
         const user = await this.userService.createUser({
             name: dto.name,
             email: dto.email,
             phone: dto.phone,
+            is_active: dto.is_active
         });
-        // 3️⃣ Create customer profile linked to the new user
+        const walletamount = Number(dto.walletAmount)
+        const customerProfile = await this.prisma.customerProfile.create({
+            data: {
+                userId: user.id,
+                address: dto.address,
+                walletAmount: walletamount,
+                current_location: dto.currentLocation,
+                latitude_logitude: dto.latitude_logitude
+
+            }
+        })
         const startDate = new Date(dto.start_date);
         const endDate = new Date(dto.end_date);
+        const dscnt = Number(dto.walletAmount)
+        const actualPrice = plan.price
+        const discountedprice = Number(actualPrice) - dscnt
 
+        //payment logic here.
 
-        let deliveryPartnerConnect = {};
-        if (dto.deliveryPartnerId) {
-            const partnerExists = await this.prisma.deliveryPartnerProfile.findUnique({
-                where: { id: dto.deliveryPartnerId },
-            });
-            if (!partnerExists) {
-                throw new BadRequestException('Delivery partner not found');
-            }
-            deliveryPartnerConnect = { deliveryPartnerProfile: { connect: { id: dto.deliveryPartnerId } } };
-        }
-
-        const userProfile = await this.prisma.customerProfile.create({
+        const userSubscription = await this.prisma.userSubscriptions.create({
             data: {
-                start_date: new Date(dto.start_date),
-                end_date: new Date(dto.end_date),
-                walletAmount: dto.walletAmount,
-                address: dto.address,
-                user: { connect: { id: user.id } },
-                ...(dto.planId && { plan: { connect: { id: dto.planId } } }),
-                ...(dto.deliveryPartnerId && {
-                    DeliveryPartnerProfile: { connect: { id: dto.deliveryPartnerId } },
-                }),
-            },
-            include: {
-                user: true,
-                plan: true,
-            },
-        });
-
-
-        const diffInMs = endDate.getTime() - startDate.getTime();
-        let totalDays = Math.ceil(diffInMs / (1000 * 60 * 60 * 24));
-        totalDays = Math.min(totalDays, 30); // cap at 30
-        if (dto.planId && totalDays > 0) {
-            const deliveriesData = Array.from({ length: totalDays }, (_, i) => ({
-                date: new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000),
-                customerId: userProfile.id,
-                planId: dto.planId,
-                status: DeliveryStatus.PLACED, // or null if default
-            }));
-
-            await this.prisma.deliveries.createMany({
-                data: deliveriesData,
-            });
-        }
-        // 4️⃣ Return both user and profile
+                customerProfileId: customerProfile.id,
+                start_date: startDate,
+                end_date: endDate,
+                discount: dto.discount,
+                totalPrice: actualPrice,
+                discountedPrice: discountedprice,
+                deliveryPartnerProfileId: dto.deliveryPartnerId,
+                planId: dto.planId
+            }
+        })
+        //Return both user and profile
         return {
             message: 'User and profile created successfully',
-            user,
-            userProfile,
+            data: { user, customerProfile, userSubscription }
         };
     }
 
 
-    async updateCustomerProfile(
-        userId: string,
-        dto: UpdateCustomerDto,
-    ) {
-        const { name, planId, deliveryPartnerId, walletAmount, address } = dto
+    async updateCustomerProfile(userId: string, dto: UpdateCustomerDto) {
+        const {
+            name,
+            address,
+            latitude_logitude,
+            currentLocation,
+            walletAmount,
+            planId,
+            deliveryPartnerId,
+        } = dto;
+
         // 1️⃣ Check if user exists
         const user = await this.prisma.user.findUnique({
             where: { id: userId },
@@ -106,91 +100,176 @@ export class CustomerService {
 
         if (!user) throw new NotFoundException('User not found');
 
-        // 2️⃣ Update User name if provided
-        if (dto.name) {
-            await this.prisma.user.update({
+        // 2️⃣ Prepare update data
+        const userUpdateData: any = {};
+        const customerProfileUpdateData: any = {};
+
+        if (name !== undefined) userUpdateData.name = name;
+        if (address !== undefined) customerProfileUpdateData.address = address;
+        if (latitude_logitude !== undefined)
+            customerProfileUpdateData.latitude_logitude = latitude_logitude;
+        if (currentLocation !== undefined)
+            customerProfileUpdateData.current_location = currentLocation;
+        if (walletAmount !== undefined)
+            customerProfileUpdateData.walletAmount = walletAmount;
+
+        // 3️⃣ Run atomic transaction
+        const result = await this.prisma.$transaction(async (tx) => {
+            // 🧩 Update user if needed
+            if (Object.keys(userUpdateData).length > 0) {
+                await tx.user.update({
+                    where: { id: userId },
+                    data: userUpdateData,
+                });
+            }
+
+            // 🧩 Update customer profile if exists, else throw error
+            if (user.customerProfile) {
+                await tx.customerProfile.update({
+                    where: { id: user.customerProfile.id },
+                    data: customerProfileUpdateData,
+                });
+            } else {
+                throw new NotFoundException('Customer profile not found for this user');
+            }
+
+            // 🧩 Optionally update or create user subscription
+            if (planId || deliveryPartnerId) {
+                const existingSubscription = await tx.userSubscriptions.findFirst({
+                    where: { customerProfileId: user.customerProfile.id },
+                });
+
+                if (existingSubscription) {
+                    await tx.userSubscriptions.update({
+                        where: { id: existingSubscription.id },
+                        data: {
+                            ...(planId ? { planId } : {}),
+                            ...(deliveryPartnerId ? { deliveryPartnerProfileId: deliveryPartnerId } : {}),
+                        },
+                    });
+                } else {
+                    await tx.userSubscriptions.create({
+                        data: {
+                            start_date: new Date(),
+                            customerProfileId: user.customerProfile.id,
+                            planId,
+                            ...(deliveryPartnerId ? { deliveryPartnerProfileId: deliveryPartnerId } : {}),
+                        },
+                    });
+                }
+            }
+
+            // 🧩 Return updated user with relations
+            return tx.user.findUnique({
                 where: { id: userId },
-                data: { name: dto.name },
-            });
-        }
-
-        // 3️⃣ Update or create CustomerProfile
-        if (user.customerProfile) {
-            // If CustomerProfile exists, update fields
-            await this.prisma.customerProfile.update({
-                where: { id: user.customerProfile.id },
-                data: {
-                    ...(dto.walletAmount !== undefined && { walletAmount: new Decimal(dto.walletAmount) }),
-                    ...(dto.address && { address: dto.address }),
-                    ...(dto.planId && { plan: { connect: { id: dto.planId } } }),
-                    ...(dto.deliveryPartnerId && {
-                        DeliveryPartnerProfile: { connect: { id: dto.deliveryPartnerId } },
-                    }),
+                include: {
+                    customerProfile: {
+                        include: { userSubscriptions: true },
+                    },
                 },
             });
-        } else {
-            // Optional: create a new CustomerProfile if not exists
-            await this.prisma.customerProfile.create({
-                data: {
-                    start_date: new Date(),
-                    walletAmount: dto.walletAmount ?? 0,
-                    address: dto.address ?? '',
-                    user: { connect: { id: userId } },
-                    ...(dto.planId && { plan: { connect: { id: dto.planId } } }),
-                    ...(dto.deliveryPartnerId && {
-                        DeliveryPartnerProfile: { connect: { id: dto.deliveryPartnerId } },
-                    }),
-                },
-            });
-        }
-
-        // 4️⃣ Return updated user with profile
-        const updatedUser = await this.prisma.user.findUnique({
-            where: { id: userId },
-            include: {
-                customerProfile: {
-                    include: { plan: true, DeliveryPartnerProfile: true, deliveries: true },
-                },
-            },
         });
 
+        // 4️⃣ Return response
         return {
             message: 'User and customer profile updated successfully',
-            data: updatedUser,
+            data: result,
         };
     }
 
 
-    async findAll(page: number = 1, limit: number = 10) {
-        // 1️⃣ Pagination setup
+
+    async findAll(page: number = 1, limit: number = 10, search?: string) {
         const skip = (page - 1) * limit;
 
-        // 2️⃣ Fetch deliveries + count in one transaction
-        const [deliveries, total] = await this.prisma.$transaction([
-            this.prisma.deliveries.findMany({
-                skip,
-                take: limit,
-                include: {
-                    customer: {
-                        include: {
-                            user: true,
-                        },
-                    },
-                    plan: true,
-                    partner: {
-                        include: {
-                            user: true,
-                        },
+        // Build dynamic filter for search
+        const where: any = search
+            ? {
+                user: {
+                    name: {
+                        contains: search.toLowerCase()
                     },
                 },
-                orderBy: { date: 'desc' },
+            }
+            : {};
+
+        // Fetch data + count in a transaction
+        const [customers, total] = await this.prisma.$transaction([
+            this.prisma.customerProfile.findMany({
+                skip,
+                take: limit,
+                where,
+                include: {
+                    user: true,
+                    userSubscriptions: {
+                        include: {
+                            plan: {
+                                include: { images: true, Variation: true },
+                            },
+                        },
+                    },
+                    deliveries: true,
+                },
+                orderBy: { createdAt: 'desc' },
             }),
-            this.prisma.deliveries.count(),
+            this.prisma.customerProfile.count({ where }),
         ]);
 
-        // 3️⃣ Return paginated result
+        // Transform response
+        const result = customers.map((c) => {
+            const activeSubs = c.userSubscriptions.filter(
+                (sub) => !sub.end_date || sub.end_date > new Date()
+            );
+
+            const totalOrders = activeSubs.length; // active plan count
+            const totalSpent = c.userSubscriptions.reduce(
+                (sum, sub) => sum + Number(sub.totalPrice),
+                0
+            );
+
+            const daysLeft =
+                activeSubs.length > 0 && activeSubs[0].end_date
+                    ? Math.ceil(
+                        (new Date(activeSubs[0].end_date).getTime() -
+                            new Date().getTime()) /
+                        (1000 * 60 * 60 * 24)
+                    )
+                    : null;
+
+            return {
+                id: c.user.id,
+                name: c.user.name,
+                email: c.user.email,
+                phone: c.user.phone,
+                walletBalance: Number(c.walletAmount),
+                address: c.address,
+                noOfDaysToEnd: daysLeft,
+                totalOrders,
+                totalSpent,
+                activeSubscriptions: activeSubs.map((sub) => ({
+                    id: sub.id,
+                    start_date: sub.start_date,
+                    end_date: sub.end_date,
+                    totalPrice: Number(sub.totalPrice),
+                    discountedPrice: Number(sub.discountedPrice),
+                    plan: sub.plan
+                        ? {
+                            id: sub.plan.id,
+                            name: sub.plan.planName,
+                            price: Number(sub.plan.price),
+                            description: sub.plan.description,
+                            images: sub.plan.images.map((img) => ({
+                                url: img.url,
+                                altText: img.altText,
+                            })),
+                        }
+                        : null,
+                })),
+            };
+        });
+
         return {
-            data: deliveries,
+            data: result,
             meta: {
                 total,
                 page,
@@ -199,6 +278,103 @@ export class CustomerService {
             },
         };
     }
+
+
+    async findOne(id: string) {
+        const customer = await this.prisma.customerProfile.findUnique({
+            where: { userId: id }, // Assuming customerProfile is linked to User
+            include: {
+                user: true,
+                userSubscriptions: {
+                    include: {
+                        plan: {
+                            include: { images: true, Variation: true },
+                        },
+                    },
+                },
+                deliveries: true,
+            },
+        });
+
+        if (!customer) {
+            throw new NotFoundException(`Customer with ID ${id} not found`);
+        }
+
+        // 🧩 Filter and compute details (same as in findAll)
+        const activeSubs = customer.userSubscriptions.filter(
+            (sub) => !sub.end_date || sub.end_date > new Date()
+        );
+
+        const totalOrders = activeSubs.length;
+        const totalSpent = customer.userSubscriptions.reduce(
+            (sum, sub) => sum + Number(sub.totalPrice),
+            0
+        );
+
+        const daysLeft =
+            activeSubs.length > 0 && activeSubs[0].end_date
+                ? Math.ceil(
+                    (new Date(activeSubs[0].end_date).getTime() - new Date().getTime()) /
+                    (1000 * 60 * 60 * 24)
+                )
+                : null;
+
+        // 🧾 Final response
+        return {
+            id: customer.user.id,
+            name: customer.user.name,
+            email: customer.user.email,
+            phone: customer.user.phone,
+            walletBalance: Number(customer.walletAmount),
+            address: customer.address,
+            noOfDaysToEnd: daysLeft,
+            totalOrders,
+            totalSpent,
+            activeSubscriptions: activeSubs.map((sub) => ({
+                id: sub.id,
+                start_date: sub.start_date,
+                end_date: sub.end_date,
+                totalPrice: Number(sub.totalPrice),
+                discountedPrice: Number(sub.discountedPrice),
+                plan: sub.plan
+                    ? {
+                        id: sub.plan.id,
+                        name: sub.plan.planName,
+                        price: Number(sub.plan.price),
+                        description: sub.plan.description,
+                        images: sub.plan.images.map((img) => ({
+                            url: img.url,
+                            altText: img.altText,
+                        })),
+                    }
+                    : null,
+            })),
+        };
+    }
+
+    async deleteCustomer(userId: string) {
+        // 1️⃣ Check if user exists
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            include: {
+                customerProfile: {
+                    include: {
+                        userSubscriptions: true,
+                        deliveries: true,
+                    },
+                },
+            },
+        });
+
+        if (!user) throw new NotFoundException('User not found');
+        await this.prisma.user.delete({ where: { id: userId } });
+        return {
+            message: 'Customer and related data deleted successfully',
+            deletedUserId: userId,
+        };
+    }
+
+
 
 
 

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { UpdateDeliveryDto } from './dto/update-delivery.dto';
@@ -49,7 +49,10 @@ export class DeliveriesService {
                 where,
                 include: {
                     customer: {
-                        include: { user: true },
+                        include: {
+                            user: true,
+                            userSubscriptions: true
+                        },
                     },
                     plan: true,
                     partner: {
@@ -154,5 +157,72 @@ export class DeliveriesService {
             },
         });
     }
+
+    async createDeliveriesForDate(inputDate: Date) {
+        // Normalize date to midnight (avoid time mismatches)
+        const dateOnly = new Date(inputDate);
+        dateOnly.setHours(0, 0, 0, 0);
+
+        // 1️⃣ Get all active subscriptions where the date falls within start_date and end_date
+        const activeSubscriptions = await this.prisma.userSubscriptions.findMany({
+            where: {
+                is_active: true,
+                start_date: { lte: dateOnly },
+                end_date: { gte: dateOnly },
+            },
+            include: {
+                CustomerProfile: true,
+                plan: true,
+                DeliveryPartnerProfile: true,
+            },
+        });
+
+        if (activeSubscriptions.length === 0) {
+            return { message: 'No active subscriptions found for this date', createdCount: 0 };
+        }
+
+        // ✅ Explicitly define array type for Prisma createMany input
+        const deliveriesToCreate: {
+            date: Date;
+            status: DeliveryStatus;
+            customerId: string;
+            planId: string;
+            partnerId?: string | null;
+        }[] = [];
+
+        // 2️⃣ Filter out subscriptions that already have a delivery on that date
+        for (const sub of activeSubscriptions) {
+            const existingDelivery = await this.prisma.deliveries.findFirst({
+                where: {
+                    date: dateOnly,
+                    customerId: sub.customerProfileId!,
+                    planId: sub.planId!,
+                },
+            });
+
+            if (!existingDelivery) {
+                deliveriesToCreate.push({
+                    date: dateOnly,
+                    status: DeliveryStatus.PLACED,
+                    customerId: sub.customerProfileId!,
+                    planId: sub.planId!,
+                    partnerId: sub.deliveryPartnerProfileId || null,
+                });
+            }
+        }
+
+        // 3️⃣ Create all new deliveries in a single transaction
+        if (deliveriesToCreate.length > 0) {
+            await this.prisma.$transaction(
+                deliveriesToCreate.map((data) => this.prisma.deliveries.create({ data }))
+            );
+        }
+
+        return {
+            message: `Deliveries created for ${deliveriesToCreate.length} subscriptions on ${dateOnly.toDateString()}`,
+            createdCount: deliveriesToCreate.length,
+        };
+    }
+
 
 }
