@@ -1,6 +1,7 @@
 import { Body, Controller, Post, Get, Query, Patch, Param, DefaultValuePipe, ParseIntPipe, Delete } from '@nestjs/common';
 import { CustomerService } from './customers.service';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
+import { RenewSubscriptionDto } from './dto/renew-Subscription.dto';
 
 @Controller('customer')
 export class CustomerController {
@@ -40,4 +41,18 @@ export class CustomerController {
         return this.cusomerservice.deleteCustomer(id);
     }
 
-}
+
+    @Post('renew-subscription')
+    async renewSubscription(@Body() dto: RenewSubscriptionDto) {
+        return this.cusomerservice.RenewSubscription(dto);
+    }
+
+    @Patch('update-wallet/:userId')
+    async updateWalletAmount(
+        @Param('userId') id: string,
+        @Body('amount') amount: number,
+    ) {
+        return this.cusomerservice.UpdateWalletAmount(id, amount);
+    }
+
+} 

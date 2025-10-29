@@ -7,6 +7,8 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UserService } from 'src/user/user.service';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
+import { RenewSubscriptionDto } from './dto/renew-Subscription.dto';
+import { de } from '@faker-js/faker';
 
 @Injectable()
 export class CustomerService {
@@ -185,11 +187,32 @@ export class CustomerService {
         // Build dynamic filter for search
         const where: any = search
             ? {
-                user: {
-                    name: {
-                        contains: search.toLowerCase()
+                OR: [{
+                    user: {
+                        name: {
+                            contains: search.toLowerCase()
+                        },
                     },
                 },
+                {
+                    user: {
+                        email: {
+                            contains: search.toLowerCase()
+                        },
+                    },
+                },
+                {
+                    userSubscriptions: {
+                        some: {
+                            plan: {
+                                planName: {
+                                    contains: search.toLowerCase()
+                                },
+                            },
+                        },
+                    },
+                }
+                ]
             }
             : {};
 
@@ -238,11 +261,14 @@ export class CustomerService {
 
             return {
                 id: c.user.id,
+                customerProfileId: c.id, // ✅ Add this line
                 name: c.user.name,
                 email: c.user.email,
                 phone: c.user.phone,
                 walletBalance: Number(c.walletAmount),
                 address: c.address,
+                current_location: c.current_location,
+                latitude_logitude: c.latitude_logitude,
                 noOfDaysToEnd: daysLeft,
                 totalOrders,
                 totalSpent,
@@ -252,6 +278,7 @@ export class CustomerService {
                     end_date: sub.end_date,
                     totalPrice: Number(sub.totalPrice),
                     discountedPrice: Number(sub.discountedPrice),
+                    deliveryPartnerProfileId: sub.deliveryPartnerProfileId,
                     plan: sub.plan
                         ? {
                             id: sub.plan.id,
@@ -322,10 +349,13 @@ export class CustomerService {
         // 🧾 Final response
         return {
             id: customer.user.id,
+            customerProfileId: customer.id, // ✅ Add this line
             name: customer.user.name,
             email: customer.user.email,
             phone: customer.user.phone,
             walletBalance: Number(customer.walletAmount),
+            current_location: customer.current_location,
+            latitude_logitude: customer.latitude_logitude,
             address: customer.address,
             noOfDaysToEnd: daysLeft,
             totalOrders,
@@ -336,6 +366,7 @@ export class CustomerService {
                 end_date: sub.end_date,
                 totalPrice: Number(sub.totalPrice),
                 discountedPrice: Number(sub.discountedPrice),
+                deliveryPartnerProfileId: sub.deliveryPartnerProfileId,
                 plan: sub.plan
                     ? {
                         id: sub.plan.id,
@@ -375,8 +406,41 @@ export class CustomerService {
     }
 
 
+    async RenewSubscription(dto: RenewSubscriptionDto) {
+        const { deliveryPartnerId, planId, start_date, end_date, discount } = dto;
+        const plan = await this.prisma.plans.findUnique({
+            where: { id: planId },
+        });
+        if (!plan) throw new BadRequestException('Plan not found');
+        const startDate = new Date(start_date);
+        const endDate = new Date(end_date);
+        const actualPrice = plan.price
+        const userSubscription = await this.prisma.userSubscriptions.create({
+            data: {
+                start_date: startDate,
+                end_date: endDate,
+                totalPrice: actualPrice,
+                deliveryPartnerProfileId: deliveryPartnerId,
+                planId: planId,
+                discount: discount,
+                discountedPrice: Number(actualPrice)
+            }
+        })
+        return {
+            message: 'Subscription Renewed successfully',
+            data: { userSubscription }
+        };
+
+    }
 
 
+    async UpdateWalletAmount(userId: string, amount: number) {
+        // Logic to update wallet amount
+        await this.prisma.customerProfile.update({
+            where: { id: userId },
+            data: { walletAmount: { increment: amount } },
+        });
+        return { message: 'Wallet amount updated successfully' };
 
-
+    }
 }

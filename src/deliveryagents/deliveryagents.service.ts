@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { DeliveryAgentCreateDto, DeliveryAgentUpdateDto } from './dto/deliveryagents-create.dto';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -162,7 +162,6 @@ export class DeliveryAgentService {
     }
 
 
-
     async updateDeliveryAgent(id: string, dto: DeliveryAgentUpdateDto) {
         // 1️⃣ Verify user and role
         const user = await this.prisma.user.findUnique({
@@ -233,6 +232,8 @@ export class DeliveryAgentService {
             where: { id },
         });
     }
+
+
 
 
 }

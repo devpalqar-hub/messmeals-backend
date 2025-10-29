@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { UpdateDeliveryDto } from './dto/update-delivery.dto';
@@ -29,21 +29,38 @@ export class DeliveriesService {
         return delivery;
     }
 
-    async findAll(query: { page?: number | string; limit?: number | string; status?: DeliveryStatus }) {
+    async findAll(query: {
+        page?: number | string;
+        limit?: number | string;
+        status?: DeliveryStatus;
+        date?: string; // 🆕 for exact date
+    }) {
         // 1️⃣ Convert and set defaults
         const page = Number(query.page) || 1;
         const limit = Number(query.limit) || 10;
-        const status = query.status;
-
-        // 2️⃣ Pagination
         const skip = (page - 1) * limit;
         const take = limit;
 
-        // 3️⃣ Build filters
+        const { status, date, } = query;
+
+        // 2️⃣ Build filters dynamically
         const where: any = {};
+
         if (status) where.status = status;
 
-        // 4️⃣ Fetch data + total count
+        // 🆕 Filter by a specific date
+        if (date) {
+            const selectedDate = new Date(date);
+            const nextDate = new Date(selectedDate);
+            nextDate.setDate(selectedDate.getDate() + 1);
+
+            where.date = {
+                gte: selectedDate,
+                lt: nextDate,
+            };
+        }
+
+        // 3️⃣ Fetch data + total count in a transaction
         const [deliveries, totalCount] = await this.prisma.$transaction([
             this.prisma.deliveries.findMany({
                 where,
@@ -51,7 +68,7 @@ export class DeliveriesService {
                     customer: {
                         include: {
                             user: true,
-                            userSubscriptions: true
+                            userSubscriptions: true,
                         },
                     },
                     plan: true,
@@ -66,16 +83,21 @@ export class DeliveriesService {
             this.prisma.deliveries.count({ where }),
         ]);
 
-        // 5️⃣ Return paginated result
+        // 4️⃣ Return formatted response
         return {
             message: 'Deliveries fetched successfully',
             page,
             limit,
             totalCount,
             totalPages: Math.ceil(totalCount / limit),
+            filters: {
+                status: status || 'ALL',
+                date: date || null,
+            },
             data: deliveries,
         };
     }
+
 
 
 
@@ -223,6 +245,84 @@ export class DeliveriesService {
             createdCount: deliveriesToCreate.length,
         };
     }
+
+
+    async PartnerRecentDeliveries(agentId: string, limit = 5) {
+        try {
+            if (!agentId) {
+                throw new BadRequestException('Agent ID is required');
+            }
+            const agent = await this.prisma.deliveryPartnerProfile.findUnique({
+                where: { id: agentId }
+            })
+            // 1️⃣ Validate input
+            if (!agent) {
+                throw new BadRequestException('Agent not found');
+            }
+            // 2️⃣ Fetch recent completed deliveries with related details
+            const deliveries = await this.prisma.deliveries.findMany({
+                where: {
+                    partnerId: agentId,
+                    status: 'COMPLETED',
+                },
+                orderBy: { createdAt: 'desc' },
+                take: limit,
+                select: {
+                    id: true,
+                    date: true,
+                    status: true,
+                    createdAt: true,
+                    plan: true
+                }
+            });
+            return {
+                message: 'Recent deliveries fetched successfully',
+                count: deliveries.length,
+                data: deliveries,
+            };
+        } catch (error) {
+            console.error('Error fetching recent deliveries:', error);
+            throw new InternalServerErrorException(
+                'Failed to fetch recent deliveries'
+            );
+        }
+    }
+
+    async CustomerRecentDeliveries(customerId: string, limit = 5) {
+        try {
+            // 1️⃣ Validate input
+            if (!customerId) {
+                throw new BadRequestException('Customer ID is required');
+            }
+            // 2️⃣ Fetch recent completed deliveries with related details
+            const deliveries = await this.prisma.deliveries.findMany({
+                where: {
+                    customerId: customerId,
+                    status: 'COMPLETED',
+                },
+                orderBy: { createdAt: 'desc' },
+                take: limit,
+                select: {
+                    id: true,
+                    date: true,
+                    status: true,
+                    createdAt: true,
+                    plan: true
+                }
+            });
+            return {
+                message: 'Recent deliveries fetched successfully',
+                count: deliveries.length,
+                data: deliveries,
+            };
+        } catch (error) {
+            console.error('Error fetching recent deliveries:', error);
+            throw new InternalServerErrorException(
+                'Failed to fetch recent deliveries'
+            );
+        }
+    }
+
 
 
 }

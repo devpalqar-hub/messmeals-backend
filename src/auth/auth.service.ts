@@ -12,6 +12,7 @@ import { UserService } from 'src/user/user.service';
 import { DeliveryStatus, Roles } from '@prisma/client';
 import { generate6DigitOtp } from 'src/common/utility/utils';
 import { MailerService } from '@nestjs-modules/mailer';
+import { subDays, startOfDay, endOfDay } from 'date-fns';
 
 @Injectable()
 export class AuthService {
@@ -22,49 +23,32 @@ export class AuthService {
         private readonly mailerService: MailerService,
     ) { }
 
-    // // 🟢 Register new admin
-    // async register(dto: RegisterDto) {
-    //     const existing = await this.prisma.user.findUnique({
-    //         where: { email: dto.email },
-    //     });
-    //     if (existing) throw new BadRequestException('Email already registered');
-    //     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
-    //     const user = await this.userService.createAdmin({
-    //         name: dto.name,
-    //         email: dto.email,
-    //         phone: dto.phone,
-    //         password: hashedPassword
-    //     });
-    //     const { password, ...returnWithoutPass } = user
-    //     const token = this.jwtService.sign({ sub: user.id, email: user.email });
-    //     return { returnWithoutPass, token };
-    // }
+    async sendOtpForLogin(loginDto: LoginDto) {
+        const otp = generate6DigitOtp();
+        let user = await this.prisma.user.findUnique({ where: { email: loginDto.email } });
+        if (!user) {
+            throw new UnauthorizedException('User not found');
+        }
+        user = await this.prisma.user.update({
+            where: { email: loginDto.email },
+            data: {
+                otp: otp,
+                expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now
+            }
+        });
+        await this.mailerService.sendMail({
+            to: loginDto.email,
+            subject: 'Login OTP',
+            template: 'authentication', // ✅ refers to authentication.pug
+            context: {
+                otp, // ✅ available inside the template
+            },
+        });
+        return { message: 'OTP sent successfully' };
+    }
 
-    // // 🟡 Login for admin
-    // async login(dto: LoginDto) {
-    //     const user = await this.prisma.user.findUnique({
-    //         where: { email: dto.email },
-    //     });
-    //     if (!user) throw new UnauthorizedException('Invalid credentials');
-    //     const passwordValid = await bcrypt.compare(dto.password, user.password);
-    //     if (!passwordValid)
-    //         throw new UnauthorizedException('Invalid credentials');
-    //     const token = this.jwtService.sign({ sub: user.id, email: user.email });
-    //     const { password, ...returnWithoutPass } = user
-    //     return { returnWithoutPass, token };
-    // }
-
-    // // 🔴 Logout
-    // async logout() {
-    //     // JWTs are stateless; just return success or implement token blacklist if needed.
-    //     return { message: 'Logout successful' };
-    // }
-
-
-
-
-    async sendOtp(loginDto: LoginDto) {
+    async sendOtpForRegistration(loginDto: RegisterDto) {
         const otp = generate6DigitOtp();
         let user = await this.prisma.user.findUnique({ where: { email: loginDto.email } });
         if (!user) {
@@ -77,15 +61,6 @@ export class AuthService {
                     role: Roles.ADMIN,
                     expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now
                     is_verified: false,
-                }
-            });
-        }
-        else {
-            user = await this.prisma.user.update({
-                where: { email: loginDto.email },
-                data: {
-                    otp: otp,
-                    expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now
                 }
             });
         }
@@ -152,8 +127,6 @@ export class AuthService {
     }
 
 
-
-
     async ListDeliveryAgents(page: number = 1, limit: number = 10, search?: string) {
         const skip = (page - 1) * limit;
         const whereClause: any = {
@@ -185,36 +158,68 @@ export class AuthService {
     }
 
 
-    async getCustomerStats() {
+    async getDashboardStats() {
+        // 1️⃣ Total Customers (role = USER)
         const totalCustomers = await this.prisma.user.count({
-            where: { role: Roles.USER, },
+            where: { role: Roles.USER },
         });
 
-        const totalDeliveryAgent = await this.prisma.user.count({
-            where: {
-                role: Roles.DELIVERYAGENT,
+        // 2️⃣ Total Partners (role = DELIVERYAGENT)
+        const totalPartners = await this.prisma.user.count({
+            where: { role: Roles.DELIVERYAGENT },
+        });
+
+        const activePartners = await this.prisma.user.count({
+            where: { role: Roles.DELIVERYAGENT, is_active: true },
+        });
+
+        // 3️⃣ Subscriptions data
+        const subscriptions = await this.prisma.userSubscriptions.findMany({
+            select: {
+                totalPrice: true,
+                discountedPrice: true,
+                is_active: true,
+                start_date: true,
+                createdAt: true,
             },
         });
 
-        const orders = await this.prisma.deliveries.count({
-            where: { status: DeliveryStatus.PLACED }
-        })
+        // 4️⃣ Calculations
+        const totalRevenue = subscriptions.reduce(
+            (sum, s) => sum + Number(s.discountedPrice || s.totalPrice),
+            0
+        );
 
-        const revenueCollected = await this.prisma.deliveries.count({
-            //
-        })
+        const completedOrders = subscriptions.filter((s) => s.is_active).length;
+        const totalOrders = subscriptions.length;
 
-        // Future calculations (dummy for now)
-        const avgWalletPerCustomer = 0.0;
-        const pendingAmount = 0.0;
+        const pendingRevenue = subscriptions
+            .filter((s) => !s.is_active)
+            .reduce((sum, s) => sum + Number(s.discountedPrice || s.totalPrice), 0);
 
+        const today = new Date();
+        const todaysRevenue = subscriptions
+            .filter(
+                (s) =>
+                    s.start_date >= startOfDay(today) &&
+                    s.start_date <= endOfDay(today)
+            )
+            .reduce((sum, s) => sum + Number(s.discountedPrice || s.totalPrice), 0);
+
+        const avgPerCustomer =
+            totalCustomers > 0 ? totalRevenue / totalCustomers : 0;
+
+        // 5️⃣ Construct the final dashboard response
         return {
-            orders,
-            totalDeliveryAgent,
+            totalRevenue,
+            completedOrders,
+            totalOrders,
             totalCustomers,
-            avgWalletPerCustomer,
-            pendingAmount,
+            totalPartners,
+            activePartners,
+            avgPerCustomer,
+            pendingRevenue,
+            todaysRevenue,
         };
     }
-
 }

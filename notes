@@ -1,0 +1,42 @@
+const where: any = search
+    ? {
+        OR: [
+            {
+                user: {
+                    name: {
+                        contains: search,
+                        mode: 'insensitive',
+                    },
+                },
+            },
+            {
+                user: {
+                    email: {
+                        contains: search,
+                        mode: 'insensitive',
+                    },
+                },
+            },
+            {
+                user: {
+                    phone: {
+                        contains: search,
+                        mode: 'insensitive',
+                    },
+                },
+            },
+            {
+                userSubscriptions: {
+                    some: {
+                        plan: {
+                            planName: {
+                                contains: search,
+                                mode: 'insensitive',
+                            },
+                        },
+                    },
+                },
+            },
+        ],
+    }
+    : {};

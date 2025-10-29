@@ -8,9 +8,14 @@ import { OtpVerifyDto } from './dto/otp-verify.dto';
 export class AuthController {
     constructor(private readonly authService: AuthService) { }
 
-    @Post('send-otp')
-    async sendOtp(@Body() loginDto: LoginDto) {
-        return this.authService.sendOtp(loginDto);
+    @Post('send-reg-otp')
+    async sendOtp(@Body() regDto: RegisterDto) {
+        return this.authService.sendOtpForRegistration(regDto);
+    }
+
+    @Post('send-login-otp')
+    async sendOtpForLogin(@Body() loginDto: LoginDto) {
+        return this.authService.sendOtpForLogin(loginDto);
     }
 
     @Post('verify-otp')
@@ -29,14 +34,8 @@ export class AuthController {
     }
 
     @Get('stats')
-    async getCustomerStats() {
-        const stats = await this.authService.getCustomerStats();
-        return {
-            totalCustomers: stats.totalCustomers,
-            avgWalletPerCustomer: `$${stats.avgWalletPerCustomer.toFixed(2)}`,
-            pendingAmount: `$${stats.pendingAmount.toFixed(2)}`,
-        };
+    async getDashboardStats() {
+        return this.authService.getDashboardStats();
     }
-
 
 }

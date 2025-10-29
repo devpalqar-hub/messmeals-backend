@@ -76,4 +76,16 @@ export class DeliveriesController {
         return this.deliveriesService.createDeliveriesForDate(parsedDate);
     }
 
+    @Get('recent-deliveries-partner/:id')
+    async getRecentDeliveries(@Param('id', new ParseUUIDPipe()) customerId: string) {
+        return this.deliveriesService.PartnerRecentDeliveries(customerId);
+
+    }
+    @Get('recent-deliveries-customer/:id')
+    async CustomerRecentDeliveries(
+        @Param('id', new ParseUUIDPipe()) customerId: string
+    ) {
+        return this.deliveriesService.CustomerRecentDeliveries(customerId);
+    }
+
 }
