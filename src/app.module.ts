@@ -12,9 +12,11 @@ import { MailerModule } from '@nestjs-modules/mailer';
 import { PugAdapter } from '@nestjs-modules/mailer/dist/adapters/pug.adapter';
 import { join } from 'path';
 import { VariationModule } from './variations/variations.module';
+import { ContactFormModule } from './contact-form/contact-form.module';
 
 @Module({
-  imports: [AuthModule, CustomerModule, DeliveriesModule, DeliveryAgentModule, PlansModule, PrismaModule, UserModule, VariationModule,
+  imports: [AuthModule, CustomerModule, DeliveriesModule, DeliveryAgentModule,
+    PlansModule, PrismaModule, UserModule, VariationModule, ContactFormModule,
     MailerModule.forRoot({
       transport: {
         host: 'smtp.gmail.com',       // your SMTP host
