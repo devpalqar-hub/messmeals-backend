@@ -55,4 +55,9 @@ export class CustomerController {
         return this.cusomerservice.UpdateWalletAmount(id, amount);
     }
 
+    @Patch('cancel-subscription/:subscriptionId')
+    async cancelSubscription(@Param('subscriptionId') id: string) {
+        return this.cusomerservice.CancelSubscription(id);
+    }
+
 } 

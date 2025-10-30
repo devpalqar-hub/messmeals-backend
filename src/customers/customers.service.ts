@@ -444,4 +444,22 @@ export class CustomerService {
         return { message: 'Wallet amount updated successfully' };
 
     }
+
+
+    async CancelSubscription(subscriptionId: string) {
+        const subscription = await this.prisma.userSubscriptions.findUnique({
+            where: { id: subscriptionId },
+        });
+
+        if (!subscription) {
+            throw new NotFoundException('Subscription not found');
+        }
+
+        await this.prisma.userSubscriptions.update({
+            where: { id: subscriptionId },
+            data: { is_active: false },
+
+        });
+        return { message: 'Subscription cancelled successfully' };
+    }
 }
