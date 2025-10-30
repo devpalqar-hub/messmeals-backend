@@ -225,6 +225,7 @@ export class CustomerService {
                 include: {
                     user: true,
                     userSubscriptions: {
+                        where: { is_active: true },
                         include: {
                             plan: {
                                 include: { images: true, Variation: true },
