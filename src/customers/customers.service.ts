@@ -286,6 +286,7 @@ export class CustomerService {
                             name: sub.plan.planName,
                             price: Number(sub.plan.price),
                             description: sub.plan.description,
+                            variation: sub.plan.Variation,
                             images: sub.plan.images.map((img) => ({
                                 url: img.url,
                                 altText: img.altText,
