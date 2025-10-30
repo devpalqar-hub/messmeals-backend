@@ -407,7 +407,7 @@ export class CustomerService {
 
 
     async RenewSubscription(dto: RenewSubscriptionDto) {
-        const { deliveryPartnerId, planId, start_date, end_date, discount } = dto;
+        const { deliveryPartnerId, planId, start_date, end_date, discount, customerProfileId } = dto;
         const plan = await this.prisma.plans.findUnique({
             where: { id: planId },
         });
@@ -423,7 +423,8 @@ export class CustomerService {
                 deliveryPartnerProfileId: deliveryPartnerId,
                 planId: planId,
                 discount: discount,
-                discountedPrice: Number(actualPrice)
+                discountedPrice: Number(actualPrice),
+                customerProfileId: customerProfileId
             }
         })
         return {

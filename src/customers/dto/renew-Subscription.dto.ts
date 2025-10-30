@@ -12,6 +12,9 @@ export class RenewSubscriptionDto {
     deliveryPartnerId: string
 
     @IsString()
+    customerProfileId: string
+
+    @IsString()
     discount: string
 
     @IsString()
