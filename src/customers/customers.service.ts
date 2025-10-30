@@ -464,4 +464,57 @@ export class CustomerService {
         });
         return { message: 'Subscription cancelled successfully' };
     }
+
+
+    async getVariationCountByDate(dateString: string) {
+        if (!dateString) {
+            throw new BadRequestException('Date is required');
+        }
+
+        const inputDate = new Date(dateString);
+        if (isNaN(inputDate.getTime())) {
+            throw new BadRequestException('Invalid date format');
+        }
+
+        // ✅ Find subscriptions active on that date
+        const subscriptions = await this.prisma.userSubscriptions.findMany({
+            where: {
+                start_date: { lte: inputDate },
+                OR: [
+                    { end_date: null },
+                    { end_date: { gte: inputDate } },
+                ],
+                is_active: true,
+            },
+            include: {
+                plan: {
+                    include: {
+                        Variation: true, // include all variations linked to plan
+                    },
+                },
+            },
+        });
+
+        // ✅ Count occurrences of each variation
+        const variationCount: Record<string, number> = {};
+        for (const sub of subscriptions) {
+            for (const variation of sub.plan.Variation) {
+                variationCount[variation.title] =
+                    (variationCount[variation.title] || 0) + 1;
+            }
+        }
+
+        // ✅ Format output
+        const result = Object.entries(variationCount).map(([title, count]) => ({
+            title,
+            count,
+        }));
+
+        return {
+            message: `Variation count for ${dateString}`,
+            totalSubscriptions: subscriptions.length,
+            data: result,
+        };
+    }
+
 }

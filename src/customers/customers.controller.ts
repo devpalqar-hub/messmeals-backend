@@ -60,4 +60,9 @@ export class CustomerController {
         return this.cusomerservice.CancelSubscription(id);
     }
 
+    @Get('variation/count')
+    async getVariationCount(@Query('date') date: string) {
+        return this.cusomerservice.getVariationCountByDate(date);
+    }
+
 } 
