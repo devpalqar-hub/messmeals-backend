@@ -25,7 +25,6 @@ export class PlansController {
     constructor(private readonly plansService: PlansService) { }
 
 
-    // 🔹 Create Plan with optional images
     @Post()
     @UseInterceptors(
         FilesInterceptor('planImages', 10, {
@@ -36,6 +35,19 @@ export class PlansController {
                     callback(null, `${file.fieldname}-${uniqueSuffix}${extname(file.originalname)}`);
                 },
             }),
+
+            // ✅ Limit file size to 1MB per image
+            limits: {
+                fileSize: 1 * 1024 * 1024, // 1 MB
+            },
+
+            // ✅ Accept only image files
+            fileFilter: (req, file, callback) => {
+                if (!file.mimetype.match(/^image\//)) {
+                    return callback(new BadRequestException('Only image files are allowed!'), false);
+                }
+                callback(null, true);
+            },
         }),
     )
     async createPlan(
@@ -45,6 +57,16 @@ export class PlansController {
         if (dto.variationIds && typeof dto.variationIds === 'string') {
             dto.variationIds = JSON.parse(dto.variationIds);
         }
+
+        // ✅ Handle case when files are missing or invalid
+        if (files && files.length > 0) {
+            for (const file of files) {
+                if (file.size > 1 * 1024 * 1024) {
+                    throw new BadRequestException('Each image must be less than 1MB');
+                }
+            }
+        }
+
         return this.plansService.createPlan(dto, { planImages: files });
     }
 

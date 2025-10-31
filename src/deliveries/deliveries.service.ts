@@ -170,7 +170,7 @@ export class DeliveriesService {
             where: { id },
             data: {
                 partnerId,
-                status: 'DISPATCHED',
+                status: DeliveryStatus.PENDING,
             },
             include: {
                 partner: {
@@ -225,7 +225,7 @@ export class DeliveriesService {
             if (!existingDelivery) {
                 deliveriesToCreate.push({
                     date: dateOnly,
-                    status: DeliveryStatus.PLACED,
+                    status: DeliveryStatus.PENDING,
                     customerId: sub.customerProfileId!,
                     planId: sub.planId!,
                     partnerId: sub.deliveryPartnerProfileId || null,
@@ -263,7 +263,7 @@ export class DeliveriesService {
             const deliveries = await this.prisma.deliveries.findMany({
                 where: {
                     partnerId: agentId,
-                    status: 'COMPLETED',
+                    status: DeliveryStatus.DELIVERED,
                 },
                 orderBy: { createdAt: 'desc' },
                 take: limit,
@@ -298,7 +298,7 @@ export class DeliveriesService {
             const deliveries = await this.prisma.deliveries.findMany({
                 where: {
                     customerId: customerId,
-                    status: 'COMPLETED',
+                    status: DeliveryStatus.DELIVERED,
                 },
                 orderBy: { createdAt: 'desc' },
                 take: limit,
@@ -323,6 +323,8 @@ export class DeliveriesService {
         }
     }
 
+
+    async estimation() { }
 
 
 }

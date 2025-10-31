@@ -9,6 +9,7 @@ import { UserService } from 'src/user/user.service';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
 import { RenewSubscriptionDto } from './dto/renew-Subscription.dto';
 import { de } from '@faker-js/faker';
+import { CancelSubDto } from './dto/cancel-sub.dto';
 
 @Injectable()
 export class CustomerService {
@@ -57,12 +58,15 @@ export class CustomerService {
         })
         const startDate = new Date(dto.start_date);
         const endDate = new Date(dto.end_date);
-        const dscnt = Number(dto.walletAmount)
-        const actualPrice = plan.price
+        const diffInMills = endDate.getTime() - startDate.getTime()
+        const diffInDays = Math.ceil(diffInMills / (1000 * 60 * 60 * 24));
+
+        console.log("Days difference:", diffInDays);
+        const dscnt = Number(discount)
+        const actualPrice = diffInDays * Number(plan.price)
         const discountedprice = Number(actualPrice) - dscnt
 
         //payment logic here.
-
         const userSubscription = await this.prisma.userSubscriptions.create({
             data: {
                 customerProfileId: customerProfile.id,
@@ -73,6 +77,13 @@ export class CustomerService {
                 discountedPrice: discountedprice,
                 deliveryPartnerProfileId: dto.deliveryPartnerId,
                 planId: dto.planId
+            }
+        })
+
+        await this.prisma.customerProfile.update({
+            where: { id: customerProfile.id },
+            data: {
+                walletAmount: Number(walletAmount) - discountedprice
             }
         })
         //Return both user and profile
@@ -414,9 +425,13 @@ export class CustomerService {
             where: { id: planId },
         });
         if (!plan) throw new BadRequestException('Plan not found');
+        const customerProfile = await this.prisma.customerProfile.findUnique({
+            where: { id: customerProfileId }
+        })
         const startDate = new Date(start_date);
         const endDate = new Date(end_date);
         const actualPrice = plan.price
+        const discountedPrice = Number(actualPrice) - Number(discount)
         const userSubscription = await this.prisma.userSubscriptions.create({
             data: {
                 start_date: startDate,
@@ -425,8 +440,14 @@ export class CustomerService {
                 deliveryPartnerProfileId: deliveryPartnerId,
                 planId: planId,
                 discount: discount,
-                discountedPrice: Number(actualPrice),
+                discountedPrice: discountedPrice,
                 customerProfileId: customerProfileId
+            }
+        })
+        await this.prisma.customerProfile.update({
+            where: { id: customerProfileId },
+            data: {
+                walletAmount: Number(customerProfile?.walletAmount) - discountedPrice
             }
         })
         return {
@@ -449,21 +470,48 @@ export class CustomerService {
 
 
     async CancelSubscription(subscriptionId: string) {
+        // 1️⃣ Find the subscription
         const subscription = await this.prisma.userSubscriptions.findUnique({
             where: { id: subscriptionId },
+            include: {
+                CustomerProfile: true, // Include customer details to access walletAmount
+            },
         });
 
+        // 2️⃣ Handle not found
         if (!subscription) {
             throw new NotFoundException('Subscription not found');
         }
 
+        // 3️⃣ Check if already inactive
+        if (!subscription.is_active) {
+            throw new BadRequestException('Subscription is already cancelled');
+        }
+
+        // 4️⃣ Validate wallet amount
+        if (subscription.CustomerProfile) {
+            const walletAmount = Number(subscription.CustomerProfile.walletAmount);
+
+            if (walletAmount < 0) {
+                throw new BadRequestException(
+                    'Cannot cancel subscription: wallet amount is less than 0'
+                );
+            }
+        } else {
+            throw new BadRequestException('Customer profile not found for this subscription');
+        }
+
+        // 5️⃣ Update subscription status
         await this.prisma.userSubscriptions.update({
             where: { id: subscriptionId },
             data: { is_active: false },
-
         });
+
         return { message: 'Subscription cancelled successfully' };
     }
+
+
+
 
 
     async getVariationCountByDate(dateString: string) {

@@ -6,6 +6,7 @@ export class RegisterDto {
     name: string;
 
     @IsString()
+    @MinLength(10)
     phone: string;
 
     @IsEmail()

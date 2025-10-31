@@ -13,10 +13,16 @@ import { PugAdapter } from '@nestjs-modules/mailer/dist/adapters/pug.adapter';
 import { join } from 'path';
 import { VariationModule } from './variations/variations.module';
 import { ContactFormModule } from './contact-form/contact-form.module';
+import { ServeStaticModule } from '@nestjs/serve-static';
+
 
 @Module({
   imports: [AuthModule, CustomerModule, DeliveriesModule, DeliveryAgentModule,
     PlansModule, PrismaModule, UserModule, VariationModule, ContactFormModule,
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', 'uploads'), // Path to your uploads folder
+      serveRoot: '/uploads', // URL prefix — access files via /uploads/<filename>
+    }),
     MailerModule.forRoot({
       transport: {
         host: 'smtp.gmail.com',       // your SMTP host

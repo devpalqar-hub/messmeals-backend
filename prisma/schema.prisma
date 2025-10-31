@@ -11,11 +11,9 @@ datasource db {
 }
 
 enum DeliveryStatus {
-  PLACED
-  DISPATCHED
-  COMPLETED
-  RETURNED
-  PACKDAMAGED
+  PENDING
+  PROGRESS
+  DELIVERED
 }
 
 enum Roles {
@@ -69,7 +67,6 @@ model UserSubscriptions {
   is_active                Boolean   @default(true)
   customerProfileId        String?
   createdAt                DateTime  @default(now())
-
 
   DeliveryPartnerProfile DeliveryPartnerProfile? @relation(fields: [deliveryPartnerProfileId], references: [id])
   plan                   Plans                   @relation(fields: [planId], references: [id], onDelete: Cascade)

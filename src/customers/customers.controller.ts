@@ -2,6 +2,7 @@ import { Body, Controller, Post, Get, Query, Patch, Param, DefaultValuePipe, Par
 import { CustomerService } from './customers.service';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
 import { RenewSubscriptionDto } from './dto/renew-Subscription.dto';
+import { CancelSubDto } from './dto/cancel-sub.dto';
 
 @Controller('customer')
 export class CustomerController {

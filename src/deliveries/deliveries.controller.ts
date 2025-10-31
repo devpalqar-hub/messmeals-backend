@@ -28,12 +28,14 @@ export class DeliveriesController {
     // ✅ GET all
     @Get()
     findAll(
-        @Query('page') page?: number,
-        @Query('limit') limit?: number,
+        @Query('page') page?: number | string,
+        @Query('limit') limit?: number | string,
         @Query('status') status?: DeliveryStatus,
+        @Query('date') date?: string, // 🆕 Added date filter
     ) {
-        return this.deliveriesService.findAll({ page, limit, status });
+        return this.deliveriesService.findAll({ page, limit, status, date });
     }
+
 
 
     // ✅ GET by ID

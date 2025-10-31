@@ -4,7 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UserService } from 'src/user/user.service';
 import * as bcrypt from 'bcrypt';
-import { Roles } from '@prisma/client';
+import { DeliveryStatus, Roles } from '@prisma/client';
 import { contains } from 'class-validator';
 @Injectable()
 export class DeliveryAgentService {
@@ -68,10 +68,10 @@ export class DeliveryAgentService {
 
             const totalDeliveries = deliveries.length;
             const completedDeliveries = deliveries.filter(
-                (d) => d.status === 'COMPLETED'
+                (d) => d.status === DeliveryStatus.DELIVERED
             ).length;
             const pendingDeliveries = deliveries.filter(
-                (d) => d.status === 'PLACED'
+                (d) => d.status === DeliveryStatus.PENDING
             ).length;
             const totalEarnings = completedDeliveries * 100;
             return {
@@ -128,10 +128,10 @@ export class DeliveryAgentService {
 
         const totalDeliveries = deliveries.length;
         const completedDeliveries = deliveries.filter(
-            (d) => d.status === 'COMPLETED',
+            (d) => d.status === DeliveryStatus.DELIVERED,
         ).length;
         const pendingDeliveries = deliveries.filter(
-            (d) => d.status === 'PLACED',
+            (d) => d.status === DeliveryStatus.PENDING,
         ).length;
         const totalEarnings = completedDeliveries * 100; // Adjust if you have dynamic rates
 

@@ -12,6 +12,7 @@ import { DeliveryStatus, Roles } from '@prisma/client';
 import { generate6DigitOtp } from 'src/common/utility/utils';
 import { MailerService } from '@nestjs-modules/mailer';
 import { subDays, startOfDay, endOfDay } from 'date-fns';
+import { OtpVerifyDto } from './dto/otp-verify.dto';
 
 @Injectable()
 export class AuthService {
@@ -23,61 +24,66 @@ export class AuthService {
     ) { }
 
 
+    //dummy otp of 123456 is given right now. after dlt registration change it to otp variable
     async sendOtpForLogin(loginDto: LoginDto) {
         const otp = generate6DigitOtp();
-        let user = await this.prisma.user.findUnique({ where: { email: loginDto.email } });
+        const { phone } = loginDto;
+        let user = await this.prisma.user.findUnique({ where: { phone: phone } });
         if (!user) {
             throw new UnauthorizedException('User not found');
         }
         user = await this.prisma.user.update({
-            where: { email: loginDto.email },
+            where: { phone: phone },
             data: {
-                otp: otp,
+                otp: '123456',
                 expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now
             }
         });
-        await this.mailerService.sendMail({
-            to: loginDto.email,
-            subject: 'Login OTP',
-            template: 'authentication', // ✅ refers to authentication.pug
-            context: {
-                otp, // ✅ available inside the template
-            },
-        });
+        // await this.mailerService.sendMail({
+        //     to: loginDto.email,
+        //     subject: 'Login OTP',
+        //     template: 'authentication', // ✅ refers to authentication.pug
+        //     context: {
+        //         otp, // ✅ available inside the template
+        //     },
+        // });
         return { message: 'OTP sent successfully' };
     }
 
-    async sendOtpForRegistration(loginDto: RegisterDto) {
+    //dummy otp of 123456 is given right now. after dlt registration change it to otp variable
+    async sendOtpForRegistration(dto: RegisterDto) {
         const otp = generate6DigitOtp();
-        let user = await this.prisma.user.findUnique({ where: { email: loginDto.email } });
+        const { email, name, phone } = dto;
+        let user = await this.prisma.user.findUnique({ where: { phone: phone } });
         if (!user) {
             await this.prisma.user.create({
                 data: {
-                    name: loginDto.name,
-                    email: loginDto.email,
-                    phone: loginDto.phone,
-                    otp: otp,
+                    name: name,
+                    email: email,
+                    phone: phone,
+                    otp: '123456',
                     role: Roles.ADMIN,
                     expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now
                     is_verified: false,
                 }
             });
         }
-        await this.mailerService.sendMail({
-            to: loginDto.email,
-            subject: 'Login OTP',
-            template: 'authentication', // ✅ refers to authentication.pug
-            context: {
-                otp, // ✅ available inside the template
-            },
-        });
+        // await this.mailerService.sendMail({
+        //     to: loginDto.email,
+        //     subject: 'Login OTP',
+        //     template: 'authentication', // ✅ refers to authentication.pug
+        //     context: {
+        //         otp, // ✅ available inside the template
+        //     },
+        // });
         return { message: 'OTP sent successfully' };
     }
 
 
-    async verifyOtp(email: string, otp: string) {
+    async verifyOtp(dto: OtpVerifyDto) {
         // 1️⃣ Find the user by email
-        const user = await this.prisma.user.findUnique({ where: { email } });
+        const { phone } = dto;
+        const user = await this.prisma.user.findUnique({ where: { phone: phone } });
 
         if (!user) {
             throw new UnauthorizedException('User not found');
@@ -89,7 +95,7 @@ export class AuthService {
         }
 
         // 3️⃣ Validate OTP and expiry
-        const isOtpValid = user.otp === otp;
+        const isOtpValid = user.otp === '123456';
         const isOtpNotExpired = user.expiresAt > new Date();
 
         if (!isOtpValid || !isOtpNotExpired) {
@@ -100,14 +106,14 @@ export class AuthService {
         let updatedUser = user;
         if (!user.is_verified) {
             updatedUser = await this.prisma.user.update({
-                where: { email },
+                where: { phone: phone },
                 data: { is_verified: true },
             });
         }
 
         // 5️⃣ Clear OTP fields (optional but recommended for security)
         await this.prisma.user.update({
-            where: { email },
+            where: { phone: phone },
             data: { otp: null, expiresAt: null },
         });
 
@@ -222,3 +228,4 @@ export class AuthService {
         };
     }
 }
+

@@ -166,3 +166,6 @@ export class PlansService {
         return this.findOne(id);
     }
 }
+
+
+//add plan image validations 
