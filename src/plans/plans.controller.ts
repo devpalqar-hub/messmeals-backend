@@ -73,8 +73,12 @@ export class PlansController {
 
     // ✅ GET all (with pagination)
     @Get()
-    findAll(@Query('page') page?: string, @Query('limit') limit?: string) {
-        return this.plansService.findAll(Number(page) || 1, Number(limit) || 10);
+    findAll(
+        @Query('page') page?: string,
+        @Query('limit') limit?: string,
+        @Query('messId') messId?: string,
+    ) {
+        return this.plansService.findAll(Number(page) || 1, Number(limit) || 10, messId);
     }
 
 

@@ -15,6 +15,9 @@ export class PlansDto {
     @IsString()
     description: string
 
+    @IsString()
+    messId: string
+
     @IsOptional()
     @IsArray()
     @IsString({ each: true })

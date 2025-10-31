@@ -62,7 +62,7 @@ export class AuthService {
                     email: email,
                     phone: phone,
                     otp: '123456',
-                    role: Roles.ADMIN,
+                    role: dto.role || Roles.ADMIN,
                     expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now
                     is_verified: false,
                 }

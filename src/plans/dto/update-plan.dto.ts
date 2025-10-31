@@ -35,6 +35,10 @@ export class UpdatePlanDto {
     description?: string;
 
     @IsOptional()
+    @IsString()
+    messId?: string;
+
+    @IsOptional()
     @IsBoolean()
     lunch?: boolean;
 

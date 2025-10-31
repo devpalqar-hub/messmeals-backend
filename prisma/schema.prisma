@@ -20,6 +20,7 @@ enum Roles {
   USER
   SUPERADMIN
   ADMIN
+  MESSADMIN
   DELIVERYAGENT
 }
 
@@ -35,6 +36,7 @@ model User {
   role                   Roles                   @default(USER)
   customerProfile        CustomerProfile?
   deliveryPartnerProfile DeliveryPartnerProfile?
+  messAdminProfile       MessAdminProfile?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -92,8 +94,10 @@ model Plans {
   price             Decimal             @default(0.00)
   minPrice          Decimal?
   description       String?             @db.Text
+  messId            String
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
+  mess              Mess                @relation(fields: [messId], references: [id], onDelete: Cascade)
   images            PlanImages[]
   usersubscriptions UserSubscriptions[]
   deliveries        Deliveries[]
@@ -137,4 +141,27 @@ model Deliveries {
   customer CustomerProfile         @relation(fields: [customerId], references: [id])
   plan     Plans                   @relation(fields: [planId], references: [id], onDelete: Cascade)
   partner  DeliveryPartnerProfile? @relation(fields: [partnerId], references: [id])
+}
+
+model Mess {
+  id          String             @id @default(uuid())
+  name        String
+  description String?            @db.Text
+  address     String?            @db.LongText
+  phone       String?
+  email       String?
+  is_active   Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  plans       Plans[]
+  messAdmins  MessAdminProfile[]
+}
+
+model MessAdminProfile {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messes    Mess[]
 }
