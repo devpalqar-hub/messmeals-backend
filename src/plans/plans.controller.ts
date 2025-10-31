@@ -43,9 +43,9 @@ export class PlansController {
 
             // ✅ Accept only image files
             fileFilter: (req, file, callback) => {
-                if (!file.mimetype.match(/^image\//)) {
-                    return callback(new BadRequestException('Only image files are allowed!'), false);
-                }
+                // if (!file.mimetype.match(/^image\//)) {
+                //     return callback(new BadRequestException('Only image files are allowed!'), false);
+                // }
                 callback(null, true);
             },
         }),
