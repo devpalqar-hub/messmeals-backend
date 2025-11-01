@@ -10,9 +10,16 @@ import {
     ParseUUIDPipe,
     DefaultValuePipe,
     ParseIntPipe,
+    BadRequestException,
+    UseGuards,
+    Req,
+    NotFoundException,
 } from '@nestjs/common';
 import { MessService } from './mess.service';
 import { CreateMessDto, UpdateMessDto } from './dto/create-mess.dto';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/decorators/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
 
 @Controller('mess')
 export class MessController {
@@ -54,4 +61,8 @@ export class MessController {
     getStats(@Param('id', ParseUUIDPipe) id: string) {
         return this.messService.getMessStats(id);
     }
+
+
+
+
 }

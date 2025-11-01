@@ -611,4 +611,65 @@ export class CustomerService {
         };
     }
 
+    async getAllMesses(userId: string) {
+        // Find the messAdminProfile for this user
+        const messAdmin = await this.prisma.messAdminProfile.findUnique({
+            where: { userId: userId },
+            include: {
+                messes: {
+                    where: { is_active: true },
+                    select: {
+                        id: true,
+                        name: true,
+                        description: true,
+                        address: true,
+                    },
+                    orderBy: { name: 'asc' },
+                },
+            },
+        });
+
+        if (!messAdmin) {
+            throw new Error('MessAdmin profile not found for this user');
+        }
+
+        return messAdmin.messes;
+    }
+
+    async addMessToMessAdmin(userId: string, messId: string) {
+        // Find the messAdminProfile for this user
+        console.log(messId, "-----", userId)
+        const messAdmin = await this.prisma.messAdminProfile.findUnique({
+            where: { userId: userId },
+        });
+        console.log(messAdmin, "--------messadmin")
+        if (!messAdmin) {
+            throw new Error('MessAdmin profile not found for this user');
+        }
+        const mess = await this.prisma.mess.findUnique({
+            where: { id: messId },
+        });
+        console.log(mess, "--------mess")
+
+        if (!mess) {
+            throw new Error('Mess not found for this user');
+        }
+
+
+        // Connect the mess to the mess admin
+        await this.prisma.messAdminProfile.update({
+            where: { id: messAdmin.id },
+            data: {
+                messes: {
+                    connect: { id: messId },
+                },
+            },
+        });
+
+        return { message: 'Mess added to MessAdmin successfully' };
+    }
+
+
+
+
 }

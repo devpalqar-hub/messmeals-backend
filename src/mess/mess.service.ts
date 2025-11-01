@@ -193,4 +193,30 @@ export class MessService {
             totalRevenue,
         };
     }
+
+    async getAllMesses(userId: string) {
+        // Find the messAdminProfile for this user
+        const messAdmin = await this.prisma.messAdminProfile.findUnique({
+            where: { userId },
+            include: {
+                messes: {
+                    where: { is_active: true },
+                    select: {
+                        id: true,
+                        name: true,
+                        description: true,
+                        address: true,
+                    },
+                    orderBy: { name: 'asc' },
+                },
+            },
+        });
+
+        if (!messAdmin) {
+            throw new Error('MessAdmin profile not found for this user');
+        }
+
+        return messAdmin.messes;
+    }
+
 }

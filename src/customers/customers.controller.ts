@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Get, Query, Patch, Param, DefaultValuePipe, ParseIntPipe, Delete, UseGuards } from '@nestjs/common';
+import { Body, Controller, Post, Get, Query, Patch, Param, DefaultValuePipe, ParseIntPipe, Delete, UseGuards, Req, NotFoundException, BadRequestException } from '@nestjs/common';
 import { CustomerService } from './customers.service';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
 import { RenewSubscriptionDto } from './dto/renew-Subscription.dto';
@@ -70,5 +70,35 @@ export class CustomerController {
     async getVariationCount(@Query('date') date: string) {
         return this.cusomerservice.getVariationCountByDate(date);
     }
+
+    @Get("owners/messes")
+    async getAllMesses(@Req() req) {
+        const userId = req.user?.id;
+        console.log('Extracted userId from JWT payload:', userId);
+        if (!userId) {
+            throw new NotFoundException('User not found in request');
+        }
+
+        return this.cusomerservice.getAllMesses(userId);
+    }
+
+    @Post('add/mess')
+    async addMessToMessAdmin(
+        @Body('userId') userId: string,
+        @Body('messId') messId: string,
+    ) {
+        // ✅ Validate inputs
+        if (!userId) {
+            throw new BadRequestException('userId is required');
+        }
+
+        if (!messId) {
+            throw new BadRequestException('messId is required');
+        }
+
+        // ✅ Call the service function
+        return this.cusomerservice.addMessToMessAdmin(userId, messId);
+    }
+
 
 } 

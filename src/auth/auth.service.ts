@@ -273,9 +273,8 @@ export class AuthService {
             todaysRevenue,
         };
     }
-    async getallmessadmin(id: string) {
+    async getallmessadmin() {
         const users = await this.prisma.user.findMany({
-            where: { id: id },
             include: {
                 messAdminProfile: true
             }
@@ -284,6 +283,7 @@ export class AuthService {
         return users
 
     }
+
 
 
 }

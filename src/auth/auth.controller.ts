@@ -44,9 +44,9 @@ export class AuthController {
         return this.authService.getDashboardStats();
     }
 
-    @Get('mess-admins/:id')
-    async getAllMessAdmins(@Param('id') id: string) {
-        return this.authService.getallmessadmin(id);
+    @Get('mess-admins/')
+    async getAllMessAdmins() {
+        return this.authService.getallmessadmin();
     }
 
 }
