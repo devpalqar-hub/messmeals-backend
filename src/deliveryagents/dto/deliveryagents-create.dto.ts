@@ -12,6 +12,9 @@ export class DeliveryAgentCreateDto {
     @IsOptional()
     address: string;
 
+    @IsString()
+    messId: string
+
     @IsEmail()
     email: string;
 
@@ -36,6 +39,10 @@ export class DeliveryAgentUpdateDto {
     @IsString()
     @IsOptional()
     deliverAgentRegion: string
+
+    @IsOptional()
+    @IsString()
+    messId: string
 
     @IsBoolean()
     @IsOptional()

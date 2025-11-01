@@ -9,4 +9,7 @@ export class RegisterDto {
 
     @IsString()
     name: string;
+
+    @IsString()
+    messId: string;
 }

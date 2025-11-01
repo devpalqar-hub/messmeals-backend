@@ -1,8 +1,12 @@
-import { Body, Controller, Post, Get, Query } from '@nestjs/common';
+import { Body, Controller, Post, Get, Query, UseGuards, Param } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { RegisterDto } from './dto/register.dto';
+import { RegisterDto } from './dto/Registration.dto';
 import { LoginDto } from './dto/login.dto';
 import { OtpVerifyDto } from './dto/otp-verify.dto';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/decorators/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
+
 
 @Controller('auth')
 export class AuthController {
@@ -33,9 +37,16 @@ export class AuthController {
         return this.authService.ListDeliveryAgents(Number(page), Number(limit), search);
     }
 
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles("MESSADMIN")
     @Get('stats')
     async getDashboardStats() {
         return this.authService.getDashboardStats();
+    }
+
+    @Get('mess-admins/:id')
+    async getAllMessAdmins(@Param('id') id: string) {
+        return this.authService.getallmessadmin(id);
     }
 
 }

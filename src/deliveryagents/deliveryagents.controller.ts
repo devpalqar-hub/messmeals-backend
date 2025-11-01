@@ -16,9 +16,13 @@ export class DeliveryAgentController {
         @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
         @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
         @Query('search') search?: string,
+        @Query('messId') messId?: string,
     ) {
-        return this.service.findAll(page, limit, search);
+        return this.service.findAll(page, limit, search, messId);
     }
+
+
+
     @Get(':id')
     getById(@Param('id') id: string) {
         return this.service.getById(id);

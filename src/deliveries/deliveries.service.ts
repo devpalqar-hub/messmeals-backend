@@ -5,6 +5,7 @@ import { UpdateDeliveryDto } from './dto/update-delivery.dto';
 import { UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
 import { AssignDeliveryPartnerDto } from './dto/assign-partner.dto';
 import { DeliveryStatus } from '@prisma/client';
+import { tr } from '@faker-js/faker';
 
 @Injectable()
 export class DeliveriesService {
@@ -18,6 +19,7 @@ export class DeliveriesService {
                 action: dto.action,
                 customerId: dto.customerId,
                 planId: dto.planId,
+                messId: dto.messId,
                 partnerId: dto.partnerId,
             },
             include: {
@@ -69,7 +71,11 @@ export class DeliveriesService {
                         include: {
                             user: true,
                             userSubscriptions: true,
+
                         },
+                    },
+                    mess: {
+                        select: { id: true, name: true }
                     },
                     plan: true,
                     partner: {
@@ -108,6 +114,7 @@ export class DeliveriesService {
                 customer: true,
                 plan: true,
                 partner: true,
+                mess: true,
             },
         });
         if (!delivery) throw new NotFoundException('Delivery not found');
@@ -209,6 +216,7 @@ export class DeliveriesService {
             status: DeliveryStatus;
             customerId: string;
             planId: string;
+            messId: string;
             partnerId?: string | null;
         }[] = [];
 
@@ -229,6 +237,7 @@ export class DeliveriesService {
                     customerId: sub.customerProfileId!,
                     planId: sub.planId!,
                     partnerId: sub.deliveryPartnerProfileId || null,
+                    messId: sub.messId,
                 });
             }
         }

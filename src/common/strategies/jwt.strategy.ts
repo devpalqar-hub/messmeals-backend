@@ -18,18 +18,21 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
+    // 1️⃣ Fetch full user from DB
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
     });
 
-    // if (!user || user.stat === 'disabled') {
-    //   throw new UnauthorizedException('User is not active');
-    // }
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
 
+    // 2️⃣ Return data that becomes `req.user`
     return {
-      id: payload.sub,
-      email: payload.email,
-      role: payload.role,
+      id: user.id,
+      email: user.email,
+      role: user.role, // ✅ Make sure this exists in your DB model
     };
   }
+
 }

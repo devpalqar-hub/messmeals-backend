@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { RegisterDto } from './dto/register.dto';
+import { RegisterDto } from './dto/Registration.dto';
 import { LoginDto } from './dto/login.dto';
 import { UserService } from 'src/user/user.service';
 import { DeliveryStatus, Roles } from '@prisma/client';
@@ -55,17 +55,32 @@ export class AuthService {
         const otp = generate6DigitOtp();
         const { email, name, phone } = dto;
         let user = await this.prisma.user.findUnique({ where: { phone: phone } });
+        const mess = await this.prisma.mess.findUnique({ where: { id: dto.messId } })
+        if (!mess) {
+            throw new Error("Mess Not found")
+        }
         if (!user) {
-            await this.prisma.user.create({
+            // 3️⃣ Create new user with MessAdminProfile
+            user = await this.prisma.user.create({
                 data: {
-                    name: name,
-                    email: email,
-                    phone: phone,
+                    name,
+                    email,
+                    phone,
                     otp: '123456',
-                    role: dto.role || Roles.ADMIN,
-                    expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now
+                    role: Roles.MESSADMIN,
+                    expiresAt: new Date(Date.now() + 10 * 60 * 1000),
                     is_verified: false,
-                }
+                    messAdminProfile: {
+                        create: {
+                            messes: {
+                                connect: [{ id: mess.id }], // ✅ link to existing mess
+                            },
+                        },
+                    },
+                },
+                include: {
+                    messAdminProfile: { include: { messes: true } },
+                },
             });
         }
         // await this.mailerService.sendMail({
@@ -76,18 +91,27 @@ export class AuthService {
         //         otp, // ✅ available inside the template
         //     },
         // });
+        console.log(1)
         return { message: 'OTP sent successfully' };
     }
 
 
     async verifyOtp(dto: OtpVerifyDto) {
-        // 1️⃣ Find the user by email
         const { phone } = dto;
-        const user = await this.prisma.user.findUnique({ where: { phone: phone } });
 
-        if (!user) {
-            throw new UnauthorizedException('User not found');
-        }
+        // 1️⃣ Find user with role and messAdminProfile (if exists)
+        const user = await this.prisma.user.findUnique({
+            where: { phone },
+            include: {
+                messAdminProfile: {
+                    include: {
+                        messes: { select: { id: true, name: true } },
+                    },
+                },
+            },
+        });
+
+        if (!user) throw new UnauthorizedException('User not found');
 
         // 2️⃣ Check if OTP and expiry exist
         if (!user.otp || !user.expiresAt) {
@@ -106,30 +130,52 @@ export class AuthService {
         let updatedUser = user;
         if (!user.is_verified) {
             updatedUser = await this.prisma.user.update({
-                where: { phone: phone },
+                where: { phone },
                 data: { is_verified: true },
+                include: {
+                    messAdminProfile: {
+                        include: {
+                            messes: { select: { id: true, name: true } },
+                        },
+                    },
+                },
             });
         }
 
-        // 5️⃣ Clear OTP fields (optional but recommended for security)
+        // 5️⃣ Clear OTP fields (optional for security)
         await this.prisma.user.update({
-            where: { phone: phone },
+            where: { phone },
             data: { otp: null, expiresAt: null },
         });
 
-        // 6️⃣ Return response with JWT token
+        // 6️⃣ Extract mess info (only if user is a MESSADMIN)
+        const messes = user.messAdminProfile?.messes || [];
+
+        // 7️⃣ Generate JWT token
+        const accessToken = this.jwtService.sign({
+            sub: updatedUser.id,
+            email: updatedUser.email,
+            role: updatedUser.role,
+        });
+
+        // 8️⃣ Return response
         return {
-            user: updatedUser,
-            accessToken: this.jwtService.sign({
-                sub: updatedUser.id,
+            user: {
+                id: updatedUser.id,
+                name: updatedUser.name,
                 email: updatedUser.email,
-            }),
+                phone: updatedUser.phone,
+                role: updatedUser.role,
+                messes: messes, // ✅ includes [{ id, name }]
+            },
+            accessToken,
             message: user.is_verified
                 ? 'User already verified'
                 : 'User verified successfully',
             status: 200,
         };
     }
+
 
 
     async ListDeliveryAgents(page: number = 1, limit: number = 10, search?: string) {
@@ -227,5 +273,17 @@ export class AuthService {
             todaysRevenue,
         };
     }
-}
+    async getallmessadmin(id: string) {
+        const users = await this.prisma.user.findMany({
+            where: { id: id },
+            include: {
+                messAdminProfile: true
+            }
+        })
 
+        return users
+
+    }
+
+
+}

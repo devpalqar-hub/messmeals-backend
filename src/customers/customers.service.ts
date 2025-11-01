@@ -10,6 +10,7 @@ import { CreateCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto'
 import { RenewSubscriptionDto } from './dto/renew-Subscription.dto';
 import { de } from '@faker-js/faker';
 import { CancelSubDto } from './dto/cancel-sub.dto';
+import { is } from 'date-fns/locale';
 
 @Injectable()
 export class CustomerService {
@@ -21,77 +22,126 @@ export class CustomerService {
 
 
     async CreateUser(dto: CreateCustomerDto) {
+        const {
+            name,
+            phone,
+            email,
+            address,
+            currentLocation,
+            latitude_logitude,
+            is_active,
+            walletAmount,
+            discount,
+            planId,
+            deliveryPartnerId,
+            start_date,
+            end_date,
+        } = dto;
 
-        const { name, phone, email, address, currentLocation, latitude_logitude, is_active, walletAmount, discount, planId, deliveryPartnerId, start_date, end_date } = dto
-        // 1️⃣ Check if user already exists
-        const existing = await this.prisma.user.findUnique({
-            where: { email: dto.email },
+        // 1️⃣ Validate delivery partner
+        const deliveryPartner = await this.prisma.deliveryPartnerProfile.findUnique({
+            where: { id: deliveryPartnerId },
         });
-        if (existing) throw new BadRequestException('Email already registered');
+        if (!deliveryPartner) throw new BadRequestException('Delivery Partner not found');
 
-        const Partnerexisting = await this.prisma.user.findUnique({
-            where: { id: dto.deliveryPartnerId },
-        });
-        if (Partnerexisting) throw new BadRequestException('Delivery Partner not found');
-
+        // 2️⃣ Validate plan
         const plan = await this.prisma.plans.findUnique({
-            where: { id: dto.planId },
+            where: { id: planId },
         });
         if (!plan) throw new BadRequestException('Plan not found');
-        // 2️⃣ Create user
-        const user = await this.userService.createUser({
-            name: dto.name,
-            email: dto.email,
-            phone: dto.phone,
-            is_active: dto.is_active
+
+        if (plan.messId !== deliveryPartner.messId) {
+            throw new BadRequestException('Plan does not belong to the specified Mess');
+        }
+        // 3️⃣ Check if user already exists by email
+        let user = await this.prisma.user.findUnique({
+            where: { email },
         });
-        const walletamount = Number(dto.walletAmount)
-        const customerProfile = await this.prisma.customerProfile.create({
-            data: {
-                userId: user.id,
-                address: dto.address,
-                walletAmount: walletamount,
-                current_location: dto.currentLocation,
-                latitude_logitude: dto.latitude_logitude
 
+        let customerProfile;
+
+        if (!user) {
+            // 🆕 Create new user
+            user = await this.userService.createUser({
+                name,
+                email,
+                phone,
+                is_active,
+            });
+
+            // 🆕 Create new customer profile
+            customerProfile = await this.prisma.customerProfile.create({
+                data: {
+                    userId: user.id,
+                    address,
+                    walletAmount: Number(walletAmount),
+                    current_location: currentLocation,
+                    latitude_logitude,
+                },
+            });
+        } else {
+            // ✅ Fetch existing customer profile (or create one if missing)
+            customerProfile = await this.prisma.customerProfile.findUnique({
+                where: { userId: user.id },
+            });
+
+            if (!customerProfile) {
+                customerProfile = await this.prisma.customerProfile.create({
+                    data: {
+                        userId: user.id,
+                        address,
+                        walletAmount: Number(walletAmount),
+                        current_location: currentLocation,
+                        latitude_logitude,
+                    },
+                });
             }
-        })
-        const startDate = new Date(dto.start_date);
-        const endDate = new Date(dto.end_date);
-        const diffInMills = endDate.getTime() - startDate.getTime()
-        const diffInDays = Math.ceil(diffInMills / (1000 * 60 * 60 * 24));
+        }
 
-        console.log("Days difference:", diffInDays);
-        const dscnt = Number(discount)
-        const actualPrice = diffInDays * Number(plan.price)
-        const discountedprice = Number(actualPrice) - dscnt
+        // 4️⃣ Calculate subscription duration and price
+        const startDate = new Date(start_date);
+        const endDate = new Date(end_date);
+        const diffInMs = endDate.getTime() - startDate.getTime();
+        const diffInDays = Math.ceil(diffInMs / (1000 * 60 * 60 * 24));
 
-        //payment logic here.
+        const numericDiscount = Number(discount);
+        const totalPrice = diffInDays * Number(plan.price);
+        const discountedPrice = totalPrice - numericDiscount;
+
+        // 5️⃣ Create new user subscription
         const userSubscription = await this.prisma.userSubscriptions.create({
             data: {
                 customerProfileId: customerProfile.id,
                 start_date: startDate,
                 end_date: endDate,
-                discount: dto.discount,
-                totalPrice: actualPrice,
-                discountedPrice: discountedprice,
-                deliveryPartnerProfileId: dto.deliveryPartnerId,
-                planId: dto.planId
-            }
-        })
+                discount: numericDiscount,
+                totalPrice,
+                discountedPrice,
+                messId: plan.messId,
+                deliveryPartnerProfileId: deliveryPartnerId,
+                planId,
+            },
+        });
 
+        // 6️⃣ Update wallet after subscription
         await this.prisma.customerProfile.update({
             where: { id: customerProfile.id },
             data: {
-                walletAmount: Number(walletAmount) - discountedprice
-            }
-        })
-        //Return both user and profile
+                walletAmount: Number(customerProfile.walletAmount) - discountedPrice,
+            },
+        });
+
+        // ✅ Return combined response
         return {
-            message: 'User and profile created successfully',
-            data: { user, customerProfile, userSubscription }
+            message: user.createdAt ? 'New user and subscription created successfully' : 'Subscription created successfully for existing user',
+            data: {
+                user,
+                customerProfile,
+                userSubscription,
+            },
         };
     }
+
 
 
     async updateCustomerProfile(userId: string, dto: UpdateCustomerDto) {
@@ -157,15 +207,6 @@ export class CustomerService {
                         where: { id: existingSubscription.id },
                         data: {
                             ...(planId ? { planId } : {}),
-                            ...(deliveryPartnerId ? { deliveryPartnerProfileId: deliveryPartnerId } : {}),
-                        },
-                    });
-                } else {
-                    await tx.userSubscriptions.create({
-                        data: {
-                            start_date: new Date(),
-                            customerProfileId: user.customerProfile.id,
-                            planId,
                             ...(deliveryPartnerId ? { deliveryPartnerProfileId: deliveryPartnerId } : {}),
                         },
                     });
@@ -239,7 +280,7 @@ export class CustomerService {
                         where: { is_active: true },
                         include: {
                             plan: {
-                                include: { images: true, Variation: true },
+                                include: { images: true, Variation: true, mess: true },
                             },
                         },
                     },
@@ -277,6 +318,7 @@ export class CustomerService {
                 name: c.user.name,
                 email: c.user.email,
                 phone: c.user.phone,
+                is_active: c.user.is_active,
                 walletBalance: Number(c.walletAmount),
                 address: c.address,
                 current_location: c.current_location,
@@ -288,6 +330,7 @@ export class CustomerService {
                     id: sub.id,
                     start_date: sub.start_date,
                     end_date: sub.end_date,
+                    is_active: sub.is_active,
                     totalPrice: Number(sub.totalPrice),
                     discountedPrice: Number(sub.discountedPrice),
                     deliveryPartnerProfileId: sub.deliveryPartnerProfileId,
@@ -298,6 +341,7 @@ export class CustomerService {
                             price: Number(sub.plan.price),
                             description: sub.plan.description,
                             variation: sub.plan.Variation,
+                            mess: sub.plan.mess,
                             images: sub.plan.images.map((img) => ({
                                 url: img.url,
                                 altText: img.altText,
@@ -440,6 +484,7 @@ export class CustomerService {
                 deliveryPartnerProfileId: deliveryPartnerId,
                 planId: planId,
                 discount: discount,
+                messId: plan.messId,
                 discountedPrice: discountedPrice,
                 customerProfileId: customerProfileId
             }
@@ -460,6 +505,7 @@ export class CustomerService {
 
     async UpdateWalletAmount(userId: string, amount: number) {
         // Logic to update wallet amount
+        console.log('Updating wallet for user:', userId, 'by amount:', amount);
         await this.prisma.customerProfile.update({
             where: { id: userId },
             data: { walletAmount: { increment: amount } },

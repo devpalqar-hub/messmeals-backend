@@ -11,13 +11,13 @@ export class PlansService {
 
     async createPlan(dto: PlansDto, files: any) {
         const { planName, price, minPrice, description, variationIds, messId } = dto
-        
+
         // Validate mess exists
         const mess = await this.prisma.mess.findUnique({ where: { id: messId } });
         if (!mess) {
             throw new BadRequestException('Mess not found');
         }
-        
+
         return this.prisma.$transaction(async (tx) => {
             // 1️⃣ Handle Plan Images (optional)
             const planImagesData =

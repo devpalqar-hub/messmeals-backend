@@ -16,6 +16,7 @@ import { ContactFormModule } from './contact-form/contact-form.module';
 import { MessModule } from './mess/mess.module';
 import { MessAdminModule } from './mess-admin/mess-admin.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
+import { PassportModule } from '@nestjs/passport';
 
 
 @Module({
@@ -26,6 +27,7 @@ import { ServeStaticModule } from '@nestjs/serve-static';
       rootPath: join(__dirname, '..', 'uploads'), // Path to your uploads folder
       serveRoot: '/uploads', // URL prefix — access files via /uploads/<filename>
     }),
+
     MailerModule.forRoot({
       transport: {
         host: 'smtp.gmail.com',       // your SMTP host
