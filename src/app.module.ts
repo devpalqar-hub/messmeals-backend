@@ -17,6 +17,7 @@ import { MessModule } from './mess/mess.module';
 import { MessAdminModule } from './mess-admin/mess-admin.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { PassportModule } from '@nestjs/passport';
+import { ConfigModule } from '@nestjs/config';
 
 
 @Module({
@@ -26,6 +27,9 @@ import { PassportModule } from '@nestjs/passport';
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'uploads'), // Path to your uploads folder
       serveRoot: '/uploads', // URL prefix — access files via /uploads/<filename>
+    }),
+    ConfigModule.forRoot({
+      isGlobal: true,  // ✅ ensures available everywhere
     }),
 
     MailerModule.forRoot({
