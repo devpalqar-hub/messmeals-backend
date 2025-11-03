@@ -32,11 +32,10 @@ export class DeliveriesController {
         @Query('limit') limit?: number | string,
         @Query('status') status?: DeliveryStatus,
         @Query('date') date?: string, // 🆕 Added date filter
+        @Query('messId') messId?: string,
     ) {
-        return this.deliveriesService.findAll({ page, limit, status, date });
+        return this.deliveriesService.findAll({ page, limit, status, date, messId });
     }
-
-
 
     // ✅ GET by ID
     @Get(':id')
@@ -79,15 +78,19 @@ export class DeliveriesController {
     }
 
     @Get('recent-deliveries-partner/:id')
-    async getRecentDeliveries(@Param('id', new ParseUUIDPipe()) customerId: string) {
-        return this.deliveriesService.PartnerRecentDeliveries(customerId);
+    async getRecentDeliveries(@Param('id', new ParseUUIDPipe()) customerId: string,
+        @Query('messId') messId?: string,
+        @Query('limit') limit?: number,) {
+        return this.deliveriesService.PartnerRecentDeliveries(customerId, limit, messId);
 
     }
     @Get('recent-deliveries-customer/:id')
     async CustomerRecentDeliveries(
-        @Param('id', new ParseUUIDPipe()) customerId: string
+        @Param('id', new ParseUUIDPipe()) customerId: string,
+        @Query('messId') messId?: string,
+        @Query('limit') limit?: number,
     ) {
-        return this.deliveriesService.CustomerRecentDeliveries(customerId);
+        return this.deliveriesService.CustomerRecentDeliveries(customerId, limit, messId);
     }
 
 }

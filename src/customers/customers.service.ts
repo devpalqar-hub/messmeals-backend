@@ -233,42 +233,53 @@ export class CustomerService {
 
 
 
-    async findAll(page: number = 1, limit: number = 10, search?: string) {
+    async findAll(
+        page: number = 1,
+        limit: number = 10,
+        search?: string,
+        messId?: string, // ✅ new parameter
+    ) {
         const skip = (page - 1) * limit;
 
-        // Build dynamic filter for search
-        const where: any = search
-            ? {
-                OR: [{
-                    user: {
-                        name: {
-                            contains: search.toLowerCase()
+        // ✅ Build dynamic filter for search and mess
+        const where: any = {
+            ...(search
+                ? {
+                    OR: [
+                        {
+                            user: {
+                                name: { contains: search.toLowerCase() },
+                            },
                         },
-                    },
-                },
-                {
-                    user: {
-                        email: {
-                            contains: search.toLowerCase()
+                        {
+                            user: {
+                                email: { contains: search.toLowerCase() },
+                            },
                         },
-                    },
-                },
-                {
-                    userSubscriptions: {
-                        some: {
-                            plan: {
-                                planName: {
-                                    contains: search.toLowerCase()
+                        {
+                            userSubscriptions: {
+                                some: {
+                                    plan: {
+                                        planName: { contains: search.toLowerCase() },
+                                    },
                                 },
                             },
                         },
+                    ],
+                }
+                : {}),
+            ...(messId
+                ? {
+                    userSubscriptions: {
+                        some: {
+                            messId, // ✅ filter by mess
+                        },
                     },
                 }
-                ]
-            }
-            : {};
+                : {}),
+        };
 
-        // Fetch data + count in a transaction
+        // ✅ Fetch data + count in a transaction
         const [customers, total] = await this.prisma.$transaction([
             this.prisma.customerProfile.findMany({
                 skip,
@@ -277,10 +288,17 @@ export class CustomerService {
                 include: {
                     user: true,
                     userSubscriptions: {
-                        where: { is_active: true },
+                        where: {
+                            is_active: true,
+                            ...(messId ? { messId } : {}), // ✅ filter inside subscriptions too
+                        },
                         include: {
                             plan: {
-                                include: { images: true, Variation: true, mess: true },
+                                include: {
+                                    images: true,
+                                    Variation: true,
+                                    mess: true,
+                                },
                             },
                         },
                     },
@@ -291,30 +309,28 @@ export class CustomerService {
             this.prisma.customerProfile.count({ where }),
         ]);
 
-        // Transform response
+        // ✅ Transform response
         const result = customers.map((c) => {
             const activeSubs = c.userSubscriptions.filter(
-                (sub) => !sub.end_date || sub.end_date > new Date()
+                (sub) => (!sub.end_date || sub.end_date > new Date()) && (!messId || sub.messId === messId)
             );
 
-            const totalOrders = activeSubs.length; // active plan count
-            const totalSpent = c.userSubscriptions.reduce(
-                (sum, sub) => sum + Number(sub.totalPrice),
-                0
-            );
+            const totalOrders = activeSubs.length;
+            const totalSpent = c.userSubscriptions
+                .filter((sub) => !messId || sub.messId === messId)
+                .reduce((sum, sub) => sum + Number(sub.totalPrice), 0);
 
             const daysLeft =
                 activeSubs.length > 0 && activeSubs[0].end_date
                     ? Math.ceil(
-                        (new Date(activeSubs[0].end_date).getTime() -
-                            new Date().getTime()) /
+                        (new Date(activeSubs[0].end_date).getTime() - new Date().getTime()) /
                         (1000 * 60 * 60 * 24)
                     )
                     : null;
 
             return {
                 id: c.user.id,
-                customerProfileId: c.id, // ✅ Add this line
+                customerProfileId: c.id,
                 name: c.user.name,
                 email: c.user.email,
                 phone: c.user.phone,
@@ -362,6 +378,7 @@ export class CustomerService {
             },
         };
     }
+
 
 
     async findOne(id: string) {

@@ -31,8 +31,9 @@ export class CustomerController {
         @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
         @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
         @Query('search') search?: string,
+        @Query('messId') messId?: string,
     ) {
-        return this.cusomerservice.findAll(page, limit, search);
+        return this.cusomerservice.findAll(page, limit, search, messId);
     }
 
     // 🔍 GET /customers/:id

@@ -29,7 +29,7 @@ export class PlansController {
     @UseInterceptors(
         FilesInterceptor('planImages', 10, {
             storage: diskStorage({
-                destination: './uploads', // folder to store images
+                destination: './uploads/', // folder to store images
                 filename: (req, file, callback) => {
                     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
                     callback(null, `${file.fieldname}-${uniqueSuffix}${extname(file.originalname)}`);

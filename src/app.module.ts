@@ -25,9 +25,13 @@ import { ConfigModule } from '@nestjs/config';
     PlansModule, PrismaModule, UserModule, VariationModule, ContactFormModule,
     MessModule, MessAdminModule,
     ServeStaticModule.forRoot({
-      rootPath: join(__dirname, '..', 'uploads'), // Path to your uploads folder
-      serveRoot: '/uploads', // URL prefix — access files via /uploads/<filename>
+      rootPath: join(process.cwd(), 'uploads'),
+      serveRoot: "/",
+      serveStaticOptions: {
+        index: false,
+      }
     }),
+
     ConfigModule.forRoot({
       isGlobal: true,  // ✅ ensures available everywhere
     }),
@@ -57,3 +61,6 @@ import { ConfigModule } from '@nestjs/config';
   providers: [AppService],
 })
 export class AppModule { }
+
+
+

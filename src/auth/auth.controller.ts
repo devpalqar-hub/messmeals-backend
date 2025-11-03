@@ -40,8 +40,8 @@ export class AuthController {
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles("MESSADMIN")
     @Get('stats')
-    async getDashboardStats() {
-        return this.authService.getDashboardStats();
+    async getDashboardStats(@Query('messId') messId?: string) {
+        return this.authService.getDashboardStats(messId);
     }
 
     @Get('mess-admins/')

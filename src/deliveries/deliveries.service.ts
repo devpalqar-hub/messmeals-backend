@@ -35,7 +35,8 @@ export class DeliveriesService {
         page?: number | string;
         limit?: number | string;
         status?: DeliveryStatus;
-        date?: string; // 🆕 for exact date
+        date?: string;
+        messId?: string; // ✅ added mess filter
     }) {
         // 1️⃣ Convert and set defaults
         const page = Number(query.page) || 1;
@@ -43,12 +44,19 @@ export class DeliveriesService {
         const skip = (page - 1) * limit;
         const take = limit;
 
-        const { status, date, } = query;
+        const { status, date, messId } = query;
 
         // 2️⃣ Build filters dynamically
         const where: any = {};
 
-        if (status) where.status = status;
+        // ✅ Add messId filter (core part)
+        if (messId) {
+            where.messId = messId;
+        }
+
+        if (status) {
+            where.status = status;
+        }
 
         // 🆕 Filter by a specific date
         if (date) {
@@ -71,11 +79,10 @@ export class DeliveriesService {
                         include: {
                             user: true,
                             userSubscriptions: true,
-
                         },
                     },
                     mess: {
-                        select: { id: true, name: true }
+                        select: { id: true, name: true },
                     },
                     plan: true,
                     partner: {
@@ -99,10 +106,12 @@ export class DeliveriesService {
             filters: {
                 status: status || 'ALL',
                 date: date || null,
+                messId: messId || null, // ✅ include in response
             },
             data: deliveries,
         };
     }
+
 
 
 
@@ -256,24 +265,39 @@ export class DeliveriesService {
     }
 
 
-    async PartnerRecentDeliveries(agentId: string, limit = 5) {
+    async PartnerRecentDeliveries(agentId: string, limit = 5, messId?: string) {
         try {
             if (!agentId) {
                 throw new BadRequestException('Agent ID is required');
             }
+
             const agent = await this.prisma.deliveryPartnerProfile.findUnique({
-                where: { id: agentId }
-            })
-            // 1️⃣ Validate input
+                where: { id: agentId },
+            });
+
             if (!agent) {
                 throw new BadRequestException('Agent not found');
             }
-            // 2️⃣ Fetch recent completed deliveries with related details
+
+            if (agent.messId !== messId) {
+                throw new BadRequestException('Agent does not belong to the specified mess');
+            }
+
+
+            // 1️⃣ Build dynamic filter
+            const whereClause: any = {
+                partnerId: agentId,
+                status: DeliveryStatus.DELIVERED,
+            };
+
+            // If messId provided, filter deliveries by that mess
+            if (messId) {
+                whereClause.plan = { messId }; // since plan is related to mess
+            }
+
+            // 2️⃣ Fetch recent completed deliveries
             const deliveries = await this.prisma.deliveries.findMany({
-                where: {
-                    partnerId: agentId,
-                    status: DeliveryStatus.DELIVERED,
-                },
+                where: whereClause,
                 orderBy: { createdAt: 'desc' },
                 take: limit,
                 select: {
@@ -281,9 +305,10 @@ export class DeliveriesService {
                     date: true,
                     status: true,
                     createdAt: true,
-                    plan: true
-                }
+                    plan: true,
+                },
             });
+
             return {
                 message: 'Recent deliveries fetched successfully',
                 count: deliveries.length,
@@ -291,24 +316,38 @@ export class DeliveriesService {
             };
         } catch (error) {
             console.error('Error fetching recent deliveries:', error);
-            throw new InternalServerErrorException(
-                'Failed to fetch recent deliveries'
-            );
+            throw new InternalServerErrorException('Failed to fetch recent deliveries');
         }
     }
 
-    async CustomerRecentDeliveries(customerId: string, limit = 5) {
+
+    async CustomerRecentDeliveries(customerId: string, limit = 5, messId?: string) {
         try {
-            // 1️⃣ Validate input
             if (!customerId) {
                 throw new BadRequestException('Customer ID is required');
             }
-            // 2️⃣ Fetch recent completed deliveries with related details
+            const customer = await this.prisma.customerProfile.findUnique({
+                where: { id: customerId },
+            });
+
+            if (!customer) {
+                throw new BadRequestException('customer not found');
+            }
+
+
+            // 1️⃣ Build dynamic filter
+            const whereClause: any = {
+                customerId,
+                status: DeliveryStatus.DELIVERED,
+            };
+
+            if (messId) {
+                whereClause.plan = { messId }; // filter deliveries whose plan belongs to that mess
+            }
+
+            // 2️⃣ Fetch recent completed deliveries
             const deliveries = await this.prisma.deliveries.findMany({
-                where: {
-                    customerId: customerId,
-                    status: DeliveryStatus.DELIVERED,
-                },
+                where: whereClause,
                 orderBy: { createdAt: 'desc' },
                 take: limit,
                 select: {
@@ -316,9 +355,10 @@ export class DeliveriesService {
                     date: true,
                     status: true,
                     createdAt: true,
-                    plan: true
-                }
+                    plan: true,
+                },
             });
+
             return {
                 message: 'Recent deliveries fetched successfully',
                 count: deliveries.length,
@@ -326,11 +366,10 @@ export class DeliveriesService {
             };
         } catch (error) {
             console.error('Error fetching recent deliveries:', error);
-            throw new InternalServerErrorException(
-                'Failed to fetch recent deliveries'
-            );
+            throw new InternalServerErrorException('Failed to fetch recent deliveries');
         }
     }
+
 
 
     async estimation() { }

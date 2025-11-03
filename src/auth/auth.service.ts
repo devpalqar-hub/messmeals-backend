@@ -209,23 +209,41 @@ export class AuthService {
     }
 
 
-    async getDashboardStats() {
-        // 1️⃣ Total Customers (role = USER)
+    async getDashboardStats(messId?: string) {
+        // Add filter object (empty if messId is not passed)
+        const messFilter = messId ? { messId } : {};
+
+        // 1️⃣ Total Customers (role = USER, mess-specific)
         const totalCustomers = await this.prisma.user.count({
-            where: { role: Roles.USER },
+            where: {
+                role: 'USER',
+                customerProfile: {
+                    userSubscriptions: {
+                        some: messFilter,
+                    },
+                },
+            },
         });
 
-        // 2️⃣ Total Partners (role = DELIVERYAGENT)
+        // 2️⃣ Total Partners (role = DELIVERYAGENT, mess-specific)
         const totalPartners = await this.prisma.user.count({
-            where: { role: Roles.DELIVERYAGENT },
+            where: {
+                role: 'DELIVERYAGENT',
+                deliveryPartnerProfile: messId ? { messId } : {},
+            },
         });
 
         const activePartners = await this.prisma.user.count({
-            where: { role: Roles.DELIVERYAGENT, is_active: true },
+            where: {
+                role: 'DELIVERYAGENT',
+                is_active: true,
+                deliveryPartnerProfile: messId ? { messId } : {},
+            },
         });
 
-        // 3️⃣ Subscriptions data
+        // 3️⃣ Subscriptions data (mess-specific)
         const subscriptions = await this.prisma.userSubscriptions.findMany({
+            where: messFilter,
             select: {
                 totalPrice: true,
                 discountedPrice: true,
@@ -260,7 +278,7 @@ export class AuthService {
         const avgPerCustomer =
             totalCustomers > 0 ? totalRevenue / totalCustomers : 0;
 
-        // 5️⃣ Construct the final dashboard response
+        // 5️⃣ Final response
         return {
             totalRevenue,
             completedOrders,
