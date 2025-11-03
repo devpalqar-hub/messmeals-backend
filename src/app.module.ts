@@ -26,7 +26,7 @@ import { ConfigModule } from '@nestjs/config';
     MessModule, MessAdminModule,
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'uploads'),
-      serveRoot: "/",
+      serveRoot: "/uploads",
       serveStaticOptions: {
         index: false,
       }

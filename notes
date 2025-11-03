@@ -1,3 +1,16 @@
 subsciptoin create akumga mess id ondakanam athil
 deliveries create akumbo messId pass cheyannam
 deliveries generate cheyyan query ayt messId pass cheyynam
+
+
+1. lets add two field is paused and pause ending date and pause start date. 
+the subscription plan will be saved as is_paused is true and pause ending date with the end date of pause 
+and start date with start date of pause. plan should be paused before 
+
+2. add cancelled boolean field, cancellation start date and end date, 
+3. generate usersubscriptions model by counting dates between start date and end date.
+
+
+conflicts
+1. as if deliveries are already generated before. pausing a plan will cause confusion. 
+2. no conflict for cancellation
