@@ -1,13 +1,13 @@
 import { IsOptional, IsString } from "class-validator";
 
-export class CancelSubDto {
+export class PauseSubDto {
 
     @IsString()
     @IsOptional()
-    cancellation_start_date: string
+    pause_start_date: string
 
     @IsString()
     @IsOptional()
-    cancellation_end_date: string
+    pause_end_date: string
 }
 

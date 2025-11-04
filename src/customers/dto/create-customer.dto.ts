@@ -1,4 +1,5 @@
-import { IsEmail, IsNumber, IsOptional, IsPhoneNumber, IsString, IsBoolean } from 'class-validator';
+import { IsEmail, IsNumber, IsOptional, IsPhoneNumber, IsString, IsBoolean, IsEnum, IsJSON, IsArray } from 'class-validator';
+import { ScheduleType, DayOfWeek } from '@prisma/client';
 
 export class CreateCustomerDto {
     //user model
@@ -43,6 +44,17 @@ export class CreateCustomerDto {
     @IsString()
     @IsOptional()
     end_date: string
+
+    //phase 2 changes:
+
+    @IsEnum(ScheduleType)
+    scheduleType: ScheduleType;
+
+    @IsOptional()
+    @IsArray()
+    @IsEnum(DayOfWeek, { each: true }) // optional if you have enum
+    selectedDays: string[];
+
 
 }
 

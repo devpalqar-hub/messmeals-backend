@@ -6,6 +6,7 @@ import { CancelSubDto } from './dto/cancel-sub.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
+import { PauseSubDto } from './dto/pause-sub.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles("MESSADMIN")
@@ -63,8 +64,8 @@ export class CustomerController {
     }
 
     @Patch('cancel-subscription/:subscriptionId')
-    async cancelSubscription(@Param('subscriptionId') id: string) {
-        return this.cusomerservice.CancelSubscription(id);
+    async cancelSubscription(@Param('subscriptionId') id: string, @Body() dto: CancelSubDto) {
+        return this.cusomerservice.CancelSubscription(id, dto);
     }
 
     @Get('variation/count')
@@ -100,6 +101,12 @@ export class CustomerController {
         // ✅ Call the service function
         return this.cusomerservice.addMessToMessAdmin(userId, messId);
     }
+
+    @Patch('pause-subscription/:subscriptionId')
+    async pauseSubscription(@Param('subscriptionId') id: string, @Body() dto: PauseSubDto) {
+        return this.cusomerservice.PauseSubscription(id, dto);
+    }
+
 
 
 } 

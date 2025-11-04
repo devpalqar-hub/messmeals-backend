@@ -77,14 +77,13 @@ export class DeliveriesService {
                 include: {
                     customer: {
                         include: {
-                            user: true,
-                            userSubscriptions: true,
+                            user: { select: { id: true, name: true } },
                         },
                     },
                     mess: {
                         select: { id: true, name: true },
                     },
-                    plan: true,
+                    plan: { select: { id: true, planName: true, price: true } },
                     partner: {
                         include: { user: true },
                     },
