@@ -11,6 +11,7 @@ import { RenewSubscriptionDto } from './dto/renew-Subscription.dto';
 import { ScheduleType, Prisma, DeliveryStatus } from '@prisma/client';
 import { CancelSubDto } from './dto/cancel-sub.dto';
 import { PauseSubDto } from './dto/pause-sub.dto';
+import { Subscription } from 'rxjs';
 
 @Injectable()
 export class CustomerService {
@@ -590,76 +591,92 @@ export class CustomerService {
     async CancelSubscription(subscriptionId: string, dto: CancelSubDto) {
         const { cancellation_start_date, cancellation_end_date } = dto || {};
 
-        const cancelStartDate = new Date(cancellation_start_date);
-        const cancelEndDate = new Date(cancellation_end_date);
+        const cancelStartDate = cancellation_start_date ? new Date(cancellation_start_date) : null;
+        const cancelEndDate = cancellation_end_date ? new Date(cancellation_end_date) : null;
         const currentDate = new Date();
 
-        // 2️⃣ Ensure cancellation start is at least 2 days from now
-        const diffFromNowDays = Math.ceil(
-            (cancelStartDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
-        );
-
-        if (diffFromNowDays < 2) {
-            throw new BadRequestException('Cancellation can only be scheduled at least 2 days in advance.');
-        }
-
-        // 1️⃣ Find the subscription
+        // 1️⃣ Find subscription with plan and customer profile
         const subscription = await this.prisma.userSubscriptions.findUnique({
             where: { id: subscriptionId },
             include: {
                 CustomerProfile: true,
+                plan: true,
             },
         });
-        // 2️⃣ Handle not found
-        if (!subscription) {
-            throw new NotFoundException('Subscription not found');
-        }
-        // 3️⃣ Check if already inactive
-        if (!subscription.is_active) {
-            throw new BadRequestException('Subscription is already cancelled');
-        }
-        // 4️⃣ Validate wallet
-        if (!subscription.CustomerProfile) {
-            throw new BadRequestException('Customer profile not found for this subscription');
-        }
-        if (Number(subscription.CustomerProfile.walletAmount) < 0) {
-            throw new BadRequestException('Cannot cancel subscription: wallet amount is less than 0');
-        }
-        // 5️⃣ Determine deletion condition for deliveries
-        let deletedDeliveriesCount = 0;
-        if (cancellation_start_date && cancellation_end_date) {
-            const startDate = new Date(cancellation_start_date);
-            const endDate = new Date(cancellation_end_date);
 
-            // Delete deliveries only within the cancellation range
+        if (!subscription) throw new NotFoundException('Subscription not found');
+        if (!subscription.is_active) throw new BadRequestException('Subscription is already cancelled');
+        if (!subscription.CustomerProfile) throw new BadRequestException('Customer profile not found');
+
+        const planPrice = Number(subscription.plan.price);
+        const customerWallet = Number(subscription.CustomerProfile.walletAmount);
+
+        let refundAmount = 0;
+        let deletedDeliveriesCount = 0;
+        let cancellationType = 'Full';
+
+        // 2️⃣ Partial cancellation (date range provided)
+        if (cancelStartDate && cancelEndDate) {
+            // Ensure start is before end
+            if (cancelEndDate < cancelStartDate) {
+                throw new BadRequestException('Cancellation end date must be after start date.');
+            }
+
+            // Ensure cancellation start is at least 2 days from now
+            const diffFromNowDays = Math.ceil(
+                (cancelStartDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
+            );
+            if (diffFromNowDays < 2) {
+                throw new BadRequestException('Cancellation can only be scheduled at least 2 days in advance.');
+            }
+
+            // Calculate duration between cancellation start and end
+            const diffInMs = cancelEndDate.getTime() - cancelStartDate.getTime();
+            const diffInDays = Math.ceil(diffInMs / (1000 * 60 * 60 * 24));
+
+            // Calculate refund amount
+            refundAmount = diffInDays * planPrice;
+
+            // Delete deliveries during cancellation period
             const result = await this.prisma.deliveries.deleteMany({
                 where: {
-                    subscriptionId: subscriptionId,
+                    subscriptionId,
                     date: {
-                        gte: startDate,
-                        lte: endDate,
+                        gte: cancelStartDate,
+                        lte: cancelEndDate,
                     },
                 },
             });
             deletedDeliveriesCount = result.count;
-            // Update cancellation dates in subscription
+
+            // Update wallet with refund
+            await this.prisma.customerProfile.update({
+                where: { id: subscription.CustomerProfile.id },
+                data: { walletAmount: customerWallet + refundAmount },
+            });
+
+            // Update subscription status and dates
             await this.prisma.userSubscriptions.update({
                 where: { id: subscriptionId },
                 data: {
-                    cancellation_start_date: startDate,
-                    cancellation_end_date: endDate,
+                    cancellation_start_date: cancelStartDate,
+                    cancellation_end_date: cancelEndDate,
                     cancelled_on: new Date(),
                     is_active: false,
                 },
             });
-        } else {
-            // No specific dates → cancel full subscription
+
+            cancellationType = 'Partial';
+        }
+        // 3️⃣ Full cancellation (no dates)
+        else {
+            // Delete all deliveries
             const result = await this.prisma.deliveries.deleteMany({
-                where: {
-                    subscriptionId: subscriptionId,
-                },
+                where: { subscriptionId },
             });
             deletedDeliveriesCount = result.count;
+
+            // No refund — optional: refund remaining undelivered days (can add later)
             await this.prisma.userSubscriptions.update({
                 where: { id: subscriptionId },
                 data: {
@@ -670,12 +687,16 @@ export class CustomerService {
                 },
             });
         }
+
         return {
             message: 'Subscription cancelled successfully',
+            cancellationType,
             deletedDeliveries: deletedDeliveriesCount,
-            cancellationType: cancellation_start_date && cancellation_end_date ? 'Partial' : 'Full',
+            refundAmount,
+            updatedWallet: customerWallet + refundAmount,
         };
     }
+
 
 
     async getVariationCountByDate(dateString: string) {
