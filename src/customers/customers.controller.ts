@@ -107,6 +107,12 @@ export class CustomerController {
         return this.cusomerservice.PauseSubscription(id, dto);
     }
 
+    // PATCH /customer/:userId/reset-wallet
+    @Patch('reset-wallet/:userId')
+    async resetWallet(@Param('userId') userId: string) {
+        return this.cusomerservice.ResetWalletAmount(userId);
+    }
+
 
 
 } 

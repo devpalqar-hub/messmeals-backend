@@ -655,7 +655,7 @@ export class CustomerService {
                 data: { walletAmount: customerWallet + refundAmount },
             });
 
-            // Update subscription status and dates
+            // Update subscription
             await this.prisma.userSubscriptions.update({
                 where: { id: subscriptionId },
                 data: {
@@ -668,15 +668,37 @@ export class CustomerService {
 
             cancellationType = 'Partial';
         }
-        // 3️⃣ Full cancellation (no dates)
+        // 3️⃣ Full cancellation (no dates provided)
         else {
-            // Delete all deliveries
+            // Find undelivered deliveries
+            const undeliveredDeliveries = await this.prisma.deliveries.findMany({
+                where: {
+                    subscriptionId,
+                    date: { gte: currentDate },
+                },
+            });
+
+            const remainingDays = undeliveredDeliveries.length;
+
+            // Calculate refund for undelivered days
+            refundAmount = remainingDays * planPrice;
+
+            // Delete all future deliveries
             const result = await this.prisma.deliveries.deleteMany({
-                where: { subscriptionId },
+                where: {
+                    subscriptionId,
+                    date: { gte: currentDate },
+                },
             });
             deletedDeliveriesCount = result.count;
 
-            // No refund — optional: refund remaining undelivered days (can add later)
+            // Update wallet
+            await this.prisma.customerProfile.update({
+                where: { id: subscription.CustomerProfile.id },
+                data: { walletAmount: customerWallet + refundAmount },
+            });
+
+            // Update subscription
             await this.prisma.userSubscriptions.update({
                 where: { id: subscriptionId },
                 data: {
@@ -915,4 +937,20 @@ export class CustomerService {
         };
     }
 
+    async ResetWalletAmount(userId: string) {
+        const customer = await this.prisma.customerProfile.findUnique({
+            where: { id: userId },
+        });
+
+        if (!customer) {
+            throw new NotFoundException('Customer profile not found');
+        }
+
+        await this.prisma.customerProfile.update({
+            where: { id: userId },
+            data: { walletAmount: 0 },
+        });
+
+
+    }
 }
