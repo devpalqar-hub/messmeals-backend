@@ -403,6 +403,8 @@ export class CustomerService {
                     id: sub.id,
                     start_date: sub.start_date,
                     end_date: sub.end_date,
+                    seletedDays: sub.selectedDays,
+                    scheduletype: sub.scheduleType,
                     is_active: sub.is_active,
                     totalPrice: Number(sub.totalPrice),
                     discountedPrice: Number(sub.discountedPrice),
