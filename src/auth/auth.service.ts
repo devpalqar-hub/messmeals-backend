@@ -13,67 +13,54 @@ import { generate6DigitOtp } from 'src/common/utility/utils';
 import { MailerService } from '@nestjs-modules/mailer';
 import { subDays, startOfDay, endOfDay } from 'date-fns';
 import { OtpVerifyDto } from './dto/otp-verify.dto';
+import { TwoFactorService } from 'src/twofactor/twofactor.service';
 
 @Injectable()
 export class AuthService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly jwtService: JwtService,
-        private readonly userService: UserService,
+        private readonly otpservice: TwoFactorService,
         private readonly mailerService: MailerService,
     ) { }
 
 
     //dummy otp of 123456 is given right now. after dlt registration change it to otp variable
     async sendOtpForLogin(loginDto: LoginDto) {
-        const otp = generate6DigitOtp();
         const { phone } = loginDto;
         let user = await this.prisma.user.findUnique({ where: { phone: phone } });
         if (!user) {
             throw new UnauthorizedException('User not found');
         }
-        user = await this.prisma.user.update({
-            where: { phone: phone },
-            data: {
-                otp: '123456',
-                expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now
-            }
-        });
-        // await this.mailerService.sendMail({
-        //     to: loginDto.email,
-        //     subject: 'Login OTP',
-        //     template: 'authentication', // ✅ refers to authentication.pug
-        //     context: {
-        //         otp, // ✅ available inside the template
-        //     },
-        // });
-        return { message: 'OTP sent successfully' };
+        const otpResponse = await this.otpservice.sendOtp(phone);
+        return {
+            message: 'OTP sent successfully',
+            sessionId: otpResponse.Details,  // store this on frontend
+            status: 200,
+        };
     }
 
-    //dummy otp of 123456 is given right now. after dlt registration change it to otp variable
     async sendOtpForRegistration(dto: RegisterDto) {
-        const otp = generate6DigitOtp();
-        const { email, name, phone } = dto;
-        let user = await this.prisma.user.findUnique({ where: { phone: phone } });
-        const mess = await this.prisma.mess.findUnique({ where: { id: dto.messId } })
+        const { email, name, phone, messId } = dto;
+        const existingUser = await this.prisma.user.findUnique({ where: { phone } });
+        const mess = await this.prisma.mess.findUnique({ where: { id: messId } });
         if (!mess) {
-            throw new Error("Mess Not found")
+            throw new Error("Mess not found");
         }
-        if (!user) {
-            // 3️⃣ Create new user with MessAdminProfile
+        // Create user only if not present
+        let user = existingUser;
+        if (!existingUser) {
             user = await this.prisma.user.create({
                 data: {
                     name,
                     email,
                     phone,
-                    otp: '123456',
                     role: Roles.MESSADMIN,
-                    expiresAt: new Date(Date.now() + 10 * 60 * 1000),
                     is_verified: false,
                     messAdminProfile: {
                         create: {
                             messes: {
-                                connect: [{ id: mess.id }], // ✅ link to existing mess
+                                connect: [{ id: messId }],
                             },
                         },
                     },
@@ -83,23 +70,27 @@ export class AuthService {
                 },
             });
         }
-        // await this.mailerService.sendMail({
-        //     to: loginDto.email,
-        //     subject: 'Login OTP',
-        //     template: 'authentication', // ✅ refers to authentication.pug
-        //     context: {
-        //         otp, // ✅ available inside the template
-        //     },
-        // });
-        console.log(1)
-        return { message: 'OTP sent successfully' };
+        const otpResponse = await this.otpservice.sendOtp(phone);
+
+        return {
+            message: 'OTP sent successfully',
+            sessionId: otpResponse.Details,
+            status: 200,
+        };
     }
 
 
     async verifyOtp(dto: OtpVerifyDto) {
-        const { phone } = dto;
+        const { phone, sessionId, otp } = dto;
 
-        // 1️⃣ Find user with role and messAdminProfile (if exists)
+        // 1️⃣ Verify OTP using 2Factor
+        const verify = await this.otpservice.verifyOtp(sessionId, otp);
+
+        if (verify.Status !== 'Success') {
+            throw new UnauthorizedException('Invalid OTP');
+        }
+
+        // 2️⃣ Fetch user with mess-admin profile
         const user = await this.prisma.user.findUnique({
             where: { phone },
             include: {
@@ -113,21 +104,9 @@ export class AuthService {
 
         if (!user) throw new UnauthorizedException('User not found');
 
-        // 2️⃣ Check if OTP and expiry exist
-        if (!user.otp || !user.expiresAt) {
-            throw new UnauthorizedException('No OTP found for this user');
-        }
-
-        // 3️⃣ Validate OTP and expiry
-        const isOtpValid = user.otp === '123456';
-        const isOtpNotExpired = user.expiresAt > new Date();
-
-        if (!isOtpValid || !isOtpNotExpired) {
-            throw new UnauthorizedException('Invalid OTP or OTP has expired');
-        }
-
-        // 4️⃣ Update verification status if needed
+        // 3️⃣ Update verification status
         let updatedUser = user;
+
         if (!user.is_verified) {
             updatedUser = await this.prisma.user.update({
                 where: { phone },
@@ -142,23 +121,17 @@ export class AuthService {
             });
         }
 
-        // 5️⃣ Clear OTP fields (optional for security)
-        await this.prisma.user.update({
-            where: { phone },
-            data: { otp: null, expiresAt: null },
-        });
+        // 4️⃣ MessAdmin mess details
+        const messes = updatedUser.messAdminProfile?.messes || [];
 
-        // 6️⃣ Extract mess info (only if user is a MESSADMIN)
-        const messes = user.messAdminProfile?.messes || [];
-
-        // 7️⃣ Generate JWT token
+        // 5️⃣ Generate JWT
         const accessToken = this.jwtService.sign({
             sub: updatedUser.id,
             email: updatedUser.email,
             role: updatedUser.role,
         });
 
-        // 8️⃣ Return response
+        // 6️⃣ Final payload
         return {
             user: {
                 id: updatedUser.id,
@@ -166,7 +139,7 @@ export class AuthService {
                 email: updatedUser.email,
                 phone: updatedUser.phone,
                 role: updatedUser.role,
-                messes: messes, // ✅ includes [{ id, name }]
+                messes,
             },
             accessToken,
             message: user.is_verified
@@ -175,8 +148,6 @@ export class AuthService {
             status: 200,
         };
     }
-
-
 
     async ListDeliveryAgents(page: number = 1, limit: number = 10, search?: string) {
         const skip = (page - 1) * limit;

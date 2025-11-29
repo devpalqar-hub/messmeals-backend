@@ -16,7 +16,6 @@ import { ContactFormModule } from './contact-form/contact-form.module';
 import { MessModule } from './mess/mess.module';
 import { MessAdminModule } from './mess-admin/mess-admin.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
-import { PassportModule } from '@nestjs/passport';
 import { ConfigModule } from '@nestjs/config';
 
 

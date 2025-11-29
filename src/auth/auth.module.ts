@@ -7,18 +7,21 @@ import { UserModule } from 'src/user/user.module';
 import { PassportModule } from '@nestjs/passport';
 import { JwtStrategy } from 'src/common/strategies/jwt.strategy';
 import { ConfigModule } from '@nestjs/config';
+import { TwoFactorModule } from 'src/twofactor/twofactor.module';
+import { TwoFactorService } from 'src/twofactor/twofactor.service';
 
 @Module({
     imports: [
         UserModule,
         ConfigModule,
+        TwoFactorModule,
         PassportModule.register({ defaultStrategy: 'jwt' }), // 👈 register jwt
         JwtModule.register({
             secret: process.env.JWT_SECRET || 'super-secret-key',
             signOptions: { expiresIn: '7d' },
         }),
     ],
-    providers: [AuthService, PrismaService, JwtStrategy],
+    providers: [AuthService, PrismaService, JwtStrategy, TwoFactorService],
     controllers: [AuthController],
     exports: [AuthService],
 })
