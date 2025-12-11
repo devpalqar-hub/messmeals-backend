@@ -12,4 +12,12 @@ user reg, delivery reg api
 4. dlt setup
 
 
-review and testimonial module.
+today
+
+asked anandhu to create a a record for messmeals, (njan parasya de email il kereet cheytha mathii.) - -done
+ath kazhyumbo staging.messmeals.com il nginx configure cheynam -- done
+ennt code il 2 factor kalanjt 123456 otp aakyt staging il idanam. -
+staging completed.
+
+add port as 3004 before pushing
+then do the 3 edit suggested by reema which is on paper. and review and testimonial module.

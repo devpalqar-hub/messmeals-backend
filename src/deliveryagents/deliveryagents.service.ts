@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, InternalServerErrorException, ForbiddenException } from '@nestjs/common';
 import { DeliveryAgentCreateDto, DeliveryAgentUpdateDto } from './dto/deliveryagents-create.dto';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -6,6 +6,7 @@ import { UserService } from 'src/user/user.service';
 import * as bcrypt from 'bcrypt';
 import { DeliveryStatus, Role } from '@prisma/client';
 import { contains } from 'class-validator';
+import { UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
 @Injectable()
 export class DeliveryAgentService {
     constructor(private prisma: PrismaService) { }
@@ -353,7 +354,7 @@ export class DeliveryAgentService {
             role: user.role,
 
             // Delivery Partner profile fields
-            doulaProfileId: profile.id,          // your requirement
+            messProfileId: profile.id,          // your requirement
             deliveryRegion: profile.deliveryRegion,
             isonline: profile.isonline,
             address: profile.address,
@@ -363,7 +364,11 @@ export class DeliveryAgentService {
     }
 
 
-    async myDeliveries(userId: string, status?: DeliveryStatus) {
+    async myDeliveries(
+        userId: string,
+        status?: DeliveryStatus,
+        date?: string // expected in YYYY-MM-DD format
+    ) {
         // 1️⃣ Fetch user + delivery partner profile
         const user = await this.prisma.user.findUnique({
             where: { id: userId },
@@ -384,7 +389,18 @@ export class DeliveryAgentService {
         };
 
         if (status) {
-            where.status = status;   // apply filter only when provided
+            where.status = status; // apply only if provided
+        }
+
+        // 2️⃣ Adding optional date filter (full-day range)
+        if (date) {
+            const startOfDay = new Date(date + "T00:00:00.000Z");
+            const endOfDay = new Date(date + "T23:59:59.999Z");
+
+            where.date = {
+                gte: startOfDay,
+                lte: endOfDay,
+            };
         }
 
         // 3️⃣ Fetch deliveries
@@ -404,7 +420,7 @@ export class DeliveryAgentService {
                         id: true,
                         planName: true,
                         price: true,
-                        images: true
+                        images: true,
                     },
                 },
             },
@@ -416,6 +432,7 @@ export class DeliveryAgentService {
             message: "Deliveries fetched successfully",
             filters: {
                 status: status || "ALL",
+                date: date || "ALL",
             },
             user: {
                 userId: user.id,
@@ -451,6 +468,7 @@ export class DeliveryAgentService {
             })),
         };
     }
+
 
 
     async activeOrders(userId: string) {
@@ -560,11 +578,129 @@ export class DeliveryAgentService {
         };
     }
 
+    async updateDeliveryStatus(userId: string, dto: UpdateDeliveryStatusDto) {
+        const { deliveryId, status } = dto;
+
+        // 1. Validate delivery agent exists
+        const partner = await this.prisma.deliveryPartnerProfile.findUnique({
+            where: { userId },
+        });
+
+        if (!partner) {
+            throw new ForbiddenException('You are not registered as a delivery partner.');
+        }
+
+        // 2. Fetch delivery assigned to this partner
+        const delivery = await this.prisma.deliveries.findUnique({
+            where: { id: deliveryId },
+        });
+
+        if (!delivery) {
+            throw new NotFoundException('Delivery not found.');
+        }
+
+        // Ensure this delivery belongs to this delivery partner
+        if (delivery.partnerId !== partner.id) {
+            throw new ForbiddenException('This delivery is not assigned to you.');
+        }
+
+        // 3. Update status
+        const updated = await this.prisma.deliveries.update({
+            where: { id: deliveryId },
+            data: { status },
+        });
+
+        return {
+            message: 'Delivery status updated successfully.',
+            delivery: updated,
+        };
+    }
 
 
+    async getDeliveryById(userId: string, deliveryId: string) {
+        // 1️⃣ Ensure delivery agent exists
+        const partner = await this.prisma.deliveryPartnerProfile.findUnique({
+            where: { userId },
+        });
 
+        if (!partner) {
+            throw new NotFoundException("Delivery partner profile not found");
+        }
 
+        // 2️⃣ Fetch delivery
+        const delivery = await this.prisma.deliveries.findUnique({
+            where: { id: deliveryId },
+            include: {
+                mess: {
+                    select: {
+                        id: true,
+                        name: true,
+                        address: true,
+                        is_active: true,
+                    },
+                },
+                plan: {
+                    select: {
+                        id: true,
+                        planName: true,
+                        price: true,
+                        images: true,
+                    },
+                },
+                customer: {
+                    select: {
+                        id: true,
+                        address: true,
+                        current_location: true,
+                        latitude_logitude: true,
+                        user: {
+                            select: {
+                                name: true,
+                                phone: true,
+                            },
+                        },
+                    },
+                },
+            },
+        });
 
+        if (!delivery) {
+            throw new NotFoundException("Delivery not found");
+        }
+
+        // 3️⃣ Validate that delivery belongs to this agent
+        if (delivery.partnerId !== partner.id) {
+            throw new ForbiddenException("You are not allowed to view this delivery");
+        }
+
+        // 4️⃣ Format response
+        return {
+            message: "Delivery fetched successfully",
+            delivery: {
+                id: delivery.id,
+                date: delivery.date,
+                status: delivery.status,
+                action: delivery.action,
+
+                mess: delivery.mess,
+                plan: {
+                    id: delivery.plan.id,
+                    name: delivery.plan.planName,
+                    price: delivery.plan.price,
+                    images: delivery.plan.images || [],
+                },
+
+                customer: {
+                    id: delivery.customer.id,
+                    address: delivery.customer.address,
+                    current_location: delivery.customer.current_location,
+                    latitude_logitude: delivery.customer.latitude_logitude,
+                    name: delivery.customer.user.name,
+                    phone: delivery.customer.user.phone,
+                },
+            },
+        };
+    }
 
 
 

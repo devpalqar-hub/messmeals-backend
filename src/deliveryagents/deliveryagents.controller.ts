@@ -1,8 +1,9 @@
-import { Body, Controller, DefaultValuePipe, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, DefaultValuePipe, Delete, Get, Param, ParseIntPipe, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { DeliveryAgentService } from './deliveryagents.service';
 import { DeliveryAgentCreateDto, DeliveryAgentUpdateDto } from './dto/deliveryagents-create.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { DeliveryStatus } from '@prisma/client';
+import { UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
 
 @Controller('delivery-agent')
 export class DeliveryAgentController {
@@ -41,12 +42,12 @@ export class DeliveryAgentController {
     }
 
 
-
     @UseGuards(JwtAuthGuard)
     @Patch('toggle/on/off')
     toggleOnlineOffline(@Body('is_online') is_online: boolean, @Req() req) {
         return this.service.toggleOnlineOffline(is_online, req.user.id);
     }
+
 
     @UseGuards(JwtAuthGuard)  // Optional based on your setup
     @Get('stats')
@@ -70,10 +71,11 @@ export class DeliveryAgentController {
     async myDeliveries(
         @Req() req,
         @Query('status') status?: DeliveryStatus,
+        @Query('date') date?: string,
     ) {
         const userId = req.user.id; // assuming JWT adds { user: { id } }
 
-        return this.service.myDeliveries(userId, status);
+        return this.service.myDeliveries(userId, status, date);
     }
 
     @UseGuards(JwtAuthGuard)
@@ -81,5 +83,25 @@ export class DeliveryAgentController {
     async activeOrders(@Req() req) {
         const userId = req.user.id;
         return this.service.activeOrders(userId);
+    }
+
+    @UseGuards(JwtAuthGuard)
+    @Put('update/status')
+    async updateStatus(
+        @Req() req,
+        @Body() dto: UpdateDeliveryStatusDto,
+    ) {
+        const userId = req.user.id; // from auth token
+        return this.service.updateDeliveryStatus(userId, dto);
+    }
+
+    @UseGuards(JwtAuthGuard)
+    @Get('my/deliveries/:deliveryId')
+    async getDeliveryById(
+        @Req() req,
+        @Param('deliveryId') deliveryId: string,
+    ) {
+        const userId = req.user.id; // Extract from JWT token
+        return this.service.getDeliveryById(userId, deliveryId);
     }
 }
