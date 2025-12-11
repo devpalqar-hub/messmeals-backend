@@ -1,153 +1,233 @@
-// import { PrismaClient, Roles } from '@prisma/client';
-// const prisma = new PrismaClient();
+import { PrismaClient } from '@prisma/client';
+import { faker } from '@faker-js/faker';
 
-// async function main() {
-//     console.log('🌱 Seeding database...');
+const prisma = new PrismaClient();
 
-//     // Create common variations
-//     const [breakfast, lunch, dinner] = await Promise.all([
-//         prisma.variation.create({
-//             data: { title: 'Breakfast', description: 'Morning meal' },
-//         }),
-//         prisma.variation.create({
-//             data: { title: 'Lunch', description: 'Afternoon meal' },
-//         }),
-//         prisma.variation.create({
-//             data: { title: 'Dinner', description: 'Evening meal' },
-//         }),
-//     ]);
+async function main() {
+    // ------------------------------
+    // USERS (10)
+    // ------------------------------
+    const users = await Promise.all(
+        Array.from({ length: 10 }).map((_, i) =>
+            prisma.user.create({
+                data: {
+                    name: faker.person.fullName(),
+                    phone: faker.phone.number(),
+                    email: faker.internet.email().toLowerCase(),
+                    role: i < 3 ? 'DELIVERYAGENT' : i < 6 ? 'MESSADMIN' : 'USER',
+                },
+            })
+        )
+    );
 
-//     // Helper: Create a mess with plans and delivery agents
-//     async function createMess(
-//         name: string,
-//         email: string,
-//         plans: {
-//             planName: string;
-//             price: number;
-//             description: string;
-//             variations: string[];
-//         }[],
-//     ) {
-//         const mess = await prisma.mess.create({
-//             data: {
-//                 name,
-//                 email,
-//                 phone: '9876543210',
-//                 description: `${name} provides healthy and delicious meals.`,
-//                 address: '123 Food Street, Cityville',
-//                 plans: {
-//                     create: await Promise.all(
-//                         plans.map(async (p) => ({
-//                             planName: p.planName,
-//                             price: p.price,
-//                             description: p.description,
-//                             Variation: {
-//                                 connect: p.variations.map((v) => {
-//                                     if (v === 'Breakfast') return { id: breakfast.id };
-//                                     if (v === 'Lunch') return { id: lunch.id };
-//                                     return { id: dinner.id };
-//                                 }),
-//                             },
-//                         })),
-//                     ),
-//                 },
-//             },
-//         });
+    const deliveryAgents = users.filter((u) => u.role === 'DELIVERYAGENT');
+    const messAdmins = users.filter((u) => u.role === 'MESSADMIN');
+    const customers = users.filter((u) => u.role === 'USER');
 
-//         // Create Mess Admin
-//         const messAdminUser = await prisma.user.create({
-//             data: {
-//                 name: `${name} Admin`,
-//                 phone: `${Math.floor(Math.random() * 9000000000) + 1000000000}`,
-//                 email: `${name.toLowerCase().replace(/\s/g, '')}@admin.com`,
-//                 role: Roles.MESSADMIN,
-//                 is_verified: true,
-//                 messAdminProfile: {
-//                     create: {
-//                         messes: { connect: [{ id: mess.id }] },
-//                     },
-//                 },
-//             },
-//         });
+    // ------------------------------
+    // MESS (10)
+    // ------------------------------
+    const messes = await Promise.all(
+        Array.from({ length: 10 }).map(() =>
+            prisma.mess.create({
+                data: {
+                    name: faker.company.name(),
+                    description: faker.lorem.sentence(),
+                    address: faker.location.streetAddress(),
+                    phone: faker.phone.number(),
+                    email: faker.internet.email(),
+                },
+            })
+        )
+    );
 
-//         // Create Delivery Agents
-//         for (let i = 1; i <= 2; i++) {
-//             const agentUser = await prisma.user.create({
-//                 data: {
-//                     name: `${name} Agent ${i}`,
-//                     phone: `${Math.floor(Math.random() * 9000000000) + 1000000000}`,
-//                     email: `${name.toLowerCase().replace(/\s/g, '')}agent${i}@mail.com`,
-//                     role: Roles.DELIVERYAGENT,
-//                     is_verified: true,
-//                     deliveryPartnerProfile: {
-//                         create: {
-//                             messId: mess.id,
-//                             address: 'Delivery Area, Cityville',
-//                             deliveryRegion: 'Zone A',
-//                             deliveryCounts: Math.floor(Math.random() * 50),
-//                         },
-//                     },
-//                 },
-//             });
-//         }
+    // ------------------------------
+    // MESS ADMIN PROFILES
+    // ------------------------------
+    await Promise.all(
+        messAdmins.map((admin, i) =>
+            prisma.messAdminProfile.create({
+                data: {
+                    userId: admin.id,
+                    messes: {
+                        connect: [{ id: messes[i % messes.length].id }],
+                    },
+                },
+            })
+        )
+    );
 
-//         return mess;
-//     }
+    // ------------------------------
+    // DELIVERY PARTNER PROFILES
+    // ------------------------------
+    await Promise.all(
+        deliveryAgents.map((agent, i) =>
+            prisma.deliveryPartnerProfile.create({
+                data: {
+                    userId: agent.id,
+                    messId: messes[i % messes.length].id,
+                    deliveryCounts: faker.number.int({ min: 0, max: 200 }),
+                    deliveryRegion: faker.location.city(),
+                },
+            })
+        )
+    );
 
-//     // Create Messes
-//     await createMess('GreenLeaf Mess', 'greenleaf@mess.com', [
-//         {
-//             planName: 'Healthy Combo Plan',
-//             price: 1800,
-//             description: 'Includes nutritious lunch and dinner meals.',
-//             variations: ['Lunch', 'Dinner'],
-//         },
-//         {
-//             planName: 'Morning Bliss',
-//             price: 900,
-//             description: 'Light and healthy breakfast plan.',
-//             variations: ['Breakfast'],
-//         },
-//     ]);
+    // ------------------------------
+    // CUSTOMER PROFILES
+    // ------------------------------
+    const customerProfiles = await Promise.all(
+        customers.map((cu) =>
+            prisma.customerProfile.create({
+                data: {
+                    userId: cu.id,
+                    address: faker.location.streetAddress(),
+                    current_location: faker.location.city(),
+                },
+            })
+        )
+    );
 
-//     await createMess('DailyEats', 'dailyeats@mess.com', [
-//         {
-//             planName: 'All-Day Feast',
-//             price: 2500,
-//             description: 'Breakfast, lunch and dinner all included.',
-//             variations: ['Breakfast', 'Lunch', 'Dinner'],
-//         },
-//         {
-//             planName: 'Lunch Saver',
-//             price: 1200,
-//             description: 'Simple and filling lunch meals.',
-//             variations: ['Lunch'],
-//         },
-//     ]);
+    // ------------------------------
+    // PLANS
+    // ------------------------------
+    const plans = await Promise.all(
+        Array.from({ length: 10 }).map((_, i) =>
+            prisma.plans.create({
+                data: {
+                    planName: `Plan ${i + 1}`,
+                    price: faker.number.float({ min: 100, max: 500 }),
+                    messId: messes[i % messes.length].id,
+                },
+            })
+        )
+    );
 
-//     await createMess('UrbanTiffin', 'urbantiffin@mess.com', [
-//         {
-//             planName: 'Dinner Delight',
-//             price: 1500,
-//             description: 'Perfectly balanced dinner meals.',
-//             variations: ['Dinner'],
-//         },
-//         {
-//             planName: 'Energy Start',
-//             price: 800,
-//             description: 'Power breakfast for early risers.',
-//             variations: ['Breakfast'],
-//         },
-//     ]);
+    // ------------------------------
+    // PLAN IMAGES
+    // ------------------------------
+    await Promise.all(
+        plans.map((p) =>
+            prisma.planImages.create({
+                data: {
+                    planId: p.id,
+                    url: faker.image.url(),
+                    altText: faker.lorem.words(3),
+                },
+            })
+        )
+    );
 
-//     console.log('✅ Seeding completed successfully!');
-// }
+    // ------------------------------
+    // VARIATIONS
+    // ------------------------------
+    await Promise.all(
+        Array.from({ length: 10 }).map(() =>
+            prisma.variation.create({
+                data: {
+                    title: faker.commerce.productName(),
+                },
+            })
+        )
+    );
 
-// main()
-//     .catch((e) => {
-//         console.error(e);
-//         process.exit(1);
-//     })
-//     .finally(async () => {
-//         await prisma.$disconnect();
-//     });
+    // ------------------------------
+    // USER ADDRESS
+    // ------------------------------
+    const addresses = await Promise.all(
+        customerProfiles.map((profile) =>
+            prisma.userAddress.create({
+                data: {
+                    name: faker.person.fullName(),
+                    street: faker.location.street(),
+                    townOrcity: faker.location.city(),
+                    postcode: faker.location.zipCode(),
+                    phone: faker.phone.number(),
+                    email: faker.internet.email(),
+                    profileId: profile.id,
+                },
+            })
+        )
+    );
+
+    // ------------------------------
+    // USER SUBSCRIPTIONS
+    // ------------------------------
+    const subscriptions = await Promise.all(
+        Array.from({ length: 10 }).map((_, i) =>
+            prisma.userSubscriptions.create({
+                data: {
+                    start_date: faker.date.past(),
+                    scheduleType: 'EVERYDAY',
+                    totalPrice: faker.number.float({ min: 200, max: 700 }),
+                    discountedPrice: faker.number.float({ min: 100, max: 500 }),
+                    planId: plans[i % plans.length].id,
+                    messId: messes[i % messes.length].id,
+                    customerProfileId: customerProfiles[i % customerProfiles.length].id,
+                    userAddressId: addresses[i % addresses.length].id,
+                },
+            })
+        )
+    );
+
+    // ------------------------------
+    // DELIVERIES
+    // ------------------------------
+    const deliveryPartners = await prisma.deliveryPartnerProfile.findMany();
+
+    await Promise.all(
+        Array.from({ length: 10 }).map((_, i) =>
+            prisma.deliveries.create({
+                data: {
+                    date: faker.date.recent(),
+                    status: 'PENDING',
+                    customerId: customerProfiles[i % customerProfiles.length].id,
+                    planId: plans[i % plans.length].id,
+                    messId: messes[i % messes.length].id,
+                    partnerId: deliveryPartners[i % deliveryPartners.length]?.id,
+                    subscriptionId: subscriptions[i % subscriptions.length]?.id,
+                },
+            })
+        )
+    );
+
+    // ------------------------------
+    // WALLET
+    // ------------------------------
+    const wallets = await Promise.all(
+        customerProfiles.map((p) =>
+            prisma.wallet.create({
+                data: {
+                    userId: p.id,
+                    walletAmount: faker.number.float({ min: 100, max: 1000 }),
+                },
+            })
+        )
+    );
+
+    // ------------------------------
+    // TRANSACTIONS
+    // ------------------------------
+    await Promise.all(
+        wallets.map((w) =>
+            prisma.transaction.create({
+                data: {
+                    walletId: w.id,
+                    amount: faker.number.float({ min: -100, max: 300 }),
+                    balanceAfter: faker.number.float({ min: 0, max: 2000 }),
+                },
+            })
+        )
+    );
+
+    console.log('Seeding completed successfully.');
+}
+
+main()
+    .catch((e) => {
+        console.error(e);
+        process.exit(1);
+    })
+    .finally(async () => {
+        await prisma.$disconnect();
+    });
