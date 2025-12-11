@@ -7,12 +7,13 @@ import {
     Param,
     Body, Query,
     ParseUUIDPipe,
+    Req,
 } from '@nestjs/common';
 import { DeliveriesService } from './deliveries.service';
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { UpdateDeliveryDto } from './dto/update-delivery.dto';
 import { UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
-import { AssignDeliveryPartnerDto } from './dto/assign-partner.dto';
+import { AssignDeliveryPartnerDto, AssignDeliveryPartnerPhs2Dto } from './dto/assign-partner.dto';
 import { DeliveryStatus } from '@prisma/client';
 
 @Controller('deliveries')
@@ -33,8 +34,10 @@ export class DeliveriesController {
         @Query('status') status?: DeliveryStatus,
         @Query('date') date?: string, // 🆕 Added date filter
         @Query('messId') messId?: string,
+        @Query('partnerId') partnerId?: string,
+
     ) {
-        return this.deliveriesService.findAll({ page, limit, status, date, messId });
+        return this.deliveriesService.findAll({ page, limit, status, date, messId, partnerId });
     }
 
     // ✅ GET by ID
@@ -91,6 +94,16 @@ export class DeliveriesController {
         @Query('limit') limit?: number,
     ) {
         return this.deliveriesService.CustomerRecentDeliveries(customerId, limit, messId);
+    }
+
+    // phase 2 api.
+    @Patch("assign/partner/subscription")
+    AssignPartner(@Param('id') id: string,
+        @Body() dto: AssignDeliveryPartnerPhs2Dto,
+        @Req() req
+
+    ) {
+        return this.deliveriesService.AssignPartner(dto, req.user.id)
     }
 
 }

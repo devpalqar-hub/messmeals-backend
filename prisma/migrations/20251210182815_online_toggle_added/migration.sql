@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `DeliveryPartnerProfile` ADD COLUMN `isonline` BOOLEAN NOT NULL DEFAULT true;

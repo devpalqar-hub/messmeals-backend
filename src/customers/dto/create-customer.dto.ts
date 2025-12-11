@@ -90,3 +90,40 @@ export class UpdateCustomerDto {
     deliveryPartnerId: string
 
 }
+
+
+
+export class choosePlanDto {
+
+    @IsString()
+    addressId: string
+
+    @IsString()
+    planId: string
+
+    @IsString()
+    start_date: string
+
+    @IsString()
+    @IsOptional()
+    end_date: string
+
+    //phase 2 changes:
+
+    @IsEnum(ScheduleType)
+    scheduleType: ScheduleType;
+
+    @IsOptional()
+    @IsArray()
+    @IsEnum(DayOfWeek, { each: true }) // optional if you have enum
+    selectedDays: string[];
+
+    @IsOptional()
+    @IsString()
+    successUrl: string;
+
+    @IsOptional()
+    @IsString()
+    cancelUrl: string;
+
+}

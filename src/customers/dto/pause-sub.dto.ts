@@ -9,5 +9,9 @@ export class PauseSubDto {
     @IsString()
     @IsOptional()
     pause_end_date: string
+
+    @IsString()
+    @IsOptional()
+    subscriptionId: string
 }
 

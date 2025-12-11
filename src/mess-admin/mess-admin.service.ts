@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AssignMessAdminDto, RemoveMessAdminDto, CreateMessAdminDto } from './dto/mess-admin.dto';
-import { Roles } from '@prisma/client';
+import { Role } from '@prisma/client';
 
 @Injectable()
 export class MessAdminService {
@@ -34,7 +34,7 @@ export class MessAdminService {
                 name: dto.name,
                 email: dto.email,
                 phone: dto.phone,
-                role: Roles.MESSADMIN,
+                role: Role.MESSADMIN,
                 is_verified: true,
                 messAdminProfile: {
                     create: {
@@ -84,7 +84,7 @@ export class MessAdminService {
             await this.prisma.user.update({
                 where: { id: dto.userId },
                 data: {
-                    role: Roles.MESSADMIN,
+                    role: Role.MESSADMIN,
                     messAdminProfile: {
                         create: {
                             messes: {
@@ -139,7 +139,7 @@ export class MessAdminService {
         const skip = (page - 1) * limit;
 
         const where: any = {
-            role: Roles.MESSADMIN,
+            role: Role.MESSADMIN,
         };
 
         if (search) {
@@ -206,7 +206,7 @@ export class MessAdminService {
             },
         });
 
-        if (!user || user.role !== Roles.MESSADMIN) {
+        if (!user || user.role !== Role.MESSADMIN) {
             throw new NotFoundException('Mess admin not found');
         }
 

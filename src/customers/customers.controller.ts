@@ -1,6 +1,6 @@
 import { Body, Controller, Post, Get, Query, Patch, Param, DefaultValuePipe, ParseIntPipe, Delete, UseGuards, Req, NotFoundException, BadRequestException } from '@nestjs/common';
 import { CustomerService } from './customers.service';
-import { CreateCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
+import { choosePlanDto, CreateCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
 import { RenewSubscriptionDto } from './dto/renew-Subscription.dto';
 import { CancelSubDto } from './dto/cancel-sub.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
@@ -114,5 +114,30 @@ export class CustomerController {
     }
 
 
+    @Post('choose/plan')
+    async ChoosePlan(
+        @Body() dto: choosePlanDto,
+        @Req() req
+    ) {
+        return this.cusomerservice.choosePlan(dto, req.user.id);
+    }
 
+
+    @Patch('cancel/subscription')
+    async CancelUserSubscription(
+        @Body() dto: CancelSubDto,
+        @Req() req
+
+    ) {
+        return this.cusomerservice.CancelUserSubscription(dto, req.user.id);
+    }
+
+
+    @Patch('pause/subscription')
+    async PauseSubscription(
+        @Body() dto: PauseSubDto,
+        @Req() req
+    ) {
+        return this.cusomerservice.PauseUserSubscription(dto, req.user.id);
+    }
 } 

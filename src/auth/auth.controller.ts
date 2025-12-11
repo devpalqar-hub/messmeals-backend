@@ -1,6 +1,6 @@
 import { Body, Controller, Post, Get, Query, UseGuards, Param } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { RegisterDto } from './dto/Registration.dto';
+import { RegisterDeliveryAgentDto, RegisterDto, UserRegisterDto } from './dto/Registration.dto';
 import { LoginDto } from './dto/login.dto';
 import { OtpVerifyDto } from './dto/otp-verify.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
@@ -49,4 +49,17 @@ export class AuthController {
         return this.authService.getallmessadmin();
     }
 
+
+    // -------------------------------------------------------
+    // PHASE 3
+    // -------------------------------------------------------
+    @Post('send/user/reg/otp')
+    async sendOtpForClientRegistration(@Body() regDto: UserRegisterDto) {
+        return this.authService.sendOtpForClientRegistration(regDto);
+    }
+
+    @Post('send/dlvryagent/reg/otp')
+    async sendOtpForDeliveryAgentRegistration(@Body() regDto: RegisterDeliveryAgentDto) {
+        return this.authService.sendOtpForDeliveryAgentRegistration(regDto);
+    }
 }

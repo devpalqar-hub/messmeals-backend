@@ -3,8 +3,8 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { UpdateDeliveryDto } from './dto/update-delivery.dto';
 import { UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
-import { AssignDeliveryPartnerDto } from './dto/assign-partner.dto';
-import { DeliveryStatus } from '@prisma/client';
+import { AssignDeliveryPartnerDto, AssignDeliveryPartnerPhs2Dto } from './dto/assign-partner.dto';
+import { DeliveryStatus, ScheduleType } from '@prisma/client';
 import { tr } from '@faker-js/faker';
 
 @Injectable()
@@ -36,20 +36,25 @@ export class DeliveriesService {
         limit?: number | string;
         status?: DeliveryStatus;
         date?: string;
-        messId?: string; // ✅ added mess filter
+        messId?: string;
+        partnerId?: string;   // ✅ delivery agent profileId
     }) {
         // 1️⃣ Convert and set defaults
         const page = Number(query.page) || 1;
         const limit = Number(query.limit) || 10;
         const skip = (page - 1) * limit;
-        const take = limit;
 
-        const { status, date, messId } = query;
+        const { status, date, messId, partnerId } = query;
 
         // 2️⃣ Build filters dynamically
         const where: any = {};
 
-        // ✅ Add messId filter (core part)
+        // Filter by partner/delivery agent
+        if (partnerId) {
+            where.partnerId = partnerId;
+        }
+
+        // Filter by messId
         if (messId) {
             where.messId = messId;
         }
@@ -58,7 +63,7 @@ export class DeliveriesService {
             where.status = status;
         }
 
-        // 🆕 Filter by a specific date
+        // Filter by specific date
         if (date) {
             const selectedDate = new Date(date);
             const nextDate = new Date(selectedDate);
@@ -70,7 +75,7 @@ export class DeliveriesService {
             };
         }
 
-        // 3️⃣ Fetch data + total count in a transaction
+        // 3️⃣ Fetch data + count
         const [deliveries, totalCount] = await this.prisma.$transaction([
             this.prisma.deliveries.findMany({
                 where,
@@ -80,22 +85,21 @@ export class DeliveriesService {
                             user: { select: { id: true, name: true } },
                         },
                     },
-                    mess: {
-                        select: { id: true, name: true },
-                    },
+                    mess: { select: { id: true, name: true } },
                     plan: { select: { id: true, planName: true, price: true } },
                     partner: {
-                        include: { user: true },
+                        include: { user: true }, // delivery partner user details
                     },
                 },
                 orderBy: { date: 'desc' },
                 skip,
-                take,
+                take: limit,
             }),
+
             this.prisma.deliveries.count({ where }),
         ]);
 
-        // 4️⃣ Return formatted response
+        // 4️⃣ Response
         return {
             message: 'Deliveries fetched successfully',
             page,
@@ -105,7 +109,8 @@ export class DeliveriesService {
             filters: {
                 status: status || 'ALL',
                 date: date || null,
-                messId: messId || null, // ✅ include in response
+                messId: messId || null,
+                partnerId: partnerId || null,
             },
             data: deliveries,
         };
@@ -371,7 +376,95 @@ export class DeliveriesService {
 
 
 
-    async estimation() { }
+    // Phase 2 updation.
+    //This is for Mess Admin to Assign Delivery partner to plan user have purchased.
+    async AssignPartner(dto: AssignDeliveryPartnerPhs2Dto, userId: string) {
+        // The user accessing this api would be mess owner.
+        // check messid of subscription belongs to the mess admin accessing this function
+        // create delivery instances after assigning the delivery partner.
+        const { subscptnId, partnerId } = dto
+        const partner = await this.prisma.deliveryPartnerProfile.findUnique({
+            where: { id: partnerId }
+        })
+        if (!partner) {
+            throw new NotFoundException("Parnter not found")
+        }
+        const subscptn = await this.prisma.userSubscriptions.findFirst({
+            where: { id: subscptnId, mess: { messAdmins: { some: { id: userId } } } },
+            include: {
+                mess: true,
+                plan: true,
+            }
+        })
+        if (!subscptn) {
+            throw new NotFoundException("subscription not found")
+        }
+
+        await this.prisma.userSubscriptions.update({
+            where: { id: subscptn.id },
+            data: { deliveryPartnerProfileId: partnerId }
+        })
+
+        // 6️⃣ Create Deliveries based on scheduleType
+        const deliveriesToCreate: any[] = [];
+        const currentDate = new Date(subscptn.start_date);
+
+        if (subscptn.scheduleType === ScheduleType.EVERYDAY) {
+            // ➤ Create deliveries for each day in range
+            if (!subscptn.end_date) {
+                throw new BadRequestException("Subscription end_date is missing");
+            }
+            while (currentDate <= subscptn.end_date) {
+                deliveriesToCreate.push({
+                    date: new Date(currentDate),
+                    customerId: subscptn.customerProfileId,
+                    planId: subscptn.planId,
+                    subscriptionId: subscptn.id,
+                    status: DeliveryStatus.PENDING,
+                    partnerId: partner.id,
+                    messId: subscptn.messId,
+                });
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+        } else if (subscptn.scheduleType === ScheduleType.CUSTOM && Array.isArray(subscptn.selectedDays)) {
+            // ➤ Create deliveries only on selected weekdays
+            const selectedDaysUpper = subscptn.selectedDays.map((d) => String(d).toUpperCase());
+            const weekdayMap = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+
+            if (!subscptn.end_date) {
+                throw new BadRequestException("Subscription end_date is missing");
+            }
+            while (currentDate <= subscptn.end_date) {
+                const dayName = weekdayMap[currentDate.getDay()];
+                if (selectedDaysUpper.includes(dayName)) {
+                    deliveriesToCreate.push({
+                        date: new Date(currentDate),
+                        customerId: subscptn.customerProfileId,
+                        planId: subscptn.planId,
+                        subscriptionId: subscptn.id,
+                        status: DeliveryStatus.PENDING,
+                        partnerId: partner.id,
+                        messId: subscptn.messId,
+                    });
+                }
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+        }
+
+        if (deliveriesToCreate.length > 0) {
+            await this.prisma.deliveries.createMany({
+                data: deliveriesToCreate,
+            });
+        }
+        // ✅ Return success response
+        return {
+            message: "Delivery Partner Assigned Succesfully",
+            data: {
+                subscptn,
+                deliveriesCreated: deliveriesToCreate.length,
+            },
+        };
+    }
 
 
 }

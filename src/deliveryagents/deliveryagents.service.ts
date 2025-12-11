@@ -4,7 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UserService } from 'src/user/user.service';
 import * as bcrypt from 'bcrypt';
-import { DeliveryStatus, Roles } from '@prisma/client';
+import { DeliveryStatus, Role } from '@prisma/client';
 import { contains } from 'class-validator';
 @Injectable()
 export class DeliveryAgentService {
@@ -30,7 +30,7 @@ export class DeliveryAgentService {
                 name: dto.name,
                 phone: dto.phone,
                 email: dto.email,
-                role: Roles.DELIVERYAGENT,
+                role: Role.DELIVERYAGENT,
                 is_active: dto.is_active,
                 deliveryPartnerProfile: {
                     create: {
@@ -51,7 +51,7 @@ export class DeliveryAgentService {
 
         // 🔍 Dynamic where condition
         const whereCondition: any = {
-            role: Roles.DELIVERYAGENT,
+            role: Role.DELIVERYAGENT,
             ...(search && {
                 name: { contains: search.toLocaleLowerCase() },
             }),
@@ -141,7 +141,7 @@ export class DeliveryAgentService {
             },
         });
 
-        if (!user || user.role !== Roles.DELIVERYAGENT) {
+        if (!user || user.role !== Role.DELIVERYAGENT) {
             throw new NotFoundException('Delivery agent not found');
         }
 
@@ -190,7 +190,7 @@ export class DeliveryAgentService {
             where: { id },
             include: { deliveryPartnerProfile: true },
         });
-        if (!user || user.role !== Roles.DELIVERYAGENT) {
+        if (!user || user.role !== Role.DELIVERYAGENT) {
             throw new NotFoundException('Delivery agent not found');
         }
         // 2️⃣ Prepare update objects
@@ -245,7 +245,7 @@ export class DeliveryAgentService {
         const existingUser = await this.prisma.user.findUnique({
             where: { id },
         });
-        if (!existingUser || existingUser.role !== Roles.DELIVERYAGENT) {
+        if (!existingUser || existingUser.role !== Role.DELIVERYAGENT) {
             throw new NotFoundException('Delivery agent not found');
         }
         // Delete the profile first due to FK constraint
@@ -256,6 +256,317 @@ export class DeliveryAgentService {
             where: { id },
         });
     }
+
+
+    // -------------------------------------------------------
+    // PHASE 3
+    // -------------------------------------------------------
+    async toggleOnlineOffline(is_online: boolean, userId: string) {
+        const partner = await this.prisma.deliveryPartnerProfile.findUnique({
+            where: { userId: userId },
+            select: { isonline: true }
+        })
+        if (!partner) {
+            throw new NotFoundException("Partner Not found")
+        }
+
+        partner.isonline = is_online
+
+        return { message: "Online Status Updated", data: partner }
+    }
+
+
+    async DeliveryStats(userId: string) {
+        // 1. Validate user and get delivery profile
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            include: {
+                deliveryPartnerProfile: true,
+            },
+        });
+
+        if (!user) {
+            throw new NotFoundException('User not found');
+        }
+
+        const profile = user.deliveryPartnerProfile;
+
+        if (!profile) {
+            throw new BadRequestException('User is not a delivery partner');
+        }
+
+        // 2. Completed deliveries count
+        const completedDeliveries = await this.prisma.deliveries.count({
+            where: {
+                partnerId: profile.id,
+                status: DeliveryStatus.DELIVERED,
+            },
+        });
+
+        // 3. Active user subscriptions
+        const activeSubscriptions = await this.prisma.userSubscriptions.count({
+            where: {
+                deliveryPartnerProfileId: profile.id,
+                is_active: true,
+            },
+        });
+
+        // 4. Return response
+        return {
+            userId: user.id,
+            profileId: profile.id,
+            totalCompletedDeliveries: completedDeliveries,
+            totalActiveOrders: activeSubscriptions,
+        };
+    }
+
+
+    async getDeliveryAgentProfile(userId: string) {
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            include: {
+                deliveryPartnerProfile: {
+                    include: {
+                        mess: true,
+                    },
+                },
+            },
+        });
+
+        if (!user) {
+            throw new NotFoundException('User not found');
+        }
+
+        if (!user.deliveryPartnerProfile) {
+            throw new BadRequestException('User does not have a delivery partner profile');
+        }
+
+        const profile = user.deliveryPartnerProfile;
+
+        return {
+            // User fields
+            userId: user.id,
+            name: user.name,
+            phone: user.phone,
+            email: user.email,
+            is_active: user.is_active,
+            role: user.role,
+
+            // Delivery Partner profile fields
+            doulaProfileId: profile.id,          // your requirement
+            deliveryRegion: profile.deliveryRegion,
+            isonline: profile.isonline,
+            address: profile.address,
+
+            mess: profile.mess,                  // includes full mess data
+        };
+    }
+
+
+    async myDeliveries(userId: string, status?: DeliveryStatus) {
+        // 1️⃣ Fetch user + delivery partner profile
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            include: {
+                deliveryPartnerProfile: true,
+            },
+        });
+
+        if (!user || !user.deliveryPartnerProfile) {
+            throw new NotFoundException("Delivery agent profile not found");
+        }
+
+        const profileId = user.deliveryPartnerProfile.id;
+
+        // 2️⃣ Build WHERE filter
+        const where: any = {
+            partnerId: profileId,
+        };
+
+        if (status) {
+            where.status = status;   // apply filter only when provided
+        }
+
+        // 3️⃣ Fetch deliveries
+        const deliveries = await this.prisma.deliveries.findMany({
+            where,
+            include: {
+                mess: {
+                    select: {
+                        id: true,
+                        name: true,
+                        address: true,
+                        is_active: true,
+                    },
+                },
+                plan: {
+                    select: {
+                        id: true,
+                        planName: true,
+                        price: true,
+                        images: true
+                    },
+                },
+            },
+            orderBy: { createdAt: "desc" },
+        });
+
+        // 4️⃣ Response formatting
+        return {
+            message: "Deliveries fetched successfully",
+            filters: {
+                status: status || "ALL",
+            },
+            user: {
+                userId: user.id,
+                name: user.name,
+                email: user.email,
+                phone: user.phone,
+            },
+            profile: {
+                profileId,
+                deliveryRegion: user.deliveryPartnerProfile.deliveryRegion,
+                isonline: user.deliveryPartnerProfile.isonline,
+                address: user.deliveryPartnerProfile.address,
+            },
+            deliveries: deliveries.map((d) => ({
+                deliveryId: d.id,
+                date: d.date,
+                status: d.status,
+                action: d.action,
+
+                messId: d.messId,
+                mess: {
+                    name: d.mess.name,
+                    address: d.mess.address,
+                    is_active: d.mess.is_active,
+                },
+
+                planId: d.planId,
+                plan: {
+                    name: d.plan.planName,
+                    price: d.plan.price,
+                    images: d.plan.images || [],
+                },
+            })),
+        };
+    }
+
+
+    async activeOrders(userId: string) {
+        const today = new Date();
+
+        // 1️⃣ Fetch user + delivery agent profile
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            include: { deliveryPartnerProfile: true },
+        });
+
+        if (!user || !user.deliveryPartnerProfile) {
+            throw new NotFoundException("Delivery agent profile not found");
+        }
+
+        const profileId = user.deliveryPartnerProfile.id;
+
+        // 2️⃣ Fetch active subscriptions assigned to this delivery agent
+        const activeSubs = await this.prisma.userSubscriptions.findMany({
+            where: {
+                deliveryPartnerProfileId: profileId,
+                is_active: true,
+                cancelled_on: null,
+                start_date: { lte: today },
+                OR: [
+                    { end_date: null },
+                    { end_date: { gte: today } }
+                ],
+            },
+            include: {
+                plan: {
+                    select: {
+                        id: true,
+                        planName: true,
+                        price: true,
+                        images: true,
+                    },
+                },
+                mess: {
+                    select: {
+                        id: true,
+                        name: true,
+                        address: true,
+                        is_active: true,
+                    },
+                },
+                CustomerProfile: {
+                    include: {
+                        user: {
+                            select: {
+                                id: true,
+                                name: true,
+                                phone: true,
+                                email: true,
+                            },
+                        },
+                    },
+                },
+                UserAddress: true,
+            },
+            orderBy: {
+                createdAt: 'desc',
+            },
+        });
+
+        // 3️⃣ Format response
+        return {
+            message: "Active delivery orders fetched successfully",
+            agent: {
+                userId: user.id,
+                name: user.name,
+                email: user.email,
+                phone: user.phone,
+                profileId: profileId,
+            },
+
+            activeOrders: activeSubs.map((s) => ({
+                subscriptionId: s.id,
+                startDate: s.start_date,
+                endDate: s.end_date,
+                scheduleType: s.scheduleType,
+                selectedDays: s.selectedDays,
+                totalPrice: s.totalPrice,
+                address: s.UserAddress,
+
+                customer: {
+                    customerId: s.customerProfileId,
+                    name: s.CustomerProfile?.user?.name,
+                    phone: s.CustomerProfile?.user?.phone,
+                    email: s.CustomerProfile?.user?.email,
+                },
+
+                plan: {
+                    planId: s.plan.id,
+                    name: s.plan.planName,
+                    price: s.plan.price,
+                    images: s.plan.images,
+                },
+
+                mess: {
+                    messId: s.mess.id,
+                    name: s.mess.name,
+                    address: s.mess.address,
+                    is_active: s.mess.is_active,
+                },
+            })),
+        };
+    }
+
+
+
+
+
+
+
+
 
 
 

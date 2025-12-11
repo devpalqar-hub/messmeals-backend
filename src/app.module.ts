@@ -17,12 +17,13 @@ import { MessModule } from './mess/mess.module';
 import { MessAdminModule } from './mess-admin/mess-admin.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { ConfigModule } from '@nestjs/config';
+import { AddressModule } from './user-address/user-address.module';
 
 
 @Module({
   imports: [AuthModule, CustomerModule, DeliveriesModule, DeliveryAgentModule,
     PlansModule, PrismaModule, UserModule, VariationModule, ContactFormModule,
-    MessModule, MessAdminModule,
+    MessModule, MessAdminModule, AddressModule,
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'uploads'),
       serveRoot: "/uploads",
