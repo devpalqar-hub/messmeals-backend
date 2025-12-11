@@ -26,8 +26,8 @@ import { Role } from '@prisma/client';
 export class MessController {
     constructor(private readonly messService: MessService) { }
 
-    @UseGuards(JwtAuthGuard, RolesGuard)
-    @Roles(Role.SUPERADMIN)
+    // @UseGuards(JwtAuthGuard, RolesGuard)
+    // @Roles(Role.SUPERADMIN)
     @Post()
     create(@Body() dto: CreateMessDto) {
         return this.messService.create(dto);
