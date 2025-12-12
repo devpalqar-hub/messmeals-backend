@@ -6,10 +6,10 @@ edited existing schema and related functions for this updation
  -- 472
 
 user reg, delivery reg api
-1. variation issue 
-2. mess admin can see deliveries of delivery agent
-3. Delivery agent apis
-4. dlt setup
+
+mess admin can see deliveries of delivery agent
+Delivery agent apis
+dlt setup
 
 
 today

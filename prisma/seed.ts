@@ -12,13 +12,14 @@ async function main() {
             prisma.user.create({
                 data: {
                     name: faker.person.fullName(),
-                    phone: faker.phone.number(),
+                    phone: faker.number.int({ min: 6000000000, max: 9999999999 }).toString(),
                     email: faker.internet.email().toLowerCase(),
                     role: i < 3 ? 'DELIVERYAGENT' : i < 6 ? 'MESSADMIN' : 'USER',
                 },
             })
         )
     );
+
 
     const deliveryAgents = users.filter((u) => u.role === 'DELIVERYAGENT');
     const messAdmins = users.filter((u) => u.role === 'MESSADMIN');

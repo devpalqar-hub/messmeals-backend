@@ -42,6 +42,10 @@ export class DeliveryAgentController {
     }
 
 
+
+    // -------------------------------------------------------
+    // PHASE 3
+    // -------------------------------------------------------
     @UseGuards(JwtAuthGuard)
     @Patch('toggle/on/off')
     toggleOnlineOffline(@Body('is_online') is_online: boolean, @Req() req) {
@@ -50,7 +54,7 @@ export class DeliveryAgentController {
 
 
     @UseGuards(JwtAuthGuard)  // Optional based on your setup
-    @Get('stats')
+    @Get('get/stats')
     async getDeliveryStats(
         @Req() req,
     ) {
@@ -59,7 +63,7 @@ export class DeliveryAgentController {
     }
 
     @UseGuards(JwtAuthGuard)
-    @Get('profile')
+    @Get('get/profile/')
     async getDeliveryAgentProfile(
         @Req() req,
     ) {
