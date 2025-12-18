@@ -2,6 +2,7 @@ import {
     Injectable,
     UnauthorizedException,
     BadRequestException,
+    NotFoundException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -30,7 +31,7 @@ export class AuthService {
         if (!mess) {
             throw new Error("Mess not found");
         }
-        const otp = '123456'
+        // const otp = '123456'
         // Create user only if not present
         let user = existingUser;
         if (!existingUser) {
@@ -40,8 +41,8 @@ export class AuthService {
                     email,
                     phone,
                     role: Role.MESSADMIN,
-                    otp: otp, //remove this 
-                    expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now //remove this
+                    // otp: otp, //remove this 
+                    // expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now //remove this
                     is_verified: false,
                     messAdminProfile: {
                         create: {
@@ -56,15 +57,28 @@ export class AuthService {
                 },
             });
         }
-        // const otpResponse = await this.otpservice.sendOtp(phone);
-
-        return {
-            message: 'OTP sent successfully',
-            // sessionId: otpResponse.Details,
-            sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
-            otp: "123456",
-            status: 200,
-        };
+        if (process.env.NODE_ENV === 'STAGING') {
+            const numbers = await this.prisma.phoneNumbers.findUnique({
+                where: { phone: phone }
+            })
+            if (!numbers) {
+                throw new NotFoundException("Phone Number Not Found")
+            }
+            return {
+                message: 'OTP sent successfully',
+                sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
+                otp: "123456",
+                status: 200,
+            };
+        }
+        else if (process.env.NODE_ENV === 'PRODUCTION') {
+            const otpResponse = await this.otpservice.sendOtp(phone);
+            return {
+                message: 'OTP sent successfully',
+                sessionId: otpResponse.Details,
+                status: 200,
+            };
+        }
     }
 
 
@@ -75,28 +89,53 @@ export class AuthService {
         if (!user) {
             throw new UnauthorizedException('User not found');
         }
-        const otpResponse = await this.otpservice.sendOtp(phone);
-        return {
-            message: 'OTP sent successfully',
-            // sessionId: otpResponse.Details,  // store this on frontend
-            sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
-            otp: "123456",
-            status: 200,
-        };
+        if (process.env.NODE_ENV === 'STAGING') {
+            const numbers = await this.prisma.phoneNumbers.findUnique({
+                where: { phone: phone }
+            })
+            if (!numbers) {
+                throw new NotFoundException("Phone Number Not Found")
+            }
+            return {
+                message: 'OTP sent successfully',
+                sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
+                otp: "123456",
+                status: 200,
+            };
+        }
+        else if (process.env.NODE_ENV === 'PRODUCTION') {
+            const otpResponse = await this.otpservice.sendOtp(phone);
+            return {
+                message: 'OTP sent successfully',
+                sessionId: otpResponse.Details,
+                status: 200,
+            };
+        }
     }
 
 
 
     async verifyOtp(dto: OtpVerifyDto) {
         const { phone, sessionId, otp } = dto;
+        if (process.env.NODE_ENV === 'STAGING') {
+            const numbers = await this.prisma.phoneNumbers.findUnique({
+                where: { phone: phone }
+            })
+            if (!numbers) {
+                throw new NotFoundException("Phone Number Not Found")
+            }
+            if (otp != "123456") {
+                throw new BadRequestException("Otp not correct")
+            }
 
-        // Step1. Verify OTP from external service
-        // const verify = await this.otpservice.verifyOtp(sessionId, otp);
+        }
+        else if (process.env.NODE_ENV === 'PRODUCTION') {
+            const verify = await this.otpservice.verifyOtp(sessionId, otp);
 
-        // if (verify.Status !== 'Success') {
-        //     throw new UnauthorizedException('Invalid OTP');
-        // }
-
+            if (verify.Status !== 'Success') {
+                throw new UnauthorizedException('Invalid OTP');
+            }
+        }
         // Step2. Fetch user and profiles
         const user = await this.prisma.user.findUnique({
             where: { phone },
@@ -119,80 +158,77 @@ export class AuthService {
                 },
             },
         });
-
         if (!user) throw new UnauthorizedException('User not found');
-        if (otp === "123456") {
-            // Step3. Update verification only once
-            if (!user.is_verified) {
-                await this.prisma.user.update({
-                    where: { phone },
-                    data: { is_verified: true },
-                });
-                user.is_verified = true;
-            }
+        // Step3. Update verification only once
+        if (!user.is_verified) {
+            await this.prisma.user.update({
+                where: { phone },
+                data: { is_verified: true },
+            });
+            user.is_verified = true;
+        }
 
-            // Step4. Role specific payload
-            let payloadData = {};
+        // Step4. Role specific payload
+        let payloadData = {};
 
-            switch (user.role) {
-                case Role.USER:
-                    payloadData = {
-                        profile: user.customerProfile,
-                        addresses: user.customerProfile?.addresses || [],
-                        wallet: user.customerProfile?.Wallet || null,
-                    };
-                    break;
+        switch (user.role) {
+            case Role.USER:
+                payloadData = {
+                    profile: user.customerProfile,
+                    addresses: user.customerProfile?.addresses || [],
+                    wallet: user.customerProfile?.Wallet || null,
+                };
+                break;
 
-                case Role.DELIVERYAGENT:
-                    payloadData = {
-                        profile: user.deliveryPartnerProfile,
-                        mess: user.deliveryPartnerProfile?.mess || null,
-                    };
-                    break;
+            case Role.DELIVERYAGENT:
+                payloadData = {
+                    profile: user.deliveryPartnerProfile,
+                    mess: user.deliveryPartnerProfile?.mess || null,
+                };
+                break;
 
-                case Role.MESSADMIN:
-                    payloadData = {
-                        profile: user.messAdminProfile,
-                        messes: user.messAdminProfile?.messes || [],
-                    };
-                    break;
+            case Role.MESSADMIN:
+                payloadData = {
+                    profile: user.messAdminProfile,
+                    messes: user.messAdminProfile?.messes || [],
+                };
+                break;
 
-                case Role.SUPERADMIN:
-                    payloadData = {
-                        profile: null,
-                    };
-                    break;
+            case Role.SUPERADMIN:
+                payloadData = {
+                    profile: null,
+                };
+                break;
 
-                default:
-                    payloadData = {};
-            }
+            default:
+                payloadData = {};
+        }
 
-            // Step5. Generate token
-            const accessToken = this.jwtService.sign({
-                sub: user.id,
+        // Step5. Generate token
+        const accessToken = this.jwtService.sign({
+            sub: user.id,
+            phone: user.phone,
+            email: user.email,
+            role: user.role,
+        });
+
+        // Step6. Final response
+        return {
+            user: {
+                id: user.id,
+                name: user.name,
                 phone: user.phone,
                 email: user.email,
                 role: user.role,
-            });
+                ...payloadData,
+            },
+            accessToken,
+            message: user.is_verified
+                ? 'User verified successfully'
+                : 'User already verified before',
+            status: 200,
+        };
 
-            // Step6. Final response
-            return {
-                user: {
-                    id: user.id,
-                    name: user.name,
-                    phone: user.phone,
-                    email: user.email,
-                    role: user.role,
-                    ...payloadData,
-                },
-                accessToken,
-                message: user.is_verified
-                    ? 'User verified successfully'
-                    : 'User already verified before',
-                status: 200,
-            };
-        }
-        throw new BadRequestException("Otp not correct")
     }
 
 
@@ -391,15 +427,28 @@ export class AuthService {
             });
         }
 
-        const otpResponse = await this.otpservice.sendOtp(phone);
-
-        return {
-            message: 'OTP sent successfully',
-            // sessionId: otpResponse.Details,
-            sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
-            otp: "123456",
-            status: 200,
-        };
+        if (process.env.NODE_ENV === 'STAGING') {
+            const numbers = await this.prisma.phoneNumbers.findUnique({
+                where: { phone: phone }
+            })
+            if (!numbers) {
+                throw new NotFoundException("Phone Number Not Found")
+            }
+            return {
+                message: 'OTP sent successfully',
+                sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
+                otp: "123456",
+                status: 200,
+            };
+        }
+        else if (process.env.NODE_ENV === 'PRODUCTION') {
+            const otpResponse = await this.otpservice.sendOtp(phone);
+            return {
+                message: 'OTP sent successfully',
+                sessionId: otpResponse.Details,
+                status: 200,
+            };
+        }
     }
 
     async sendOtpForDeliveryAgentRegistration(dto: RegisterDeliveryAgentDto) {
@@ -456,17 +505,38 @@ export class AuthService {
             });
         }
 
-        const otpResponse = await this.otpservice.sendOtp(phone);
-
-        return {
-            message: 'OTP sent successfully',
-            // sessionId: otpResponse.Details,
-            sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
-            otp: "123456",
-            status: 200,
-        };
+        if (process.env.NODE_ENV === 'STAGING') {
+            const numbers = await this.prisma.phoneNumbers.findUnique({
+                where: { phone: phone }
+            })
+            if (!numbers) {
+                throw new NotFoundException("Phone Number Not Found")
+            }
+            return {
+                message: 'OTP sent successfully',
+                sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
+                otp: "123456",
+                status: 200,
+            };
+        }
+        else if (process.env.NODE_ENV === 'PRODUCTION') {
+            const otpResponse = await this.otpservice.sendOtp(phone);
+            return {
+                message: 'OTP sent successfully',
+                sessionId: otpResponse.Details,
+                status: 200,
+            };
+        }
     }
 
+
+    async AddPhoneNumber(number: string) {
+        const phone = await this.prisma.phoneNumbers.create({
+            data: { phone: number }
+        })
+
+        return { message: "Phone Number added successfully." }
+    }
 
 
 }

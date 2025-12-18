@@ -6,6 +6,7 @@ import { OtpVerifyDto } from './dto/otp-verify.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
+import { Role } from '@prisma/client';
 
 
 @Controller('auth')
@@ -61,5 +62,12 @@ export class AuthController {
     @Post('send/dlvryagent/reg/otp')
     async sendOtpForDeliveryAgentRegistration(@Body() regDto: RegisterDeliveryAgentDto) {
         return this.authService.sendOtpForDeliveryAgentRegistration(regDto);
+    }
+
+    // @UseGuards(JwtAuthGuard, RolesGuard)
+    // @Roles(Role.SUPERADMIN)
+    @Post('admin/add/number')
+    async AddPhoneNumber(@Body('phone') number: string) {
+        return this.authService.AddPhoneNumber(number);
     }
 }

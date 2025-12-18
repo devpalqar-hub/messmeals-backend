@@ -244,3 +244,8 @@ model Transaction {
   meta         Json? // optional metadata: { fromUserId, toUserId, note, externalId }
   createdAt    DateTime @default(now())
 }
+
+model PhoneNumbers {
+  id    String @id @default(uuid())
+  phone String @unique
+}
