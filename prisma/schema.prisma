@@ -219,7 +219,7 @@ model UserAddress {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  User      CustomerProfile @relation(fields: [profileId], references: [id])
+  User      CustomerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   profileId String
 
   subscriptions UserSubscriptions[]
