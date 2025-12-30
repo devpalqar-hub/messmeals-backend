@@ -1,42 +1,28 @@
-const where: any = search
-    ? {
-        OR: [
-            {
-                user: {
-                    name: {
-                        contains: search,
-                        mode: 'insensitive',
-                    },
-                },
-            },
-            {
-                user: {
-                    email: {
-                        contains: search,
-                        mode: 'insensitive',
-                    },
-                },
-            },
-            {
-                user: {
-                    phone: {
-                        contains: search,
-                        mode: 'insensitive',
-                    },
-                },
-            },
-            {
-                userSubscriptions: {
-                    some: {
-                        plan: {
-                            planName: {
-                                contains: search,
-                                mode: 'insensitive',
-                            },
-                        },
-                    },
-                },
-            },
-        ],
-    }
-    : {};
+Plan purchasing - changed db strucutre and related functions.
+wallet setup - money add to wallet. can be used as payment for plan purchasing.
+edited existing schema and related functions for this updation
+
+
+ -- 472
+
+user reg, delivery reg api
+
+mess admin can see deliveries of delivery agent
+Delivery agent apis
+dlt setup
+
+
+today
+
+asked anandhu to create a a record for messmeals, (njan parasya de email il kereet cheytha mathii.) - -done
+ath kazhyumbo staging.messmeals.com il nginx configure cheynam -- done
+ennt code il 2 factor kalanjt 123456 otp aakyt staging il idanam. -
+staging completed.
+
+add port as 3004 before pushing
+then do the 3 edit suggested by reema which is on paper. and review and testimonial module.
+
+
+
+final: 
+edit userreg, adminreg, partner reg apis.

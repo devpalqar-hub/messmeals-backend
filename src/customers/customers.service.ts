@@ -6,92 +6,218 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UserService } from 'src/user/user.service';
-import { CreateCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
+import { choosePlanDto, CreateCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
 import { RenewSubscriptionDto } from './dto/renew-Subscription.dto';
-import { de } from '@faker-js/faker';
+import { ScheduleType, Prisma, DeliveryStatus } from '@prisma/client';
 import { CancelSubDto } from './dto/cancel-sub.dto';
+import { PauseSubDto } from './dto/pause-sub.dto';
+import { Subscription } from 'rxjs';
+
 
 @Injectable()
 export class CustomerService {
     constructor(
         private readonly prisma: PrismaService,
-        private readonly jwtService: JwtService,
-        private readonly userService: UserService
+        private readonly userService: UserService,
+
     ) { }
 
+    private ensureHttpsUrl(url: string): string {
+        if (!url) return url;
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+            return url;
+        }
+        return `https://${url}`;
+    }
+
+    private getDefaultUrl(path: string): string {
+        const frontendUrl = process.env.FRONTEND_URL;
+        if (!frontendUrl) {
+            throw new Error('FRONTEND_URL environment variable is not set');
+        }
+        const baseUrl = this.ensureHttpsUrl(frontendUrl);
+        return `${baseUrl}${path}`;
+    }
 
     async CreateUser(dto: CreateCustomerDto) {
+        const {
+            name,
+            phone,
+            email,
+            address,
+            currentLocation,
+            latitude_logitude,
+            is_active,
+            walletAmount,
+            discount,
+            planId,
+            deliveryPartnerId,
+            start_date,
+            end_date,
 
-        const { name, phone, email, address, currentLocation, latitude_logitude, is_active, walletAmount, discount, planId, deliveryPartnerId, start_date, end_date } = dto
-        // 1️⃣ Check if user already exists
-        const existing = await this.prisma.user.findUnique({
-            where: { email: dto.email },
+            // phase 2
+            scheduleType,
+            selectedDays, // Array of weekdays if CUSTOM (e.g. ["MONDAY", "WEDNESDAY", "FRIDAY"])
+        } = dto;
+
+        if (ScheduleType.CUSTOM === scheduleType && (!selectedDays || selectedDays.length === 0)) {
+            throw new BadRequestException('Selected days are required for CUSTOM schedule type');
+        }
+
+        // 1️⃣ Validate delivery partner
+        const deliveryPartner = await this.prisma.deliveryPartnerProfile.findUnique({
+            where: { id: deliveryPartnerId },
         });
-        if (existing) throw new BadRequestException('Email already registered');
+        if (!deliveryPartner) throw new BadRequestException('Delivery Partner not found');
 
-        const Partnerexisting = await this.prisma.user.findUnique({
-            where: { id: dto.deliveryPartnerId },
-        });
-        if (Partnerexisting) throw new BadRequestException('Delivery Partner not found');
-
+        // 2️⃣ Validate plan
         const plan = await this.prisma.plans.findUnique({
-            where: { id: dto.planId },
+            where: { id: planId },
         });
         if (!plan) throw new BadRequestException('Plan not found');
-        // 2️⃣ Create user
-        const user = await this.userService.createUser({
-            name: dto.name,
-            email: dto.email,
-            phone: dto.phone,
-            is_active: dto.is_active
-        });
-        const walletamount = Number(dto.walletAmount)
-        const customerProfile = await this.prisma.customerProfile.create({
-            data: {
-                userId: user.id,
-                address: dto.address,
-                walletAmount: walletamount,
-                current_location: dto.currentLocation,
-                latitude_logitude: dto.latitude_logitude
 
+        if (plan.messId !== deliveryPartner.messId) {
+            throw new BadRequestException('Plan does not belong to the specified Mess');
+        }
+
+        // 3️⃣ Check if user exists
+        let user = await this.prisma.user.findUnique({ where: { email } });
+        let customerProfile;
+
+        if (!user) {
+            // 🆕 Create user
+            user = await this.userService.createUser({
+                name,
+                email,
+                phone,
+                is_active,
+            });
+
+            // 🆕 Create customer profile
+            customerProfile = await this.prisma.customerProfile.create({
+                data: {
+                    userId: user.id,
+                    address,
+                    walletAmount: Number(walletAmount),
+                    current_location: currentLocation,
+                    latitude_logitude,
+                },
+            });
+        } else {
+            // ✅ Fetch or create customer profile
+            customerProfile = await this.prisma.customerProfile.findUnique({
+                where: { userId: user.id },
+            });
+
+            if (!customerProfile) {
+                customerProfile = await this.prisma.customerProfile.create({
+                    data: {
+                        userId: user.id,
+                        address,
+                        walletAmount: Number(walletAmount),
+                        current_location: currentLocation,
+                        latitude_logitude,
+                    },
+                });
             }
-        })
-        const startDate = new Date(dto.start_date);
-        const endDate = new Date(dto.end_date);
-        const diffInMills = endDate.getTime() - startDate.getTime()
-        const diffInDays = Math.ceil(diffInMills / (1000 * 60 * 60 * 24));
+        }
 
-        console.log("Days difference:", diffInDays);
-        const dscnt = Number(discount)
-        const actualPrice = diffInDays * Number(plan.price)
-        const discountedprice = Number(actualPrice) - dscnt
+        // 4️⃣ Calculate duration and price
+        const startDate = new Date(start_date);
+        const endDate = new Date(end_date);
+        const diffInMs = endDate.getTime() - startDate.getTime();
+        const diffInDays = Math.ceil(diffInMs / (1000 * 60 * 60 * 24));
 
-        //payment logic here.
+        const numericDiscount = Number(discount);
+        const totalPrice = diffInDays * Number(plan.price);
+        const discountedPrice = totalPrice - numericDiscount;
+
+        // 5️⃣ Create subscription
         const userSubscription = await this.prisma.userSubscriptions.create({
             data: {
                 customerProfileId: customerProfile.id,
                 start_date: startDate,
                 end_date: endDate,
-                discount: dto.discount,
-                totalPrice: actualPrice,
-                discountedPrice: discountedprice,
-                deliveryPartnerProfileId: dto.deliveryPartnerId,
-                planId: dto.planId
-            }
-        })
+                discount: numericDiscount,
+                totalPrice,
+                discountedPrice,
+                messId: plan.messId,
+                deliveryPartnerProfileId: deliveryPartnerId,
+                planId,
+                scheduleType,
+                selectedDays: scheduleType === 'CUSTOM' ? selectedDays : undefined,
+            },
+        });
 
+        // 6️⃣ Create Deliveries based on scheduleType
+        const deliveriesToCreate: any[] = [];
+        const currentDate = new Date(startDate);
+
+        if (scheduleType === ScheduleType.EVERYDAY) {
+            // ➤ Create deliveries for each day in range
+            while (currentDate <= endDate) {
+                deliveriesToCreate.push({
+                    date: new Date(currentDate),
+                    customerId: customerProfile.id,
+                    planId,
+                    subscriptionId: userSubscription.id,
+                    status: DeliveryStatus.PENDING,
+                    partnerId: deliveryPartnerId,
+                    messId: plan.messId,
+                });
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+        } else if (scheduleType === ScheduleType.CUSTOM && Array.isArray(selectedDays)) {
+            // ➤ Create deliveries only on selected weekdays
+            const selectedDaysUpper = selectedDays.map((d) => d.toUpperCase());
+            const weekdayMap = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+
+            while (currentDate <= endDate) {
+                const dayName = weekdayMap[currentDate.getDay()];
+                if (selectedDaysUpper.includes(dayName)) {
+                    deliveriesToCreate.push({
+                        date: new Date(currentDate),
+                        customerId: customerProfile.id,
+                        planId,
+                        subscriptionId: userSubscription.id,
+                        status: DeliveryStatus.PENDING,
+                        partnerId: deliveryPartnerId,
+                        messId: plan.messId,
+                    });
+                }
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+        }
+
+        if (deliveriesToCreate.length > 0) {
+            await this.prisma.deliveries.createMany({
+                data: deliveriesToCreate,
+            });
+        }
+
+        // 7️⃣ Update wallet
         await this.prisma.customerProfile.update({
             where: { id: customerProfile.id },
             data: {
-                walletAmount: Number(walletAmount) - discountedprice
-            }
-        })
-        //Return both user and profile
+                walletAmount: Number(customerProfile.walletAmount) - discountedPrice,
+            },
+        });
+
+        // ✅ Return success response
         return {
-            message: 'User and profile created successfully',
-            data: { user, customerProfile, userSubscription }
+            message: user.createdAt
+                ? 'New user and subscription created successfully'
+                : 'Subscription created successfully for existing user',
+            data: {
+                user,
+                customerProfile,
+                userSubscription,
+                deliveriesCreated: deliveriesToCreate.length,
+            },
         };
     }
+
+
 
 
     async updateCustomerProfile(userId: string, dto: UpdateCustomerDto) {
@@ -160,15 +286,6 @@ export class CustomerService {
                             ...(deliveryPartnerId ? { deliveryPartnerProfileId: deliveryPartnerId } : {}),
                         },
                     });
-                } else {
-                    await tx.userSubscriptions.create({
-                        data: {
-                            start_date: new Date(),
-                            customerProfileId: user.customerProfile.id,
-                            planId,
-                            ...(deliveryPartnerId ? { deliveryPartnerProfileId: deliveryPartnerId } : {}),
-                        },
-                    });
                 }
             }
 
@@ -192,42 +309,53 @@ export class CustomerService {
 
 
 
-    async findAll(page: number = 1, limit: number = 10, search?: string) {
+    async findAll(
+        page: number = 1,
+        limit: number = 10,
+        search?: string,
+        messId?: string, // ✅ new parameter
+    ) {
         const skip = (page - 1) * limit;
 
-        // Build dynamic filter for search
-        const where: any = search
-            ? {
-                OR: [{
-                    user: {
-                        name: {
-                            contains: search.toLowerCase()
+        // ✅ Build dynamic filter for search and mess
+        const where: any = {
+            ...(search
+                ? {
+                    OR: [
+                        {
+                            user: {
+                                name: { contains: search.toLowerCase() },
+                            },
                         },
-                    },
-                },
-                {
-                    user: {
-                        email: {
-                            contains: search.toLowerCase()
+                        {
+                            user: {
+                                email: { contains: search.toLowerCase() },
+                            },
                         },
-                    },
-                },
-                {
-                    userSubscriptions: {
-                        some: {
-                            plan: {
-                                planName: {
-                                    contains: search.toLowerCase()
+                        {
+                            userSubscriptions: {
+                                some: {
+                                    plan: {
+                                        planName: { contains: search.toLowerCase() },
+                                    },
                                 },
                             },
                         },
+                    ],
+                }
+                : {}),
+            ...(messId
+                ? {
+                    userSubscriptions: {
+                        some: {
+                            messId, // ✅ filter by mess
+                        },
                     },
                 }
-                ]
-            }
-            : {};
+                : {}),
+        };
 
-        // Fetch data + count in a transaction
+        // ✅ Fetch data + count in a transaction
         const [customers, total] = await this.prisma.$transaction([
             this.prisma.customerProfile.findMany({
                 skip,
@@ -236,10 +364,17 @@ export class CustomerService {
                 include: {
                     user: true,
                     userSubscriptions: {
-                        where: { is_active: true },
+                        where: {
+                            is_active: true,
+                            ...(messId ? { messId } : {}), // ✅ filter inside subscriptions too
+                        },
                         include: {
                             plan: {
-                                include: { images: true, Variation: true },
+                                include: {
+                                    images: true,
+                                    Variation: true,
+                                    mess: true,
+                                },
                             },
                         },
                     },
@@ -250,33 +385,32 @@ export class CustomerService {
             this.prisma.customerProfile.count({ where }),
         ]);
 
-        // Transform response
+        // ✅ Transform response
         const result = customers.map((c) => {
             const activeSubs = c.userSubscriptions.filter(
-                (sub) => !sub.end_date || sub.end_date > new Date()
+                (sub) => (!sub.end_date || sub.end_date > new Date()) && (!messId || sub.messId === messId)
             );
 
-            const totalOrders = activeSubs.length; // active plan count
-            const totalSpent = c.userSubscriptions.reduce(
-                (sum, sub) => sum + Number(sub.totalPrice),
-                0
-            );
+            const totalOrders = activeSubs.length;
+            const totalSpent = c.userSubscriptions
+                .filter((sub) => !messId || sub.messId === messId)
+                .reduce((sum, sub) => sum + Number(sub.totalPrice), 0);
 
             const daysLeft =
                 activeSubs.length > 0 && activeSubs[0].end_date
                     ? Math.ceil(
-                        (new Date(activeSubs[0].end_date).getTime() -
-                            new Date().getTime()) /
+                        (new Date(activeSubs[0].end_date).getTime() - new Date().getTime()) /
                         (1000 * 60 * 60 * 24)
                     )
                     : null;
 
             return {
                 id: c.user.id,
-                customerProfileId: c.id, // ✅ Add this line
+                customerProfileId: c.id,
                 name: c.user.name,
                 email: c.user.email,
                 phone: c.user.phone,
+                is_active: c.user.is_active,
                 walletBalance: Number(c.walletAmount),
                 address: c.address,
                 current_location: c.current_location,
@@ -288,6 +422,9 @@ export class CustomerService {
                     id: sub.id,
                     start_date: sub.start_date,
                     end_date: sub.end_date,
+                    seletedDays: sub.selectedDays,
+                    scheduletype: sub.scheduleType,
+                    is_active: sub.is_active,
                     totalPrice: Number(sub.totalPrice),
                     discountedPrice: Number(sub.discountedPrice),
                     deliveryPartnerProfileId: sub.deliveryPartnerProfileId,
@@ -298,6 +435,7 @@ export class CustomerService {
                             price: Number(sub.plan.price),
                             description: sub.plan.description,
                             variation: sub.plan.Variation,
+                            mess: sub.plan.mess,
                             images: sub.plan.images.map((img) => ({
                                 url: img.url,
                                 altText: img.altText,
@@ -318,6 +456,7 @@ export class CustomerService {
             },
         };
     }
+
 
 
     async findOne(id: string) {
@@ -377,6 +516,8 @@ export class CustomerService {
                 id: sub.id,
                 start_date: sub.start_date,
                 end_date: sub.end_date,
+                seletedDays: sub.selectedDays,
+                scheduletype: sub.scheduleType,
                 totalPrice: Number(sub.totalPrice),
                 discountedPrice: Number(sub.discountedPrice),
                 deliveryPartnerProfileId: sub.deliveryPartnerProfileId,
@@ -440,6 +581,7 @@ export class CustomerService {
                 deliveryPartnerProfileId: deliveryPartnerId,
                 planId: planId,
                 discount: discount,
+                messId: plan.messId,
                 discountedPrice: discountedPrice,
                 customerProfileId: customerProfileId
             }
@@ -460,57 +602,145 @@ export class CustomerService {
 
     async UpdateWalletAmount(userId: string, amount: number) {
         // Logic to update wallet amount
+        console.log('Updating wallet for user:', userId, 'by amount:', amount);
         await this.prisma.customerProfile.update({
             where: { id: userId },
             data: { walletAmount: { increment: amount } },
         });
         return { message: 'Wallet amount updated successfully' };
-
     }
 
 
-    async CancelSubscription(subscriptionId: string) {
-        // 1️⃣ Find the subscription
+    async CancelSubscription(subscriptionId: string, dto: CancelSubDto) {
+        const { cancellation_start_date, cancellation_end_date } = dto || {};
+
+        const cancelStartDate = cancellation_start_date ? new Date(cancellation_start_date) : null;
+        const cancelEndDate = cancellation_end_date ? new Date(cancellation_end_date) : null;
+        const currentDate = new Date();
+
+        // 1️⃣ Find subscription with plan and customer profile
         const subscription = await this.prisma.userSubscriptions.findUnique({
             where: { id: subscriptionId },
             include: {
-                CustomerProfile: true, // Include customer details to access walletAmount
+                CustomerProfile: true,
+                plan: true,
             },
         });
 
-        // 2️⃣ Handle not found
-        if (!subscription) {
-            throw new NotFoundException('Subscription not found');
-        }
+        if (!subscription) throw new NotFoundException('Subscription not found');
+        if (!subscription.is_active) throw new BadRequestException('Subscription is already cancelled');
+        if (!subscription.CustomerProfile) throw new BadRequestException('Customer profile not found');
 
-        // 3️⃣ Check if already inactive
-        if (!subscription.is_active) {
-            throw new BadRequestException('Subscription is already cancelled');
-        }
+        const planPrice = Number(subscription.plan.price);
+        const customerWallet = Number(subscription.CustomerProfile.walletAmount);
 
-        // 4️⃣ Validate wallet amount
-        if (subscription.CustomerProfile) {
-            const walletAmount = Number(subscription.CustomerProfile.walletAmount);
+        let refundAmount = 0;
+        let deletedDeliveriesCount = 0;
+        let cancellationType = 'Full';
 
-            if (walletAmount < 0) {
-                throw new BadRequestException(
-                    'Cannot cancel subscription: wallet amount is less than 0'
-                );
+        // 2️⃣ Partial cancellation (date range provided)
+        if (cancelStartDate && cancelEndDate) {
+            // Ensure start is before end
+            if (cancelEndDate < cancelStartDate) {
+                throw new BadRequestException('Cancellation end date must be after start date.');
             }
-        } else {
-            throw new BadRequestException('Customer profile not found for this subscription');
+
+            // Ensure cancellation start is at least 2 days from now
+            const diffFromNowDays = Math.ceil(
+                (cancelStartDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
+            );
+            if (diffFromNowDays < 2) {
+                throw new BadRequestException('Cancellation can only be scheduled at least 2 days in advance.');
+            }
+
+            // Calculate duration between cancellation start and end
+            const diffInMs = cancelEndDate.getTime() - cancelStartDate.getTime();
+            const diffInDays = Math.ceil(diffInMs / (1000 * 60 * 60 * 24));
+
+            // Calculate refund amount
+            refundAmount = diffInDays * planPrice;
+
+            // Delete deliveries during cancellation period
+            const result = await this.prisma.deliveries.deleteMany({
+                where: {
+                    subscriptionId,
+                    date: {
+                        gte: cancelStartDate,
+                        lte: cancelEndDate,
+                    },
+                },
+            });
+            deletedDeliveriesCount = result.count;
+
+            // Update wallet with refund
+            await this.prisma.customerProfile.update({
+                where: { id: subscription.CustomerProfile.id },
+                data: { walletAmount: customerWallet + refundAmount },
+            });
+
+            // Update subscription
+            await this.prisma.userSubscriptions.update({
+                where: { id: subscriptionId },
+                data: {
+                    cancellation_start_date: cancelStartDate,
+                    cancellation_end_date: cancelEndDate,
+                    cancelled_on: new Date(),
+                    is_active: false,
+                },
+            });
+
+            cancellationType = 'Partial';
+        }
+        // 3️⃣ Full cancellation (no dates provided)
+        else {
+            // Find undelivered deliveries
+            const undeliveredDeliveries = await this.prisma.deliveries.findMany({
+                where: {
+                    subscriptionId,
+                    date: { gte: currentDate },
+                },
+            });
+
+            const remainingDays = undeliveredDeliveries.length;
+
+            // Calculate refund for undelivered days
+            refundAmount = remainingDays * planPrice;
+
+            // Delete all future deliveries
+            const result = await this.prisma.deliveries.deleteMany({
+                where: {
+                    subscriptionId,
+                    date: { gte: currentDate },
+                },
+            });
+            deletedDeliveriesCount = result.count;
+
+            // Update wallet
+            await this.prisma.customerProfile.update({
+                where: { id: subscription.CustomerProfile.id },
+                data: { walletAmount: customerWallet + refundAmount },
+            });
+
+            // Update subscription
+            await this.prisma.userSubscriptions.update({
+                where: { id: subscriptionId },
+                data: {
+                    is_active: false,
+                    cancelled_on: new Date(),
+                    cancellation_start_date: null,
+                    cancellation_end_date: null,
+                },
+            });
         }
 
-        // 5️⃣ Update subscription status
-        await this.prisma.userSubscriptions.update({
-            where: { id: subscriptionId },
-            data: { is_active: false },
-        });
-
-        return { message: 'Subscription cancelled successfully' };
+        return {
+            message: 'Subscription cancelled successfully',
+            cancellationType,
+            deletedDeliveries: deletedDeliveriesCount,
+            refundAmount,
+            updatedWallet: customerWallet + refundAmount,
+        };
     }
-
-
 
 
 
@@ -564,5 +794,521 @@ export class CustomerService {
             data: result,
         };
     }
+
+    async getAllMesses(userId: string) {
+        // Find the messAdminProfile for this user
+        const messAdmin = await this.prisma.messAdminProfile.findUnique({
+            where: { userId: userId },
+            include: {
+                messes: {
+                    where: { is_active: true },
+                    select: {
+                        id: true,
+                        name: true,
+                        description: true,
+                        address: true,
+                    },
+                    orderBy: { name: 'asc' },
+                },
+            },
+        });
+
+        if (!messAdmin) {
+            throw new Error('MessAdmin profile not found for this user');
+        }
+
+        return messAdmin.messes;
+    }
+
+    async addMessToMessAdmin(userId: string, messId: string) {
+        // Find the messAdminProfile for this user
+        console.log(messId, "-----", userId)
+        const messAdmin = await this.prisma.messAdminProfile.findUnique({
+            where: { userId: userId },
+        });
+        console.log(messAdmin, "--------messadmin")
+        if (!messAdmin) {
+            throw new Error('MessAdmin profile not found for this user');
+        }
+        const mess = await this.prisma.mess.findUnique({
+            where: { id: messId },
+        });
+        console.log(mess, "--------mess")
+
+        if (!mess) {
+            throw new Error('Mess not found for this user');
+        }
+
+
+        // Connect the mess to the mess admin
+        await this.prisma.messAdminProfile.update({
+            where: { id: messAdmin.id },
+            data: {
+                messes: {
+                    connect: { id: messId },
+                },
+            },
+        });
+
+        return { message: 'Mess added to MessAdmin successfully' };
+    }
+
+    async PauseSubscription(subscriptionId: string, dto: PauseSubDto) {
+        const { pause_start_date, pause_end_date } = dto;
+
+        // 1️⃣ Validate pause dates
+        if (!pause_start_date || !pause_end_date) {
+            throw new BadRequestException('Both pause start and pause end dates are required');
+        }
+
+        const pauseStart = new Date(pause_start_date);
+        const pauseEnd = new Date(pause_end_date);
+        const currentDate = new Date();
+
+        // 2️⃣ Ensure pause start is at least 2 days from now
+        const diffFromNowDays = Math.ceil(
+            (pauseStart.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
+        );
+
+        if (diffFromNowDays < 2) {
+            throw new BadRequestException('Pause can only be scheduled at least 2 days in advance.');
+        }
+
+        // 2️⃣ Fetch subscription
+        const subscription = await this.prisma.userSubscriptions.findUnique({
+            where: { id: subscriptionId },
+            include: {
+                DeliveryPartnerProfile: true,
+            },
+        });
+
+        if (!subscription) throw new NotFoundException('Subscription not found');
+
+        if (!subscription.is_active)
+            throw new BadRequestException('Subscription is inactive and cannot be paused');
+
+        // 3️⃣ Validate pause range
+        if (!subscription.end_date) {
+            throw new BadRequestException('Subscription has no end date');
+        }
+        if (pauseEnd > subscription.end_date) {
+            throw new BadRequestException('Pause end date cannot exceed subscription end date');
+        }
+
+        // 4️⃣ Calculate pause duration (in days)
+        const pauseDurationDays =
+            Math.ceil((pauseEnd.getTime() - pauseStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+        // 5️⃣ Fetch all deliveries of this subscription
+        const allDeliveries = await this.prisma.deliveries.findMany({
+            where: {
+                subscriptionId: subscriptionId,
+            },
+            orderBy: { date: 'asc' },
+        });
+
+        // 6️⃣ Separate completed vs remaining deliveries
+        const completedDeliveries = allDeliveries.filter(
+            (d) => d.date < pauseStart
+        );
+
+        const remainingDeliveries = allDeliveries.filter(
+            (d) => d.date >= pauseStart
+        );
+
+        if (remainingDeliveries.length === 0) {
+            throw new BadRequestException('No future deliveries found to pause.');
+        }
+
+        // 7️⃣ Shift remaining deliveries forward by pause duration
+        const updates: Prisma.PrismaPromise<any>[] = [];
+        for (const delivery of remainingDeliveries) {
+            const newDate = new Date(delivery.date);
+            newDate.setDate(newDate.getDate() + pauseDurationDays);
+
+            updates.push(
+                this.prisma.deliveries.update({
+                    where: { id: delivery.id },
+                    data: { date: newDate },
+                })
+            );
+        }
+
+        // Run all updates in one transaction
+        await this.prisma.$transaction(updates);
+
+        // 8️⃣ Optionally, extend subscription end_date
+        const newEndDate = new Date(subscription.end_date);
+        newEndDate.setDate(newEndDate.getDate() + pauseDurationDays);
+
+        // 9️⃣ Update subscription with pause info + new end date
+        await this.prisma.userSubscriptions.update({
+            where: { id: subscriptionId },
+            data: {
+                pause_start_date: pauseStart,
+                pause_end_date: pauseEnd,
+                end_date: newEndDate, // extend subscription to keep total deliveries
+            },
+        });
+
+        // ✅ Return summary
+        return {
+            message: 'Subscription paused successfully and future deliveries rescheduled',
+            pauseDurationDays,
+            shiftedDeliveries: remainingDeliveries.length,
+            newSubscriptionEndDate: newEndDate,
+        };
+    }
+
+    async ResetWalletAmount(userId: string) {
+        const customer = await this.prisma.customerProfile.findUnique({
+            where: { id: userId },
+        });
+
+        if (!customer) {
+            throw new NotFoundException('Customer profile not found');
+        }
+
+        await this.prisma.customerProfile.update({
+            where: { id: userId },
+            data: { walletAmount: 0 },
+        });
+
+
+    }
+
+
+    async choosePlan(dto: choosePlanDto, userId: string) {
+        const {
+            addressId,
+            planId,
+            start_date,
+            end_date,
+            scheduleType,
+            selectedDays, // Array of weekdays if CUSTOM (e.g. ["MONDAY", "WEDNESDAY", "FRIDAY"])
+            successUrl,
+            cancelUrl,
+        } = dto;
+
+        if (ScheduleType.CUSTOM === scheduleType && (!selectedDays || selectedDays.length === 0)) {
+            throw new BadRequestException('Selected days are required for CUSTOM schedule type');
+        }
+        let address = await this.prisma.userAddress.findUnique({ where: { id: addressId } });
+        if (!address) {
+            throw new BadRequestException('Address not found');
+        }
+
+        //Check if user exists
+        let user = await this.prisma.customerProfile.findUnique({ where: { userId: userId } });
+        if (!user) {
+            throw new BadRequestException('User not found');
+        }
+        //Validate plan
+        const plan = await this.prisma.plans.findUnique({
+            where: { id: planId },
+        });
+        if (!plan) throw new BadRequestException('Plan not found');
+
+
+        //Calculate duration and price
+        const startDate = new Date(start_date);
+        const endDate = new Date(end_date);
+        const diffInMs = endDate.getTime() - startDate.getTime();
+        const diffInDays = Math.ceil(diffInMs / (1000 * 60 * 60 * 24));
+        const totalPrice = diffInDays * Number(plan.price);
+
+        //discount logic 
+        // const discountedPrice = totalPrice - numericDiscount;
+
+        //Create subscription
+        // add once payment is succesfull.
+        const userSubscription = await this.prisma.userSubscriptions.create({
+            data: {
+                customerProfileId: user.id,
+                start_date: startDate,
+                end_date: endDate,
+                discount: 0,
+                totalPrice,
+                discountedPrice: totalPrice,
+                messId: plan.messId,
+                planId,
+                scheduleType,
+                selectedDays: scheduleType === 'CUSTOM' ? selectedDays : undefined,
+                userAddressId: addressId,
+                //add address
+            },
+        });
+
+
+
+        // Update wallet
+        await this.prisma.customerProfile.update({
+            where: { id: user.id },
+            data: {
+                walletAmount: Number(user.walletAmount) - 0, //0 here is discounted price
+            },
+        });
+
+        //  Return success response
+        return {
+            message: "Subscription created successfully",
+            data: {
+                user,
+                userSubscription,
+            },
+        };
+    }
+
+
+    //This function is for user to cancel their active subscriptions
+    async CancelUserSubscription(dto: CancelSubDto, userId: string) {
+        const { cancellation_start_date, cancellation_end_date, subscriptionId } = dto || {};
+
+        const cancelStartDate = cancellation_start_date ? new Date(cancellation_start_date) : null;
+        const cancelEndDate = cancellation_end_date ? new Date(cancellation_end_date) : null;
+        const currentDate = new Date();
+
+        let user = await this.prisma.customerProfile.findUnique({ where: { userId: userId } });
+        if (!user) {
+            throw new BadRequestException('User not found');
+        }
+        // 1️⃣ Find subscription with plan and customer profile
+        const subscription = await this.prisma.userSubscriptions.findUnique({
+            where: { id: subscriptionId, customerProfileId: user.id },
+            include: {
+                CustomerProfile: true,
+                plan: true,
+            },
+        });
+
+        if (!subscription) throw new NotFoundException('Subscription not found');
+        if (!subscription.is_active) throw new BadRequestException('Subscription is already cancelled');
+        if (!subscription.CustomerProfile) throw new BadRequestException('Customer profile not found');
+
+        const planPrice = Number(subscription.plan.price);
+        const customerWallet = Number(subscription.CustomerProfile.walletAmount);
+
+        let refundAmount = 0;
+        let deletedDeliveriesCount = 0;
+        let cancellationType = 'Full';
+
+        // 2️⃣ Partial cancellation (date range provided)
+        if (cancelStartDate && cancelEndDate) {
+            // Ensure start is before end
+            if (cancelEndDate < cancelStartDate) {
+                throw new BadRequestException('Cancellation end date must be after start date.');
+            }
+
+            // Ensure cancellation start is at least 2 days from now
+            const diffFromNowDays = Math.ceil(
+                (cancelStartDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
+            );
+            if (diffFromNowDays < 2) {
+                throw new BadRequestException('Cancellation can only be scheduled at least 2 days in advance.');
+            }
+
+            // Calculate duration between cancellation start and end
+            const diffInMs = cancelEndDate.getTime() - cancelStartDate.getTime();
+            const diffInDays = Math.ceil(diffInMs / (1000 * 60 * 60 * 24));
+
+            // Calculate refund amount
+            refundAmount = diffInDays * planPrice;
+
+            // Delete deliveries during cancellation period
+            const result = await this.prisma.deliveries.deleteMany({
+                where: {
+                    subscriptionId,
+                    date: {
+                        gte: cancelStartDate,
+                        lte: cancelEndDate,
+                    },
+                },
+            });
+            deletedDeliveriesCount = result.count;
+
+            // Update wallet with refund
+            await this.prisma.customerProfile.update({
+                where: { id: subscription.CustomerProfile.id },
+                data: { walletAmount: customerWallet + refundAmount },
+            });
+
+            // Update subscription
+            await this.prisma.userSubscriptions.update({
+                where: { id: subscriptionId },
+                data: {
+                    cancellation_start_date: cancelStartDate,
+                    cancellation_end_date: cancelEndDate,
+                    cancelled_on: new Date(),
+                    is_active: false,
+                },
+            });
+
+            cancellationType = 'Partial';
+        }
+        // 3️⃣ Full cancellation (no dates provided)
+        else {
+            // Find undelivered deliveries
+            const undeliveredDeliveries = await this.prisma.deliveries.findMany({
+                where: {
+                    subscriptionId,
+                    date: { gte: currentDate },
+                },
+            });
+
+            const remainingDays = undeliveredDeliveries.length;
+
+            // Calculate refund for undelivered days
+            refundAmount = remainingDays * planPrice;
+
+            // Delete all future deliveries
+            const result = await this.prisma.deliveries.deleteMany({
+                where: {
+                    subscriptionId,
+                    date: { gte: currentDate },
+                },
+            });
+            deletedDeliveriesCount = result.count;
+
+            // Update wallet
+            await this.prisma.customerProfile.update({
+                where: { id: subscription.CustomerProfile.id },
+                data: { walletAmount: customerWallet + refundAmount },
+            });
+
+            // Update subscription
+            await this.prisma.userSubscriptions.update({
+                where: { id: subscriptionId },
+                data: {
+                    is_active: false,
+                    cancelled_on: new Date(),
+                    cancellation_start_date: null,
+                    cancellation_end_date: null,
+                },
+            });
+        }
+
+        return {
+            message: 'Subscription cancelled successfully',
+            cancellationType,
+            deletedDeliveries: deletedDeliveriesCount,
+            refundAmount,
+            updatedWallet: customerWallet + refundAmount,
+        };
+    }
+
+
+    //This function is for user to pause their subscriptions.
+    async PauseUserSubscription(dto: PauseSubDto, userId: string) {
+        const { pause_start_date, pause_end_date, subscriptionId } = dto;
+
+        let user = await this.prisma.customerProfile.findUnique({ where: { userId: userId } });
+        if (!user) {
+            throw new BadRequestException('User not found');
+        }
+
+        // 1️⃣ Validate pause dates
+        if (!pause_start_date || !pause_end_date) {
+            throw new BadRequestException('Both pause start and pause end dates are required');
+        }
+
+        const pauseStart = new Date(pause_start_date);
+        const pauseEnd = new Date(pause_end_date);
+        const currentDate = new Date();
+
+        // 2️⃣ Ensure pause start is at least 2 days from now
+        const diffFromNowDays = Math.ceil(
+            (pauseStart.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
+        );
+
+        if (diffFromNowDays < 2) {
+            throw new BadRequestException('Pause can only be scheduled at least 2 days in advance.');
+        }
+
+        // 2️⃣ Fetch subscription
+        const subscription = await this.prisma.userSubscriptions.findUnique({
+            where: { id: subscriptionId, customerProfileId: user.id },
+            include: {
+                DeliveryPartnerProfile: true,
+            },
+        });
+
+        if (!subscription) throw new NotFoundException('Subscription not found');
+
+        if (!subscription.is_active)
+            throw new BadRequestException('Subscription is inactive and cannot be paused');
+
+        // 3️⃣ Validate pause range
+        if (!subscription.end_date) {
+            throw new BadRequestException('Subscription has no end date');
+        }
+        if (pauseEnd > subscription.end_date) {
+            throw new BadRequestException('Pause end date cannot exceed subscription end date');
+        }
+
+        // 4️⃣ Calculate pause duration (in days)
+        const pauseDurationDays =
+            Math.ceil((pauseEnd.getTime() - pauseStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+        // 5️⃣ Fetch all deliveries of this subscription
+        const allDeliveries = await this.prisma.deliveries.findMany({
+            where: {
+                subscriptionId: subscriptionId,
+            },
+            orderBy: { date: 'asc' },
+        });
+
+        // 6️⃣ Separate completed vs remaining deliveries
+        const completedDeliveries = allDeliveries.filter(
+            (d) => d.date < pauseStart
+        );
+
+        const remainingDeliveries = allDeliveries.filter(
+            (d) => d.date >= pauseStart
+        );
+
+        if (remainingDeliveries.length === 0) {
+            throw new BadRequestException('No future deliveries found to pause.');
+        }
+
+        // 7️⃣ Shift remaining deliveries forward by pause duration
+        const updates: Prisma.PrismaPromise<any>[] = [];
+        for (const delivery of remainingDeliveries) {
+            const newDate = new Date(delivery.date);
+            newDate.setDate(newDate.getDate() + pauseDurationDays);
+
+            updates.push(
+                this.prisma.deliveries.update({
+                    where: { id: delivery.id },
+                    data: { date: newDate },
+                })
+            );
+        }
+
+        // Run all updates in one transaction
+        await this.prisma.$transaction(updates);
+
+        // 8️⃣ Optionally, extend subscription end_date
+        const newEndDate = new Date(subscription.end_date);
+        newEndDate.setDate(newEndDate.getDate() + pauseDurationDays);
+
+        // 9️⃣ Update subscription with pause info + new end date
+        await this.prisma.userSubscriptions.update({
+            where: { id: subscriptionId },
+            data: {
+                pause_start_date: pauseStart,
+                pause_end_date: pauseEnd,
+                end_date: newEndDate, // extend subscription to keep total deliveries
+            },
+        });
+
+        // ✅ Return summary
+        return {
+            message: 'Subscription paused successfully and future deliveries rescheduled',
+            pauseDurationDays,
+            shiftedDeliveries: remainingDeliveries.length,
+            newSubscriptionEndDate: newEndDate,
+        };
+    }
+
 
 }

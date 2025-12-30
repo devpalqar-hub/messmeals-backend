@@ -1,0 +1,926 @@
+{
+  "apiVersion": "1.0.0",
+  "title": "Super Meals Multi-Mess Platform API",
+  "description": "Complete API documentation for the Super Meals multi-mess management platform",
+  "baseUrl": "http://localhost:3000",
+  "authentication": {
+    "type": "JWT Bearer Token",
+    "header": "Authorization: Bearer <token>",
+    "note": "Most endpoints require authentication. Include the JWT token received from login/registration in the Authorization header."
+  },
+  "endpoints": {
+    "authentication": {
+      "basePath": "/auth",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/send-reg-otp",
+          "description": "Send OTP for user registration",
+          "authentication": false,
+          "requestBody": {
+            "name": "string (required)",
+            "phone": "string (required, min 10 chars)",
+            "email": "string (required, valid email)",
+            "password": "string (required, min 6 chars)",
+            "role": "enum (optional) - USER | SUPERADMIN | ADMIN | MESSADMIN | DELIVERYAGENT"
+          },
+          "response": {
+            "message": "OTP sent successfully"
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/send-login-otp",
+          "description": "Send OTP for user login",
+          "authentication": false,
+          "requestBody": {
+            "phone": "string (required)"
+          },
+          "response": {
+            "message": "OTP sent successfully"
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/verify-otp",
+          "description": "Verify OTP and complete login/registration",
+          "authentication": false,
+          "requestBody": {
+            "phone": "string (required)",
+            "otp": "string (required)"
+          },
+          "response": {
+            "user": "User object",
+            "accessToken": "JWT token string",
+            "message": "User verified successfully",
+            "status": 200
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/delivery-agents",
+          "description": "List all delivery agents with pagination and search",
+          "authentication": true,
+          "queryParams": {
+            "page": "number (optional, default: 1)",
+            "limit": "number (optional, default: 10)",
+            "search": "string (optional)"
+          },
+          "response": {
+            "data": "Array of delivery agent users",
+            "meta": {
+              "total": "number",
+              "page": "number",
+              "limit": "number",
+              "totalPages": "number"
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/stats",
+          "description": "Get dashboard statistics",
+          "authentication": true,
+          "response": {
+            "totalRevenue": "number",
+            "completedOrders": "number",
+            "totalOrders": "number",
+            "totalCustomers": "number",
+            "totalPartners": "number",
+            "activePartners": "number",
+            "avgPerCustomer": "number",
+            "pendingRevenue": "number",
+            "todaysRevenue": "number"
+          }
+        }
+      ]
+    },
+    "mess": {
+      "basePath": "/mess",
+      "description": "Manage messes in the platform",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/",
+          "description": "Create a new mess",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN"],
+          "requestBody": {
+            "name": "string (required)",
+            "description": "string (optional)",
+            "address": "string (optional)",
+            "phone": "string (optional)",
+            "email": "string (optional, valid email)",
+            "is_active": "boolean (optional, default: true)"
+          },
+          "response": {
+            "message": "Mess created successfully",
+            "data": "Mess object"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/",
+          "description": "Get all messes with pagination and search",
+          "authentication": true,
+          "queryParams": {
+            "page": "number (optional, default: 1)",
+            "limit": "number (optional, default: 10)",
+            "search": "string (optional)"
+          },
+          "response": {
+            "data": "Array of mess objects with plans and mess admins",
+            "meta": {
+              "total": "number",
+              "page": "number",
+              "limit": "number",
+              "totalPages": "number"
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/:id",
+          "description": "Get a specific mess by ID",
+          "authentication": true,
+          "pathParams": {
+            "id": "UUID (required)"
+          },
+          "response": "Mess object with plans, images, variations, and mess admins"
+        },
+        {
+          "method": "PATCH",
+          "path": "/:id",
+          "description": "Update a mess",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN"],
+          "pathParams": {
+            "id": "UUID (required)"
+          },
+          "requestBody": {
+            "name": "string (optional)",
+            "description": "string (optional)",
+            "address": "string (optional)",
+            "phone": "string (optional)",
+            "email": "string (optional)",
+            "is_active": "boolean (optional)"
+          },
+          "response": {
+            "message": "Mess updated successfully",
+            "data": "Updated mess object"
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/:id",
+          "description": "Delete a mess (cascades to plans)",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN"],
+          "pathParams": {
+            "id": "UUID (required)"
+          },
+          "response": {
+            "message": "Mess deleted successfully"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/:id/stats",
+          "description": "Get statistics for a specific mess",
+          "authentication": true,
+          "pathParams": {
+            "id": "UUID (required)"
+          },
+          "response": {
+            "messId": "UUID",
+            "messName": "string",
+            "totalPlans": "number",
+            "totalMessAdmins": "number",
+            "totalSubscriptions": "number",
+            "activeSubscriptions": "number",
+            "totalRevenue": "number"
+          }
+        }
+      ]
+    },
+    "messAdmin": {
+      "basePath": "/mess-admin",
+      "description": "Manage mess admins and their assignments",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/",
+          "description": "Create a new mess admin and assign to messes",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN"],
+          "requestBody": {
+            "name": "string (required)",
+            "phone": "string (required)",
+            "email": "string (required, valid email)",
+            "messIds": "array of UUID strings (required)"
+          },
+          "response": {
+            "message": "Mess admin created successfully",
+            "data": "User object with mess admin profile"
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/assign",
+          "description": "Assign existing user as mess admin to messes",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN"],
+          "requestBody": {
+            "userId": "UUID (required)",
+            "messIds": "array of UUID strings (required)"
+          },
+          "response": {
+            "message": "Mess admin assigned successfully"
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/remove",
+          "description": "Remove mess admin from a specific mess",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN"],
+          "requestBody": {
+            "userId": "UUID (required)",
+            "messId": "UUID (required)"
+          },
+          "response": {
+            "message": "Mess admin removed from mess successfully"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/",
+          "description": "Get all mess admins with pagination and search",
+          "authentication": true,
+          "queryParams": {
+            "page": "number (optional, default: 1)",
+            "limit": "number (optional, default: 10)",
+            "search": "string (optional)"
+          },
+          "response": {
+            "data": "Array of mess admin users with their assigned messes",
+            "meta": {
+              "total": "number",
+              "page": "number",
+              "limit": "number",
+              "totalPages": "number"
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/by-mess/:messId",
+          "description": "Get all mess admins for a specific mess",
+          "authentication": true,
+          "pathParams": {
+            "messId": "UUID (required)"
+          },
+          "queryParams": {
+            "page": "number (optional, default: 1)",
+            "limit": "number (optional, default: 10)"
+          },
+          "response": {
+            "data": "Array of mess admin profiles",
+            "meta": {
+              "total": "number",
+              "page": "number",
+              "limit": "number",
+              "totalPages": "number"
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/:userId",
+          "description": "Get a specific mess admin by user ID",
+          "authentication": true,
+          "pathParams": {
+            "userId": "UUID (required)"
+          },
+          "response": "User object with mess admin profile and assigned messes with plans"
+        }
+      ]
+    },
+    "plans": {
+      "basePath": "/plans",
+      "description": "Manage mess-specific meal plans",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/",
+          "description": "Create a new plan for a mess",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN", "MESSADMIN"],
+          "contentType": "multipart/form-data",
+          "requestBody": {
+            "planName": "string (required)",
+            "price": "number (required)",
+            "minPrice": "number (optional)",
+            "description": "string (required)",
+            "messId": "UUID (required)",
+            "variationIds": "JSON array of UUID strings (optional)",
+            "planImages": "file array (optional, max 10 images, 1MB each)"
+          },
+          "response": {
+            "message": "Plan created successfully",
+            "planId": "Plan object"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/",
+          "description": "Get all plans with pagination and optional mess filtering",
+          "authentication": true,
+          "queryParams": {
+            "page": "number (optional, default: 1)",
+            "limit": "number (optional, default: 10)",
+            "messId": "UUID (optional, filter by mess)"
+          },
+          "response": {
+            "data": "Array of plan objects with images, mess info, and variations",
+            "meta": {
+              "total": "number",
+              "page": "number",
+              "limit": "number",
+              "totalPages": "number"
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/:id",
+          "description": "Get a specific plan by ID",
+          "authentication": true,
+          "pathParams": {
+            "id": "UUID (required)"
+          },
+          "response": "Plan object with images, mess details, and variations"
+        },
+        {
+          "method": "PATCH",
+          "path": "/:id",
+          "description": "Update a plan",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN", "MESSADMIN"],
+          "contentType": "multipart/form-data",
+          "pathParams": {
+            "id": "UUID (required)"
+          },
+          "requestBody": {
+            "planName": "string (optional)",
+            "price": "number (optional)",
+            "minPrice": "number (optional)",
+            "description": "string (optional)",
+            "messId": "UUID (optional)",
+            "variationIds": "JSON array of UUID strings (optional)",
+            "planImages": "file array (optional)"
+          },
+          "response": {
+            "message": "Plan updated successfully",
+            "plan": "Updated plan object"
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/:id",
+          "description": "Delete a plan",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN", "MESSADMIN"],
+          "pathParams": {
+            "id": "UUID (required)"
+          },
+          "response": "Deleted plan object"
+        },
+        {
+          "method": "PATCH",
+          "path": "/:id/images",
+          "description": "Update plan images separately",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN", "MESSADMIN"],
+          "contentType": "multipart/form-data",
+          "pathParams": {
+            "id": "UUID (required)"
+          },
+          "requestBody": {
+            "images": "file array (max 10 images)"
+          },
+          "response": "Updated plan object with new images"
+        }
+      ]
+    },
+    "variations": {
+      "basePath": "/variations",
+      "description": "Manage meal variations (e.g., Breakfast, Lunch, Dinner)",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/",
+          "description": "Create a new variation",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN"],
+          "requestBody": {
+            "title": "string (required)",
+            "description": "string (optional)"
+          },
+          "response": {
+            "message": "Variation created successfully",
+            "data": "Variation object"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/",
+          "description": "Get all variations with pagination",
+          "authentication": true,
+          "queryParams": {
+            "page": "number (optional, default: 1)",
+            "limit": "number (optional, default: 10)"
+          },
+          "response": {
+            "data": "Array of variation objects",
+            "meta": "Pagination metadata"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/:id",
+          "description": "Get a specific variation",
+          "authentication": true,
+          "pathParams": {
+            "id": "UUID (required)"
+          },
+          "response": "Variation object"
+        },
+        {
+          "method": "PATCH",
+          "path": "/:id",
+          "description": "Update a variation",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN"],
+          "pathParams": {
+            "id": "UUID (required)"
+          },
+          "requestBody": {
+            "title": "string (optional)",
+            "description": "string (optional)"
+          },
+          "response": {
+            "message": "Variation updated successfully",
+            "data": "Updated variation object"
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/:id",
+          "description": "Delete a variation",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN"],
+          "pathParams": {
+            "id": "UUID (required)"
+          },
+          "response": "Deleted variation object"
+        }
+      ]
+    },
+    "customers": {
+      "basePath": "/customer",
+      "description": "Manage customer profiles and subscriptions",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/register-user",
+          "description": "Register a new customer with subscription",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN", "MESSADMIN"],
+          "requestBody": {
+            "name": "string (required)",
+            "phone": "string (required)",
+            "email": "string (required)",
+            "address": "string (required)",
+            "currentLocation": "string (optional)",
+            "latitude_logitude": "string (optional)",
+            "is_active": "boolean (optional)",
+            "walletAmount": "number (required)",
+            "discount": "number (optional)",
+            "planId": "UUID (required)",
+            "deliveryPartnerId": "UUID (optional)",
+            "start_date": "ISO date string (required)",
+            "end_date": "ISO date string (optional)"
+          },
+          "response": {
+            "message": "User and profile created successfully",
+            "data": {
+              "user": "User object",
+              "customerProfile": "Customer profile object",
+              "userSubscription": "Subscription object"
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/",
+          "description": "Get all customers with pagination and search",
+          "authentication": true,
+          "queryParams": {
+            "page": "number (optional, default: 1)",
+            "limit": "number (optional, default: 10)",
+            "search": "string (optional)"
+          },
+          "response": {
+            "data": "Array of customer objects with subscriptions and plan details",
+            "meta": "Pagination metadata"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/:id",
+          "description": "Get a specific customer by user ID",
+          "authentication": true,
+          "pathParams": {
+            "id": "UUID (required)"
+          },
+          "response": "Customer object with full details, subscriptions, and deliveries"
+        },
+        {
+          "method": "PATCH",
+          "path": "/:id",
+          "description": "Update customer profile",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN", "MESSADMIN"],
+          "pathParams": {
+            "id": "UUID (required)"
+          },
+          "requestBody": {
+            "name": "string (optional)",
+            "address": "string (optional)",
+            "latitude_logitude": "string (optional)",
+            "currentLocation": "string (optional)",
+            "walletAmount": "number (optional)",
+            "planId": "UUID (optional)",
+            "deliveryPartnerId": "UUID (optional)"
+          },
+          "response": {
+            "message": "User and customer profile updated successfully",
+            "data": "Updated customer object"
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/:id",
+          "description": "Delete a customer and all related data",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN"],
+          "pathParams": {
+            "id": "UUID (required)"
+          },
+          "response": {
+            "message": "Customer and related data deleted successfully",
+            "deletedUserId": "UUID"
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/renew-subscription",
+          "description": "Renew or add a new subscription for a customer",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN", "MESSADMIN"],
+          "requestBody": {
+            "deliveryPartnerId": "UUID (optional)",
+            "planId": "UUID (required)",
+            "start_date": "ISO date string (required)",
+            "end_date": "ISO date string (optional)",
+            "discount": "number (optional)",
+            "customerProfileId": "UUID (required)"
+          },
+          "response": {
+            "message": "Subscription Renewed successfully",
+            "data": {
+              "userSubscription": "Subscription object"
+            }
+          }
+        },
+        {
+          "method": "PATCH",
+          "path": "/update-wallet/:userId",
+          "description": "Add/update wallet amount for a customer",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN", "MESSADMIN"],
+          "pathParams": {
+            "userId": "UUID (required)"
+          },
+          "requestBody": {
+            "amount": "number (required)"
+          },
+          "response": {
+            "message": "Wallet amount updated successfully"
+          }
+        },
+        {
+          "method": "PATCH",
+          "path": "/cancel-subscription/:subscriptionId",
+          "description": "Cancel an active subscription",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN", "MESSADMIN"],
+          "pathParams": {
+            "subscriptionId": "UUID (required)"
+          },
+          "response": {
+            "message": "Subscription cancelled successfully"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/variation/count",
+          "description": "Get variation count for a specific date",
+          "authentication": true,
+          "queryParams": {
+            "date": "ISO date string (required)"
+          },
+          "response": {
+            "message": "Variation count for {date}",
+            "totalSubscriptions": "number",
+            "data": "Array of {title, count} objects"
+          }
+        }
+      ]
+    },
+    "deliveryAgents": {
+      "basePath": "/deliveryagent",
+      "description": "Manage delivery agents/partners",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/register",
+          "description": "Register a new delivery agent",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN"],
+          "requestBody": {
+            "name": "string (required)",
+            "phone": "string (required)",
+            "email": "string (required)",
+            "address": "string (optional)",
+            "deliveryRegion": "string (optional)"
+          },
+          "response": {
+            "message": "Delivery agent created successfully",
+            "data": "User object with delivery partner profile"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/",
+          "description": "Get all delivery agents",
+          "authentication": true,
+          "queryParams": {
+            "page": "number (optional, default: 1)",
+            "limit": "number (optional, default: 10)"
+          },
+          "response": {
+            "data": "Array of delivery agents",
+            "meta": "Pagination metadata"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/:id",
+          "description": "Get a specific delivery agent",
+          "authentication": true,
+          "pathParams": {
+            "id": "UUID (required)"
+          },
+          "response": "Delivery agent object with profile and assigned deliveries"
+        },
+        {
+          "method": "PATCH",
+          "path": "/:id",
+          "description": "Update delivery agent details",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN"],
+          "pathParams": {
+            "id": "UUID (required)"
+          },
+          "requestBody": {
+            "name": "string (optional)",
+            "address": "string (optional)",
+            "deliveryRegion": "string (optional)"
+          },
+          "response": {
+            "message": "Delivery agent updated successfully",
+            "data": "Updated delivery agent object"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "basePath": "/deliveries",
+      "description": "Manage deliveries and delivery status",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/",
+          "description": "Create a new delivery record",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN", "MESSADMIN"],
+          "requestBody": {
+            "date": "ISO date string (required)",
+            "status": "enum (optional) - PENDING | PROGRESS | DELIVERED",
+            "action": "string (optional)",
+            "customerId": "UUID (required)",
+            "planId": "UUID (required)",
+            "partnerId": "UUID (optional)"
+          },
+          "response": {
+            "message": "Delivery created successfully",
+            "data": "Delivery object"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/",
+          "description": "Get all deliveries with pagination",
+          "authentication": true,
+          "queryParams": {
+            "page": "number (optional, default: 1)",
+            "limit": "number (optional, default: 10)",
+            "status": "enum (optional) - filter by status"
+          },
+          "response": {
+            "data": "Array of delivery objects with customer and plan details",
+            "meta": "Pagination metadata"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/:id",
+          "description": "Get a specific delivery",
+          "authentication": true,
+          "pathParams": {
+            "id": "UUID (required)"
+          },
+          "response": "Delivery object with full details"
+        },
+        {
+          "method": "PATCH",
+          "path": "/:id",
+          "description": "Update delivery status or details",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN", "MESSADMIN", "DELIVERYAGENT"],
+          "pathParams": {
+            "id": "UUID (required)"
+          },
+          "requestBody": {
+            "status": "enum (optional) - PENDING | PROGRESS | DELIVERED",
+            "action": "string (optional)",
+            "partnerId": "UUID (optional)"
+          },
+          "response": {
+            "message": "Delivery updated successfully",
+            "data": "Updated delivery object"
+          }
+        }
+      ]
+    },
+    "contactForm": {
+      "basePath": "/contact-form",
+      "description": "Handle contact form submissions",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/",
+          "description": "Submit a contact form",
+          "authentication": false,
+          "requestBody": {
+            "name": "string (required)",
+            "email": "string (required)",
+            "phone": "string (optional)",
+            "message": "string (required)"
+          },
+          "response": {
+            "message": "Contact form submitted successfully"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/",
+          "description": "Get all contact form submissions",
+          "authentication": true,
+          "roles": ["SUPERADMIN", "ADMIN"],
+          "queryParams": {
+            "page": "number (optional, default: 1)",
+            "limit": "number (optional, default: 10)"
+          },
+          "response": {
+            "data": "Array of contact form submissions",
+            "meta": "Pagination metadata"
+          }
+        }
+      ]
+    }
+  },
+  "roles": {
+    "USER": "Regular customer user",
+    "SUPERADMIN": "Super administrator with full access",
+    "ADMIN": "Administrator with most permissions",
+    "MESSADMIN": "Mess-specific administrator who can manage assigned messes",
+    "DELIVERYAGENT": "Delivery partner who handles deliveries"
+  },
+  "dataModels": {
+    "User": {
+      "id": "UUID",
+      "name": "string",
+      "phone": "string (unique)",
+      "email": "string (unique)",
+      "role": "Roles enum",
+      "is_verified": "boolean",
+      "is_active": "boolean",
+      "createdAt": "DateTime",
+      "updatedAt": "DateTime"
+    },
+    "Mess": {
+      "id": "UUID",
+      "name": "string",
+      "description": "string (optional)",
+      "address": "string (optional)",
+      "phone": "string (optional)",
+      "email": "string (optional)",
+      "is_active": "boolean",
+      "createdAt": "DateTime",
+      "updatedAt": "DateTime"
+    },
+    "MessAdminProfile": {
+      "id": "UUID",
+      "userId": "UUID (unique)",
+      "messes": "Array of Mess objects",
+      "createdAt": "DateTime",
+      "updatedAt": "DateTime"
+    },
+    "Plans": {
+      "id": "UUID",
+      "planName": "string",
+      "price": "Decimal",
+      "minPrice": "Decimal (optional)",
+      "description": "string (optional)",
+      "messId": "UUID",
+      "images": "Array of PlanImages",
+      "variations": "Array of Variation objects",
+      "createdAt": "DateTime",
+      "updatedAt": "DateTime"
+    },
+    "CustomerProfile": {
+      "id": "UUID",
+      "userId": "UUID (unique)",
+      "walletAmount": "Decimal",
+      "address": "string",
+      "current_location": "string (optional)",
+      "latitude_logitude": "string (optional)",
+      "createdAt": "DateTime",
+      "updatedAt": "DateTime"
+    },
+    "UserSubscriptions": {
+      "id": "UUID",
+      "start_date": "DateTime",
+      "end_date": "DateTime (optional)",
+      "totalPrice": "Decimal",
+      "discount": "Decimal",
+      "discountedPrice": "Decimal",
+      "planId": "UUID",
+      "customerProfileId": "UUID",
+      "deliveryPartnerProfileId": "UUID (optional)",
+      "is_active": "boolean",
+      "createdAt": "DateTime"
+    },
+    "Deliveries": {
+      "id": "UUID",
+      "date": "DateTime",
+      "status": "DeliveryStatus enum (PENDING | PROGRESS | DELIVERED)",
+      "action": "string (optional)",
+      "customerId": "UUID",
+      "planId": "UUID",
+      "partnerId": "UUID (optional)",
+      "createdAt": "DateTime",
+      "updatedAt": "DateTime"
+    },
+    "Variation": {
+      "id": "UUID",
+      "title": "string",
+      "description": "string (optional)",
+      "createdAt": "DateTime",
+      "updatedAt": "DateTime"
+    }
+  },
+  "notes": {
+    "multiMessSupport": "The platform now supports multiple messes. Each plan is associated with a specific mess via messId.",
+    "messAdminRole": "Mess admins can be assigned to multiple messes and manage plans within their assigned messes.",
+    "authentication": "Most endpoints require JWT authentication. The token is obtained via the login/registration flow with OTP verification.",
+    "cascadeDeletes": "Deleting a mess will cascade delete all associated plans and subscriptions.",
+    "fileUploads": "Plan images are uploaded via multipart/form-data with a maximum of 10 images per plan, each limited to 1MB.",
+    "pagination": "Most list endpoints support pagination with page and limit query parameters.",
+    "search": "Search functionality is available on users, customers, messes, and plans.",
+    "walletSystem": "Customers have a wallet system for managing subscription payments and refunds."
+  }
+}

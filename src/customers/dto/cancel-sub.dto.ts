@@ -1,11 +1,16 @@
-import { IsString } from "class-validator";
+import { IsOptional, IsString } from "class-validator";
 
 export class CancelSubDto {
 
     @IsString()
-    customerId: string
+    @IsOptional()
+    cancellation_start_date: string
 
     @IsString()
+    @IsOptional()
+    cancellation_end_date: string
+
+    @IsString()
+    @IsOptional()
     subscriptionId: string
 }
-

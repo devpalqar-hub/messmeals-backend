@@ -16,6 +16,9 @@ export class CreateDeliveryDto {
     customerId: string;
 
     @IsString()
+    messId: string
+
+    @IsString()
     planId: string;
 
     @IsString()

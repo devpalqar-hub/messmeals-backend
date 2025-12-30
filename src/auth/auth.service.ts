@@ -2,140 +2,240 @@ import {
     Injectable,
     UnauthorizedException,
     BadRequestException,
+    NotFoundException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { RegisterDto } from './dto/register.dto';
+import { RegisterDeliveryAgentDto, RegisterDto, UserRegisterDto } from './dto/Registration.dto';
 import { LoginDto } from './dto/login.dto';
 import { UserService } from 'src/user/user.service';
-import { DeliveryStatus, Roles } from '@prisma/client';
+import { DeliveryStatus, Role } from '@prisma/client';
 import { generate6DigitOtp } from 'src/common/utility/utils';
 import { MailerService } from '@nestjs-modules/mailer';
 import { subDays, startOfDay, endOfDay } from 'date-fns';
 import { OtpVerifyDto } from './dto/otp-verify.dto';
+import { TwoFactorService } from 'src/twofactor/twofactor.service';
 
 @Injectable()
 export class AuthService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly jwtService: JwtService,
-        private readonly userService: UserService,
+        private readonly otpservice: TwoFactorService,
         private readonly mailerService: MailerService,
     ) { }
+    async sendOtpForRegistration(dto: RegisterDto) {
+        const { email, name, phone, messId } = dto;
+        const existingUser = await this.prisma.user.findUnique({ where: { phone } });
+        const mess = await this.prisma.mess.findUnique({ where: { id: messId } });
+        if (!mess) {
+            throw new Error("Mess not found");
+        }
+        // const otp = '123456'
+        // Create user only if not present
+        let user = existingUser;
+        if (!existingUser) {
+            user = await this.prisma.user.create({
+                data: {
+                    name,
+                    email,
+                    phone,
+                    role: Role.MESSADMIN,
+                    // otp: otp, //remove this 
+                    // expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now //remove this
+                    is_verified: false,
+                    messAdminProfile: {
+                        create: {
+                            messes: {
+                                connect: [{ id: messId }],
+                            },
+                        },
+                    },
+                },
+                include: {
+                    messAdminProfile: { include: { messes: true } },
+                },
+            });
+        }
+        if (process.env.NODE_ENV === 'STAGING') {
+            const numbers = await this.prisma.phoneNumbers.findUnique({
+                where: { phone: phone }
+            })
+            if (!numbers) {
+                throw new NotFoundException("Phone Number Not Found")
+            }
+            return {
+                message: 'OTP sent successfully',
+                sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
+                otp: "123456",
+                status: 200,
+            };
+        }
+        else if (process.env.NODE_ENV === 'PRODUCTION') {
+            const otpResponse = await this.otpservice.sendOtp(phone);
+            return {
+                message: 'OTP sent successfully',
+                sessionId: otpResponse.Details,
+                status: 200,
+            };
+        }
+    }
 
 
     //dummy otp of 123456 is given right now. after dlt registration change it to otp variable
     async sendOtpForLogin(loginDto: LoginDto) {
-        const otp = generate6DigitOtp();
         const { phone } = loginDto;
         let user = await this.prisma.user.findUnique({ where: { phone: phone } });
         if (!user) {
             throw new UnauthorizedException('User not found');
         }
-        user = await this.prisma.user.update({
-            where: { phone: phone },
-            data: {
-                otp: '123456',
-                expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now
+        if (process.env.NODE_ENV === 'STAGING') {
+            const numbers = await this.prisma.phoneNumbers.findUnique({
+                where: { phone: phone }
+            })
+            if (!numbers) {
+                throw new NotFoundException("Phone Number Not Found")
             }
-        });
-        // await this.mailerService.sendMail({
-        //     to: loginDto.email,
-        //     subject: 'Login OTP',
-        //     template: 'authentication', // ✅ refers to authentication.pug
-        //     context: {
-        //         otp, // ✅ available inside the template
-        //     },
-        // });
-        return { message: 'OTP sent successfully' };
+            return {
+                message: 'OTP sent successfully',
+                sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
+                otp: "123456",
+                status: 200,
+            };
+        }
+        else if (process.env.NODE_ENV === 'PRODUCTION') {
+            const otpResponse = await this.otpservice.sendOtp(phone);
+            return {
+                message: 'OTP sent successfully',
+                sessionId: otpResponse.Details,
+                status: 200,
+            };
+        }
     }
 
-    //dummy otp of 123456 is given right now. after dlt registration change it to otp variable
-    async sendOtpForRegistration(dto: RegisterDto) {
-        const otp = generate6DigitOtp();
-        const { email, name, phone } = dto;
-        let user = await this.prisma.user.findUnique({ where: { phone: phone } });
-        if (!user) {
-            await this.prisma.user.create({
-                data: {
-                    name: name,
-                    email: email,
-                    phone: phone,
-                    otp: '123456',
-                    role: Roles.ADMIN,
-                    expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now
-                    is_verified: false,
-                }
-            });
-        }
-        // await this.mailerService.sendMail({
-        //     to: loginDto.email,
-        //     subject: 'Login OTP',
-        //     template: 'authentication', // ✅ refers to authentication.pug
-        //     context: {
-        //         otp, // ✅ available inside the template
-        //     },
-        // });
-        return { message: 'OTP sent successfully' };
-    }
 
 
     async verifyOtp(dto: OtpVerifyDto) {
-        // 1️⃣ Find the user by email
-        const { phone } = dto;
-        const user = await this.prisma.user.findUnique({ where: { phone: phone } });
+        const { phone, sessionId, otp } = dto;
+        if (process.env.NODE_ENV === 'STAGING') {
+            const numbers = await this.prisma.phoneNumbers.findUnique({
+                where: { phone: phone }
+            })
+            if (!numbers) {
+                throw new NotFoundException("Phone Number Not Found")
+            }
+            if (otp != "123456") {
+                throw new BadRequestException("Otp not correct")
+            }
 
-        if (!user) {
-            throw new UnauthorizedException('User not found');
         }
+        else if (process.env.NODE_ENV === 'PRODUCTION') {
+            const verify = await this.otpservice.verifyOtp(sessionId, otp);
 
-        // 2️⃣ Check if OTP and expiry exist
-        if (!user.otp || !user.expiresAt) {
-            throw new UnauthorizedException('No OTP found for this user');
+            if (verify.Status !== 'Success') {
+                throw new UnauthorizedException('Invalid OTP');
+            }
         }
-
-        // 3️⃣ Validate OTP and expiry
-        const isOtpValid = user.otp === '123456';
-        const isOtpNotExpired = user.expiresAt > new Date();
-
-        if (!isOtpValid || !isOtpNotExpired) {
-            throw new UnauthorizedException('Invalid OTP or OTP has expired');
-        }
-
-        // 4️⃣ Update verification status if needed
-        let updatedUser = user;
+        // Step2. Fetch user and profiles
+        const user = await this.prisma.user.findUnique({
+            where: { phone },
+            include: {
+                customerProfile: {
+                    include: {
+                        addresses: true,
+                        Wallet: true,
+                    },
+                },
+                deliveryPartnerProfile: {
+                    include: {
+                        mess: true, // delivery agent belongs to one mess
+                    },
+                },
+                messAdminProfile: {
+                    include: {
+                        messes: true, // mess admin may have multiple messes
+                    },
+                },
+            },
+        });
+        if (!user) throw new UnauthorizedException('User not found');
+        // Step3. Update verification only once
         if (!user.is_verified) {
-            updatedUser = await this.prisma.user.update({
-                where: { phone: phone },
+            await this.prisma.user.update({
+                where: { phone },
                 data: { is_verified: true },
             });
+            user.is_verified = true;
         }
 
-        // 5️⃣ Clear OTP fields (optional but recommended for security)
-        await this.prisma.user.update({
-            where: { phone: phone },
-            data: { otp: null, expiresAt: null },
+        // Step4. Role specific payload
+        let payloadData = {};
+
+        switch (user.role) {
+            case Role.USER:
+                payloadData = {
+                    profile: user.customerProfile,
+                    addresses: user.customerProfile?.addresses || [],
+                    wallet: user.customerProfile?.Wallet || null,
+                };
+                break;
+
+            case Role.DELIVERYAGENT:
+                payloadData = {
+                    profile: user.deliveryPartnerProfile,
+                    mess: user.deliveryPartnerProfile?.mess || null,
+                };
+                break;
+
+            case Role.MESSADMIN:
+                payloadData = {
+                    profile: user.messAdminProfile,
+                    messes: user.messAdminProfile?.messes || [],
+                };
+                break;
+
+            case Role.SUPERADMIN:
+                payloadData = {
+                    profile: null,
+                };
+                break;
+
+            default:
+                payloadData = {};
+        }
+
+        // Step5. Generate token
+        const accessToken = this.jwtService.sign({
+            sub: user.id,
+            phone: user.phone,
+            email: user.email,
+            role: user.role,
         });
 
-        // 6️⃣ Return response with JWT token
+        // Step6. Final response
         return {
-            user: updatedUser,
-            accessToken: this.jwtService.sign({
-                sub: updatedUser.id,
-                email: updatedUser.email,
-            }),
+            user: {
+                id: user.id,
+                name: user.name,
+                phone: user.phone,
+                email: user.email,
+                role: user.role,
+                ...payloadData,
+            },
+            accessToken,
             message: user.is_verified
-                ? 'User already verified'
-                : 'User verified successfully',
+                ? 'User verified successfully'
+                : 'User already verified before',
             status: 200,
         };
+
     }
 
 
     async ListDeliveryAgents(page: number = 1, limit: number = 10, search?: string) {
         const skip = (page - 1) * limit;
         const whereClause: any = {
-            role: Roles.DELIVERYAGENT,
+            role: Role.DELIVERYAGENT,
         };
         if (search) {
             whereClause.email = {
@@ -163,23 +263,41 @@ export class AuthService {
     }
 
 
-    async getDashboardStats() {
-        // 1️⃣ Total Customers (role = USER)
+    async getDashboardStats(messId?: string) {
+        // Add filter object (empty if messId is not passed)
+        const messFilter = messId ? { messId } : {};
+
+        // 1️⃣ Total Customers (role = USER, mess-specific)
         const totalCustomers = await this.prisma.user.count({
-            where: { role: Roles.USER },
+            where: {
+                role: 'USER',
+                customerProfile: {
+                    userSubscriptions: {
+                        some: messFilter,
+                    },
+                },
+            },
         });
 
-        // 2️⃣ Total Partners (role = DELIVERYAGENT)
+        // 2️⃣ Total Partners (role = DELIVERYAGENT, mess-specific)
         const totalPartners = await this.prisma.user.count({
-            where: { role: Roles.DELIVERYAGENT },
+            where: {
+                role: 'DELIVERYAGENT',
+                deliveryPartnerProfile: messId ? { messId } : {},
+            },
         });
 
         const activePartners = await this.prisma.user.count({
-            where: { role: Roles.DELIVERYAGENT, is_active: true },
+            where: {
+                role: 'DELIVERYAGENT',
+                is_active: true,
+                deliveryPartnerProfile: messId ? { messId } : {},
+            },
         });
 
-        // 3️⃣ Subscriptions data
+        // 3️⃣ Subscriptions data (mess-specific)
         const subscriptions = await this.prisma.userSubscriptions.findMany({
+            where: messFilter,
             select: {
                 totalPrice: true,
                 discountedPrice: true,
@@ -214,7 +332,7 @@ export class AuthService {
         const avgPerCustomer =
             totalCustomers > 0 ? totalRevenue / totalCustomers : 0;
 
-        // 5️⃣ Construct the final dashboard response
+        // 5️⃣ Final response
         return {
             totalRevenue,
             completedOrders,
@@ -227,5 +345,198 @@ export class AuthService {
             todaysRevenue,
         };
     }
-}
+    async getallmessadmin() {
+        const users = await this.prisma.user.findMany({
+            include: {
+                messAdminProfile: true
+            }
+        })
 
+        return users
+
+    }
+
+    // -------------------------------------------------------
+    // PHASE 3
+    // -------------------------------------------------------
+    async sendOtpForClientRegistration(dto: UserRegisterDto) {
+        const {
+            email,
+            phone,
+            name,
+            street,
+            townOrcity,
+            country,
+            postcode,
+            landmark,
+            latitudeLogitude,
+        } = dto;
+        const otp = '123456'
+        // Fetch user with customerProfile
+        let user = await this.prisma.user.findUnique({
+            where: { phone },
+            include: { customerProfile: true },
+        });
+
+        // Create user (and empty customerProfile) only if not present
+        if (!user) {
+            user = await this.prisma.user.create({
+                data: {
+                    name,
+                    email,
+                    phone,
+                    otp: otp, //remove this 
+                    expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now //remove this
+                    role: Role.USER, // keep as in your original code
+                    is_verified: false,
+                    customerProfile: {
+                        create: {},
+                    },
+                },
+                include: { customerProfile: true },
+            });
+        }
+
+        // Ensure customerProfile exists (in case of legacy users without profile)
+        let customerProfile = user.customerProfile;
+        if (!customerProfile) {
+            customerProfile = await this.prisma.customerProfile.create({
+                data: {
+                    userId: user.id,
+                },
+            });
+        }
+
+        // Check if we have the minimum required data to create address
+        const hasRequiredAddressData = street && townOrcity && postcode;
+
+        if (hasRequiredAddressData) {
+            await this.prisma.userAddress.create({
+                data: {
+                    name,
+                    street,
+                    townOrcity,
+                    postcode,
+                    phone,
+                    email,
+                    profileId: customerProfile.id,
+                    ...(country && { country }),
+                    ...(landmark && { landmark }),
+                    ...(latitudeLogitude && { latitudeLogitude }),
+                },
+            });
+        }
+
+        if (process.env.NODE_ENV === 'STAGING') {
+            const numbers = await this.prisma.phoneNumbers.findUnique({
+                where: { phone: phone }
+            })
+            if (!numbers) {
+                throw new NotFoundException("Phone Number Not Found")
+            }
+            return {
+                message: 'OTP sent successfully',
+                sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
+                otp: "123456",
+                status: 200,
+            };
+        }
+        else if (process.env.NODE_ENV === 'PRODUCTION') {
+            const otpResponse = await this.otpservice.sendOtp(phone);
+            return {
+                message: 'OTP sent successfully',
+                sessionId: otpResponse.Details,
+                status: 200,
+            };
+        }
+    }
+
+    async sendOtpForDeliveryAgentRegistration(dto: RegisterDeliveryAgentDto) {
+        const { email, phone, name, messId, deliveryRegion, address } = dto;
+
+        let user = await this.prisma.user.findUnique({
+            where: { phone },
+            include: { deliveryPartnerProfile: true },
+        });
+        const otp = '123456'
+        // Create user + deliveryPartnerProfile if not found
+        if (!user) {
+            user = await this.prisma.user.create({
+                data: {
+                    name,
+                    email,
+                    phone,
+                    role: Role.DELIVERYAGENT,
+                    otp: otp, //remove this 
+                    expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now //remove this
+                    is_verified: false,
+                    deliveryPartnerProfile: {
+                        create: {
+                            messId,
+                            deliveryRegion,
+                            address,
+                        },
+                    },
+                },
+                include: { deliveryPartnerProfile: true },
+            });
+        }
+
+        // If user exists but does not have a delivery partner profile (legacy case)
+        if (!user.deliveryPartnerProfile) {
+            await this.prisma.deliveryPartnerProfile.create({
+                data: {
+                    userId: user.id,
+                    messId,
+                    deliveryRegion,
+                    address,
+                },
+            });
+        }
+
+        // Update delivery partner profile if already exists and want to update values
+        else {
+            await this.prisma.deliveryPartnerProfile.update({
+                where: { userId: user.id },
+                data: {
+                    ...(deliveryRegion && { deliveryRegion }),
+                    ...(address && { address }),
+                },
+            });
+        }
+
+        if (process.env.NODE_ENV === 'STAGING') {
+            const numbers = await this.prisma.phoneNumbers.findUnique({
+                where: { phone: phone }
+            })
+            if (!numbers) {
+                throw new NotFoundException("Phone Number Not Found")
+            }
+            return {
+                message: 'OTP sent successfully',
+                sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
+                otp: "123456",
+                status: 200,
+            };
+        }
+        else if (process.env.NODE_ENV === 'PRODUCTION') {
+            const otpResponse = await this.otpservice.sendOtp(phone);
+            return {
+                message: 'OTP sent successfully',
+                sessionId: otpResponse.Details,
+                status: 200,
+            };
+        }
+    }
+
+
+    async AddPhoneNumber(number: string) {
+        const phone = await this.prisma.phoneNumbers.create({
+            data: { phone: number }
+        })
+
+        return { message: "Phone Number added successfully." }
+    }
+
+
+}

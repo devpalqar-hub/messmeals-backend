@@ -7,3 +7,16 @@ export class AssignDeliveryPartnerDto {
     partnerId: string;
 
 }
+
+// Phase 2.
+// Delivery Partner Assigning to Orders Booked by user through their application.
+export class AssignDeliveryPartnerPhs2Dto {
+
+    //deliverypartner profile id
+    @IsString()
+    partnerId: string;
+
+    @IsString()
+    subscptnId: string;
+
+}

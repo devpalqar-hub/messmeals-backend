@@ -7,12 +7,13 @@ import {
     Param,
     Body, Query,
     ParseUUIDPipe,
+    Req,
 } from '@nestjs/common';
 import { DeliveriesService } from './deliveries.service';
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { UpdateDeliveryDto } from './dto/update-delivery.dto';
 import { UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
-import { AssignDeliveryPartnerDto } from './dto/assign-partner.dto';
+import { AssignDeliveryPartnerDto, AssignDeliveryPartnerPhs2Dto } from './dto/assign-partner.dto';
 import { DeliveryStatus } from '@prisma/client';
 
 @Controller('deliveries')
@@ -32,11 +33,12 @@ export class DeliveriesController {
         @Query('limit') limit?: number | string,
         @Query('status') status?: DeliveryStatus,
         @Query('date') date?: string, // 🆕 Added date filter
+        @Query('messId') messId?: string,
+        @Query('partnerId') partnerId?: string,
+
     ) {
-        return this.deliveriesService.findAll({ page, limit, status, date });
+        return this.deliveriesService.findAll({ page, limit, status, date, messId, partnerId });
     }
-
-
 
     // ✅ GET by ID
     @Get(':id')
@@ -79,15 +81,29 @@ export class DeliveriesController {
     }
 
     @Get('recent-deliveries-partner/:id')
-    async getRecentDeliveries(@Param('id', new ParseUUIDPipe()) customerId: string) {
-        return this.deliveriesService.PartnerRecentDeliveries(customerId);
+    async getRecentDeliveries(@Param('id', new ParseUUIDPipe()) customerId: string,
+        @Query('messId') messId?: string,
+        @Query('limit') limit?: number,) {
+        return this.deliveriesService.PartnerRecentDeliveries(customerId, limit, messId);
 
     }
     @Get('recent-deliveries-customer/:id')
     async CustomerRecentDeliveries(
-        @Param('id', new ParseUUIDPipe()) customerId: string
+        @Param('id', new ParseUUIDPipe()) customerId: string,
+        @Query('messId') messId?: string,
+        @Query('limit') limit?: number,
     ) {
-        return this.deliveriesService.CustomerRecentDeliveries(customerId);
+        return this.deliveriesService.CustomerRecentDeliveries(customerId, limit, messId);
+    }
+
+    // phase 2 api.
+    @Patch("assign/partner/subscription")
+    AssignPartner(@Param('id') id: string,
+        @Body() dto: AssignDeliveryPartnerPhs2Dto,
+        @Req() req
+
+    ) {
+        return this.deliveriesService.AssignPartner(dto, req.user.id)
     }
 
 }

@@ -29,7 +29,7 @@ export class PlansController {
     @UseInterceptors(
         FilesInterceptor('planImages', 10, {
             storage: diskStorage({
-                destination: './uploads', // folder to store images
+                destination: './uploads/', // folder to store images
                 filename: (req, file, callback) => {
                     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
                     callback(null, `${file.fieldname}-${uniqueSuffix}${extname(file.originalname)}`);
@@ -43,9 +43,9 @@ export class PlansController {
 
             // ✅ Accept only image files
             fileFilter: (req, file, callback) => {
-                if (!file.mimetype.match(/^image\//)) {
-                    return callback(new BadRequestException('Only image files are allowed!'), false);
-                }
+                // if (!file.mimetype.match(/^image\//)) {
+                //     return callback(new BadRequestException('Only image files are allowed!'), false);
+                // }
                 callback(null, true);
             },
         }),
@@ -73,8 +73,12 @@ export class PlansController {
 
     // ✅ GET all (with pagination)
     @Get()
-    findAll(@Query('page') page?: string, @Query('limit') limit?: string) {
-        return this.plansService.findAll(Number(page) || 1, Number(limit) || 10);
+    findAll(
+        @Query('page') page?: string,
+        @Query('limit') limit?: string,
+        @Query('messId') messId?: string,
+    ) {
+        return this.plansService.findAll(Number(page) || 1, Number(limit) || 10, messId);
     }
 
 

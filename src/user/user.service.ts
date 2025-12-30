@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { Prisma, Roles } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import { CreateUserDto } from './dto/create-user.dto';
 
 @Injectable()
@@ -10,18 +10,18 @@ export class UserService {
     // 🟢 Create a new user
     async createUser(data: Prisma.UserCreateInput) {
         const { name, phone, email } = data;
-        return this.prisma.user.create({ data: { name, phone, email, role: Roles.USER } });
+        return this.prisma.user.create({ data: { name, phone, email, role: Role.USER } });
     }
 
     // 🟢 Create a new user
     async createDeliveryAgent(data: CreateUserDto) {
         const { name, phone, email, password } = data;
-        return this.prisma.user.create({ data: { name, phone, email, role: Roles.DELIVERYAGENT } });
+        return this.prisma.user.create({ data: { name, phone, email, role: Role.DELIVERYAGENT } });
     }
 
-    async createAdmin(data: CreateUserDto) {
+    async createMessAdmin(data: CreateUserDto) {
         const { name, phone, email, password } = data;
-        return this.prisma.user.create({ data: { name, phone, email, role: Roles.ADMIN } });
+        return this.prisma.user.create({ data: { name, phone, email, role: Role.MESSADMIN } });
     }
 
     // 🟡 List all users
@@ -68,6 +68,40 @@ export class UserService {
     }
 
 
-    // Get total number of users
+    //phase 2.
+
+    async userProfile(userId: string) {
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { role: true }
+        })
+        if (!user) throw new BadRequestException("User not found");
+        let includeOptions: any = {}
+        switch (user.role) {
+            case Role.USER:
+                includeOptions = { customerProfile: true };
+                break;
+
+            case Role.MESSADMIN:
+                includeOptions = { messAdminProfile: true };
+                break;
+
+            case Role.DELIVERYAGENT:
+                includeOptions = { deliveryAgentProfile: true };
+                break;
+
+            case Role.SUPERADMIN:
+                includeOptions = { adminProfile: true };
+                break;
+
+            default:
+                throw new BadRequestException("No profile found");
+        }
+
+        return await this.prisma.user.findUnique({
+            where: { id: userId },
+            include: includeOptions,
+        });
+    }
 
 }

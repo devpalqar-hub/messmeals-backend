@@ -1,8 +1,13 @@
-import { Body, Controller, Post, Get, Query } from '@nestjs/common';
+import { Body, Controller, Post, Get, Query, UseGuards, Param } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { RegisterDto } from './dto/register.dto';
+import { RegisterDeliveryAgentDto, RegisterDto, UserRegisterDto } from './dto/Registration.dto';
 import { LoginDto } from './dto/login.dto';
 import { OtpVerifyDto } from './dto/otp-verify.dto';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/decorators/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
+import { Role } from '@prisma/client';
+
 
 @Controller('auth')
 export class AuthController {
@@ -33,9 +38,36 @@ export class AuthController {
         return this.authService.ListDeliveryAgents(Number(page), Number(limit), search);
     }
 
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles("MESSADMIN")
     @Get('stats')
-    async getDashboardStats() {
-        return this.authService.getDashboardStats();
+    async getDashboardStats(@Query('messId') messId?: string) {
+        return this.authService.getDashboardStats(messId);
     }
 
+    @Get('mess-admins/')
+    async getAllMessAdmins() {
+        return this.authService.getallmessadmin();
+    }
+
+
+    // -------------------------------------------------------
+    // PHASE 3
+    // -------------------------------------------------------
+    @Post('send/user/reg/otp')
+    async sendOtpForClientRegistration(@Body() regDto: UserRegisterDto) {
+        return this.authService.sendOtpForClientRegistration(regDto);
+    }
+
+    @Post('send/dlvryagent/reg/otp')
+    async sendOtpForDeliveryAgentRegistration(@Body() regDto: RegisterDeliveryAgentDto) {
+        return this.authService.sendOtpForDeliveryAgentRegistration(regDto);
+    }
+
+    // @UseGuards(JwtAuthGuard, RolesGuard)
+    // @Roles(Role.SUPERADMIN)
+    @Post('admin/add/number')
+    async AddPhoneNumber(@Body('phone') number: string) {
+        return this.authService.AddPhoneNumber(number);
+    }
 }

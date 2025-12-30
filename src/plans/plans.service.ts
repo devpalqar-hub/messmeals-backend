@@ -10,7 +10,14 @@ export class PlansService {
     constructor(private prisma: PrismaService) { }
 
     async createPlan(dto: PlansDto, files: any) {
-        const { planName, price, minPrice, description, variationIds } = dto
+        const { planName, price, minPrice, description, variationIds, messId } = dto
+
+        // Validate mess exists
+        const mess = await this.prisma.mess.findUnique({ where: { id: messId } });
+        if (!mess) {
+            throw new BadRequestException('Mess not found');
+        }
+
         return this.prisma.$transaction(async (tx) => {
             // 1️⃣ Handle Plan Images (optional)
             const planImagesData =
@@ -25,6 +32,7 @@ export class PlansService {
                     price: dto.price,
                     minPrice: dto.minPrice,
                     description: dto.description,
+                    messId: dto.messId,
                     Variation: { connect: dto.variationIds?.map((id) => ({ id })) || [] },
                     images: planImagesData.length ? { create: planImagesData } : undefined,
                 },
@@ -36,15 +44,27 @@ export class PlansService {
         });
     }
 
-    async findAll(page: number = 1, limit: number = 10) {
+    async findAll(page: number = 1, limit: number = 10, messId?: string) {
         const skip = (page - 1) * limit;
+
+        const where: any = {};
+        if (messId) {
+            where.messId = messId;
+        }
 
         const [plans, total] = await this.prisma.$transaction([
             this.prisma.plans.findMany({
                 skip,
                 take: limit,
+                where,
                 include: {
                     images: true,
+                    mess: {
+                        select: {
+                            id: true,
+                            name: true,
+                        },
+                    },
                     Variation: {
                         select: {
                             id: true,
@@ -57,7 +77,7 @@ export class PlansService {
                     createdAt: 'desc', // newest first
                 },
             }),
-            this.prisma.plans.count(),
+            this.prisma.plans.count({ where }),
         ]);
 
         return {
@@ -78,6 +98,14 @@ export class PlansService {
             where: { id },
             include: {
                 images: true,
+                mess: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        phone: true,
+                    },
+                },
                 Variation: {
                     select: {
                         id: true,
@@ -107,6 +135,12 @@ export class PlansService {
             if (dto.price) updateData.price = dto.price;
             if (dto.minPrice) updateData.minPrice = dto.minPrice;
             if (dto.description) updateData.description = dto.description;
+            if (dto.messId) {
+                // Validate mess exists
+                const mess = await tx.mess.findUnique({ where: { id: dto.messId } });
+                if (!mess) throw new BadRequestException('Mess not found');
+                updateData.messId = dto.messId;
+            }
             if (dto.lunch !== undefined) updateData.lunch = dto.lunch;
 
             // 3️⃣ Handle Variations (many-to-many)

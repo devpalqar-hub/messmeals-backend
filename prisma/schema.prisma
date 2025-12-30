@@ -16,11 +16,26 @@ enum DeliveryStatus {
   DELIVERED
 }
 
-enum Roles {
+enum Role {
   USER
   SUPERADMIN
-  ADMIN
+  MESSADMIN
   DELIVERYAGENT
+}
+
+enum ScheduleType {
+  EVERYDAY
+  CUSTOM
+}
+
+enum DayOfWeek {
+  SUNDAY
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
 }
 
 model User {
@@ -32,9 +47,10 @@ model User {
   expiresAt              DateTime?
   is_verified            Boolean                 @default(false)
   is_active              Boolean                 @default(true)
-  role                   Roles                   @default(USER)
+  role                   Role                    @default(USER)
   customerProfile        CustomerProfile?
   deliveryPartnerProfile DeliveryPartnerProfile?
+  messAdminProfile       MessAdminProfile?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -42,8 +58,8 @@ model User {
 
 model CustomerProfile {
   id                String   @id @default(uuid())
-  walletAmount      Decimal  @default(0.00)
-  address           String   @db.LongText
+  walletAmount      Decimal? @default(0.00)
+  address           String?  @db.LongText
   current_location  String?
   latitude_logitude String?
   userId            String   @unique
@@ -53,34 +69,52 @@ model CustomerProfile {
 
   deliveries        Deliveries[]
   userSubscriptions UserSubscriptions[]
+  addresses         UserAddress[]
+  Wallet            Wallet?
 }
 
 model UserSubscriptions {
-  id                       String    @id @default(uuid())
+  id                       String       @id @default(uuid())
   start_date               DateTime
   end_date                 DateTime?
-  totalPrice               Decimal   @default(0.00)
-  discount                 Decimal   @default(0.00)
-  discountedPrice          Decimal   @default(0.00)
+  pause_start_date         DateTime?
+  pause_end_date           DateTime?
+  cancellation_start_date  DateTime?
+  cancellation_end_date    DateTime?
+  scheduleType             ScheduleType @default(EVERYDAY)
+  selectedDays             Json?
+  totalPrice               Decimal      @default(0.00)
+  discount                 Decimal      @default(0.00)
+  discountedPrice          Decimal      @default(0.00)
   deliveryPartnerProfileId String?
+  userAddressId            String?
   planId                   String
-  is_active                Boolean   @default(true)
+  messId                   String
+  is_active                Boolean      @default(true)
+  cancelled_on             DateTime?
   customerProfileId        String?
-  createdAt                DateTime  @default(now())
+  createdAt                DateTime     @default(now())
 
   DeliveryPartnerProfile DeliveryPartnerProfile? @relation(fields: [deliveryPartnerProfileId], references: [id])
   plan                   Plans                   @relation(fields: [planId], references: [id], onDelete: Cascade)
   CustomerProfile        CustomerProfile?        @relation(fields: [customerProfileId], references: [id], onDelete: Cascade)
+  mess                   Mess                    @relation(fields: [messId], references: [id], onDelete: Cascade)
+  UserAddress            UserAddress?            @relation(fields: [userAddressId], references: [id])
+  deliveries             Deliveries[]
 }
 
 model DeliveryPartnerProfile {
-  id                String              @id @default(uuid())
-  deliveryCounts    Int?
-  deliveryRegion    String?
-  address           String?             @db.LongText
-  userId            String              @unique
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  id             String   @id @default(uuid())
+  deliveryCounts Int?
+  deliveryRegion String?
+  isonline       Boolean  @default(true)
+  address        String?  @db.LongText
+  userId         String   @unique
+  messId         String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  mess              Mess                @relation(fields: [messId], references: [id], onDelete: Cascade)
   user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   deliveries        Deliveries[]
   userSubscriptions UserSubscriptions[]
@@ -92,8 +126,10 @@ model Plans {
   price             Decimal             @default(0.00)
   minPrice          Decimal?
   description       String?             @db.Text
+  messId            String
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
+  mess              Mess                @relation(fields: [messId], references: [id], onDelete: Cascade)
   images            PlanImages[]
   usersubscriptions UserSubscriptions[]
   deliveries        Deliveries[]
@@ -124,17 +160,92 @@ model Variation {
 }
 
 model Deliveries {
-  id         String          @id @default(uuid())
-  date       DateTime
-  status     DeliveryStatus?
-  action     String?
-  customerId String
-  planId     String
-  partnerId  String?
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+  id             String          @id @default(uuid())
+  date           DateTime
+  status         DeliveryStatus?
+  action         String?
+  customerId     String
+  planId         String
+  partnerId      String?
+  messId         String
+  subscriptionId String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
-  customer CustomerProfile         @relation(fields: [customerId], references: [id])
-  plan     Plans                   @relation(fields: [planId], references: [id], onDelete: Cascade)
-  partner  DeliveryPartnerProfile? @relation(fields: [partnerId], references: [id])
+  customer          CustomerProfile         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  plan              Plans                   @relation(fields: [planId], references: [id], onDelete: Cascade)
+  partner           DeliveryPartnerProfile? @relation(fields: [partnerId], references: [id])
+  mess              Mess                    @relation(fields: [messId], references: [id], onDelete: Cascade)
+  UserSubscriptions UserSubscriptions?      @relation(fields: [subscriptionId], references: [id])
+}
+
+model Mess {
+  id                     String                   @id @default(uuid())
+  name                   String
+  description            String?                  @db.Text
+  address                String?                  @db.LongText
+  phone                  String?
+  email                  String?
+  is_active              Boolean                  @default(true)
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  plans                  Plans[]
+  messAdmins             MessAdminProfile[]
+  DeliveryPartnerProfile DeliveryPartnerProfile[]
+  Deliveries             Deliveries[]
+  UserSubscriptions      UserSubscriptions[]
+}
+
+model MessAdminProfile {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messes    Mess[]
+}
+
+model UserAddress {
+  id               String   @id @default(uuid())
+  name             String
+  street           String
+  townOrcity       String
+  country          String?
+  postcode         String
+  landmark         String?
+  latitudeLogitude String?
+  phone            String?
+  email            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  User      CustomerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  profileId String
+
+  subscriptions UserSubscriptions[]
+}
+
+model Wallet {
+  id           String          @id @default(uuid())
+  profile      CustomerProfile @relation(fields: [userId], references: [id])
+  userId       String          @unique
+  walletAmount Decimal         @default(0.00)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  transactions Transaction[]
+}
+
+model Transaction {
+  id           String   @id @default(uuid())
+  wallet       Wallet   @relation(fields: [walletId], references: [id])
+  walletId     String
+  amount       Decimal  @default(0.00) // smallest unit; positive for credit, negative for debit
+  balanceAfter Decimal  @default(0.00) // wallet balance after transaction, stored to allow auditing
+  meta         Json? // optional metadata: { fromUserId, toUserId, note, externalId }
+  createdAt    DateTime @default(now())
+}
+
+model PhoneNumbers {
+  id    String @id @default(uuid())
+  phone String @unique
 }
