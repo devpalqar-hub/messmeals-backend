@@ -82,7 +82,7 @@ export class DeliveriesService {
                 include: {
                     customer: {
                         include: {
-                            user: { select: { id: true, name: true } },
+                            user: { select: { id: true, name: true, phone: true, email: true } },
                         },
                     },
                     mess: { select: { id: true, name: true } },
