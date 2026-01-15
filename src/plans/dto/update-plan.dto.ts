@@ -52,4 +52,21 @@ export class UpdatePlanDto {
     @ValidateNested({ each: true })
     @Type(() => PlanImagesDto)
     images?: PlanImagesDto[];
+
+    //default false
+    @IsOptional()
+    @IsBoolean()
+    isActive: boolean
+
+    //default false
+    @IsOptional()
+    @IsBoolean()
+    isMonthlyPlan: boolean
+
+    //default false
+    @IsOptional()
+    @IsBoolean()
+    isDailyPlan: boolean
+
+
 }

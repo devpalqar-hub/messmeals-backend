@@ -23,6 +23,15 @@ export class PlansDto {
     @IsString({ each: true })
     variationIds?: string[];
 
+    //default false
+    @IsOptional()
+    @IsBoolean()
+    isMonthlyPlan: boolean
+
+    @IsOptional()
+    @IsBoolean()
+    isDailyPlan: boolean
+
     @IsOptional()
     @IsArray()
     @ValidateNested({ each: true })

@@ -1,12 +1,20 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateMessDto, UpdateMessDto } from './dto/create-mess.dto';
+import { S3Service } from 'src/s3/s3.service';
 
 @Injectable()
 export class MessService {
-    constructor(private prisma: PrismaService) { }
+    constructor(private prisma: PrismaService,
+        private readonly s3Service: S3Service
+    ) { }
 
-    async create(dto: CreateMessDto) {
+    async create(
+        dto: CreateMessDto,
+        images: {
+            url: string;
+        }[] = [],) {
+
         const mess = await this.prisma.mess.create({
             data: {
                 name: dto.name,
@@ -22,9 +30,32 @@ export class MessService {
             },
         });
 
+        if (images.length) {
+            const galleryData = images.map((image) => ({
+                messId: mess.id,
+                url: image.url,
+            }));
+
+            await this.prisma.messImages.createMany({
+                data: galleryData,
+            });
+        }
+
+        // ✅ Fetch images and attach (response structure unchanged)
+        const messImages = await this.prisma.messImages.findMany({
+            where: { messId: mess.id },
+            select: {
+                id: true,
+                url: true,
+            },
+        });
+
         return {
             message: 'Mess created successfully',
-            data: mess,
+            data: {
+                ...mess,
+                images: messImages,
+            },
         };
     }
 
@@ -96,6 +127,9 @@ export class MessService {
                             },
                         },
                     },
+                    Testimonials: true,
+                    DeliveryPartnerProfile: true,
+                    UserSubscriptions: true
                 },
                 orderBy: { createdAt: 'desc' },
             }),
@@ -138,7 +172,11 @@ export class MessService {
                         },
                     },
                 },
+                Testimonials: true,
+                DeliveryPartnerProfile: true,
+                UserSubscriptions: true
             },
+
         });
 
         if (!mess) {
@@ -163,8 +201,9 @@ export class MessService {
                 ...(dto.phone !== undefined && { phone: dto.phone }),
                 ...(dto.email !== undefined && { email: dto.email }),
                 ...(dto.is_active !== undefined && { is_active: dto.is_active }),
-                ...(dto.is_active !== undefined && { is_active: dto.is_active }),
-
+                ...(dto.openingHours !== undefined && { openingHours: dto.openingHours }),
+                ...(dto.location !== undefined && { location: dto.location }),
+                ...(dto.is_verified !== undefined && { is_verified: dto.is_verified }),
             },
             include: {
                 plans: true,
@@ -259,4 +298,99 @@ export class MessService {
         return messAdmin.messes;
     }
 
+
+    async addMessImages(
+        messId: string,
+        images: {
+            url: string;
+        }[] = [],
+        altText?: string,
+    ) {
+        if (!images || images.length === 0) {
+            throw new BadRequestException('At least one image is required');
+        }
+
+        const mess = await this.prisma.mess.findUnique({
+            where: { id: messId },
+        });
+
+        if (!mess) {
+            throw new NotFoundException('Mess not found');
+        }
+
+        const galleryData = images.map((image) => ({
+            messId: mess.id,
+            url: image.url,
+        }));
+
+        await this.prisma.messImages.createMany({
+            data: galleryData,
+        });
+
+        // ✅ Fetch images and attach (response structure unchanged)
+        const messImages = await this.prisma.messImages.findMany({
+            where: { messId: mess.id },
+            select: {
+                id: true,
+                url: true,
+            },
+        });
+
+        return {
+            message: 'Mess images uploaded successfully',
+            data: messImages,
+        };
+    }
+
+    async getMessImages(messId: string) {
+        const mess = await this.prisma.mess.findUnique({
+            where: { id: messId }
+        });
+
+        if (!mess) {
+            throw new NotFoundException('Doula profile not found');
+        }
+
+        const images = await this.prisma.messImages.findMany({
+            where: {
+                messId: mess.id,
+            },
+            orderBy: {
+                createdAt: 'asc',
+            },
+        });
+
+        return {
+            status: 'success',
+            message: 'Mess images fetched successfully',
+            data: images,
+        };
+    }
+
+    async deleteMessImage(messId: string, imageId: string) {
+        const mess = await this.prisma.mess.findUnique({
+            where: { id: messId },
+        });
+
+        if (!mess) {
+            throw new NotFoundException('Doula profile not found');
+        }
+
+        const image = await this.prisma.messImages.findUnique({
+            where: { id: imageId },
+        });
+
+        if (!image || image.messId !== mess.id) {
+            throw new NotFoundException('Image not found');
+        }
+        await this.s3Service.deleteFile(image.url);
+
+        await this.prisma.messImages.delete({
+            where: { id: imageId },
+        });
+
+        return {
+            message: 'Mess image deleted successfully',
+        };
+    }
 }
