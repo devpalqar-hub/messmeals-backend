@@ -100,21 +100,32 @@ export class AuthService {
         if (!user) {
             throw new UnauthorizedException('User not found');
         }
-        if (process.env.NODE_ENV === 'STAGING') {
+        // if (process.env.NODE_ENV === 'STAGING') {
+        //     const numbers = await this.prisma.phoneNumbers.findUnique({
+        //         where: { phone: phone }
+        //     })
+        //     if (!numbers) {
+        //         throw new NotFoundException("Phone Number Not Found")
+        //     }
+        //     return {
+        //         message: 'OTP sent successfully',
+        //         sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
+        //         otp: "123456",
+        //         status: 200,
+        //     };
+        // }
+        else if (process.env.NODE_ENV === 'PRODUCTION') {
             const numbers = await this.prisma.phoneNumbers.findUnique({
                 where: { phone: phone }
             })
-            if (!numbers) {
-                throw new NotFoundException("Phone Number Not Found")
+            if (numbers) {
+                return {
+                    message: 'OTP sent successfully',
+                    sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
+                    otp: "123456",
+                    status: 200,
+                };
             }
-            return {
-                message: 'OTP sent successfully',
-                sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
-                otp: "123456",
-                status: 200,
-            };
-        }
-        else if (process.env.NODE_ENV === 'PRODUCTION') {
             const otpResponse = await this.otpservice.sendOtp(phone);
             return {
                 message: 'OTP sent successfully',
@@ -128,24 +139,35 @@ export class AuthService {
 
     async verifyOtp(dto: OtpVerifyDto) {
         const { phone, sessionId, otp } = dto;
-        if (process.env.NODE_ENV === 'STAGING') {
+        // if (process.env.NODE_ENV === 'STAGING') {
+        //     const numbers = await this.prisma.phoneNumbers.findUnique({
+        //         where: { phone: phone }
+        //     })
+        //     if (!numbers) {
+        //         throw new NotFoundException("Phone Number Not Found")
+        //     }
+        //     if (otp != "123456") {
+        //         throw new BadRequestException("Otp not correct")
+        //     }
+
+        // }
+        if (process.env.NODE_ENV === 'PRODUCTION') {
             const numbers = await this.prisma.phoneNumbers.findUnique({
                 where: { phone: phone }
             })
             if (!numbers) {
-                throw new NotFoundException("Phone Number Not Found")
+                const verify = await this.otpservice.verifyOtp(sessionId, otp);
+
+                if (verify.Status !== 'Success') {
+                    throw new UnauthorizedException('Invalid OTP');
+                }
             }
-            if (otp != "123456") {
-                throw new BadRequestException("Otp not correct")
+            else {
+                if (otp != "123456") {
+                    throw new BadRequestException("Otp not correct")
+                }
             }
 
-        }
-        else if (process.env.NODE_ENV === 'PRODUCTION') {
-            const verify = await this.otpservice.verifyOtp(sessionId, otp);
-
-            if (verify.Status !== 'Success') {
-                throw new UnauthorizedException('Invalid OTP');
-            }
         }
         // Step2. Fetch user and profiles
         const user = await this.prisma.user.findUnique({
