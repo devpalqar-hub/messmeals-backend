@@ -71,6 +71,7 @@ model CustomerProfile {
   userSubscriptions UserSubscriptions[]
   addresses         UserAddress[]
   Wallet            Wallet?
+  Testimonials      Testimonials[]
 }
 
 model UserSubscriptions {
@@ -95,6 +96,8 @@ model UserSubscriptions {
   customerProfileId        String?
   createdAt                DateTime     @default(now())
 
+  isActive Boolean @default(true)
+
   DeliveryPartnerProfile DeliveryPartnerProfile? @relation(fields: [deliveryPartnerProfileId], references: [id])
   plan                   Plans                   @relation(fields: [planId], references: [id], onDelete: Cascade)
   CustomerProfile        CustomerProfile?        @relation(fields: [customerProfileId], references: [id], onDelete: Cascade)
@@ -118,18 +121,24 @@ model DeliveryPartnerProfile {
   user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   deliveries        Deliveries[]
   userSubscriptions UserSubscriptions[]
+  Testimonials      Testimonials[]
 }
 
 model Plans {
-  id                String              @id @default(uuid())
-  planName          String
-  price             Decimal             @default(0.00)
-  minPrice          Decimal?
-  description       String?             @db.Text
-  messId            String
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
-  mess              Mess                @relation(fields: [messId], references: [id], onDelete: Cascade)
+  id          String   @id @default(uuid())
+  planName    String
+  price       Decimal  @default(0.00)
+  minPrice    Decimal?
+  description String?  @db.Text
+  messId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  mess        Mess     @relation(fields: [messId], references: [id], onDelete: Cascade)
+
+  isMonthlyPlan Boolean @default(false)
+  isDailyPlan   Boolean @default(true)
+  isActive      Boolean @default(true)
+
   images            PlanImages[]
   usersubscriptions UserSubscriptions[]
   deliveries        Deliveries[]
@@ -157,6 +166,8 @@ model Variation {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   plans       Plans[]
+
+  isActive Boolean @default(true)
 }
 
 model Deliveries {
@@ -172,6 +183,8 @@ model Deliveries {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
+  isActive Boolean @default(true)
+
   customer          CustomerProfile         @relation(fields: [customerId], references: [id], onDelete: Cascade)
   plan              Plans                   @relation(fields: [planId], references: [id], onDelete: Cascade)
   partner           DeliveryPartnerProfile? @relation(fields: [partnerId], references: [id])
@@ -180,13 +193,20 @@ model Deliveries {
 }
 
 model Mess {
-  id                     String                   @id @default(uuid())
-  name                   String
-  description            String?                  @db.Text
-  address                String?                  @db.LongText
-  phone                  String?
-  email                  String?
-  is_active              Boolean                  @default(true)
+  id          String  @id @default(uuid())
+  name        String
+  description String? @db.Text
+  address     String? @db.LongText
+  phone       String?
+  email       String?
+  is_active   Boolean @default(true)
+
+  is_verified  Boolean      @default(false)
+  openingHours Json?
+  images       MessImages[]
+  location     String?
+  categories   Category[]
+
   createdAt              DateTime                 @default(now())
   updatedAt              DateTime                 @updatedAt
   plans                  Plans[]
@@ -194,6 +214,21 @@ model Mess {
   DeliveryPartnerProfile DeliveryPartnerProfile[]
   Deliveries             Deliveries[]
   UserSubscriptions      UserSubscriptions[]
+  Testimonials           Testimonials[]
+}
+
+model MessImages {
+  id        String   @id @default(uuid())
+  messId    String
+  url       String
+  altText   String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  mess Mess @relation(fields: [messId], references: [id], onDelete: Cascade)
+
+  @@map("mess_images")
 }
 
 model MessAdminProfile {
@@ -218,6 +253,8 @@ model UserAddress {
   email            String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+
+  isActive Boolean @default(true)
 
   User      CustomerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   profileId String
@@ -248,4 +285,32 @@ model Transaction {
 model PhoneNumbers {
   id    String @id @default(uuid())
   phone String @unique
+}
+
+model Category {
+  id          String  @id @default(uuid())
+  name        String
+  image       String?
+  description String?
+  isActive    Boolean @default(true)
+  mess        Mess[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Testimonials {
+  id              String   @id @default(uuid())
+  messId          String
+  ratings         Int
+  reviews         String
+  customerId      String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  DeliveryagentId String?
+  isActive        Boolean  @default(true)
+
+  mess            Mess                    @relation(fields: [messId], references: [id], onDelete: Cascade)
+  customer        CustomerProfile         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  deliveryPartner DeliveryPartnerProfile? @relation(fields: [DeliveryagentId], references: [id], onDelete: Cascade)
 }

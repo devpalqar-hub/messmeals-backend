@@ -15,6 +15,10 @@ export class MessService {
                 phone: dto.phone,
                 email: dto.email,
                 is_active: dto.is_active ?? true,
+                is_verified: dto.is_verified ?? false,
+                location: dto.location,
+                openingHours: dto.openingHours
+
             },
         });
 
@@ -24,15 +28,47 @@ export class MessService {
         };
     }
 
-    async findAll(page: number = 1, limit: number = 10, search?: string) {
+    async findAll(
+        page: number = 1,
+        limit: number = 10,
+        search?: string,
+        categoryId?: string,
+        ratings?: number,
+        is_active?: boolean,
+        is_verified?: boolean,
+    ) {
         const skip = (page - 1) * limit;
 
         const where: any = {};
+
+        // 🔍 Search (OR)
         if (search) {
             where.OR = [
                 { name: { contains: search } },
                 { email: { contains: search } },
+                { phone: { contains: search } },
             ];
+        }
+
+        // 🎯 Filters (AND)
+        if (is_active !== undefined) {
+            where.is_active = is_active;
+        }
+
+        if (is_verified !== undefined) {
+            where.is_verified = is_verified;
+        }
+
+        if (ratings !== undefined) {
+            where.ratings = ratings; // assumes ratings field exists
+        }
+
+        if (categoryId) {
+            where.categories = {
+                some: {
+                    id: categoryId,
+                },
+            };
         }
 
         const [messes, total] = await this.prisma.$transaction([
@@ -66,6 +102,7 @@ export class MessService {
             this.prisma.mess.count({ where }),
         ]);
 
+        // ❗ Response structure unchanged
         return {
             data: messes,
             meta: {
@@ -76,6 +113,7 @@ export class MessService {
             },
         };
     }
+
 
     async findOne(id: string) {
         const mess = await this.prisma.mess.findUnique({
@@ -125,6 +163,8 @@ export class MessService {
                 ...(dto.phone !== undefined && { phone: dto.phone }),
                 ...(dto.email !== undefined && { email: dto.email }),
                 ...(dto.is_active !== undefined && { is_active: dto.is_active }),
+                ...(dto.is_active !== undefined && { is_active: dto.is_active }),
+
             },
             include: {
                 plans: true,

@@ -38,9 +38,23 @@ export class MessController {
         @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
         @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
         @Query('search') search?: string,
+        @Query('categoryId') categoryId?: string,
+        @Query('ratings') ratings?: string,
+        @Query('is_active') is_active?: string,
+        @Query('is_verified') is_verified?: string,
     ) {
-        return this.messService.findAll(page, limit, search);
+        return this.messService.findAll(
+            page,
+            limit,
+            search,
+            categoryId,
+            ratings !== undefined ? Number(ratings) : undefined,
+            is_active !== undefined ? is_active === 'true' : undefined,
+            is_verified !== undefined ? is_verified === 'true' : undefined,
+        );
     }
+
+
 
     @Get(':id')
     findOne(@Param('id', ParseUUIDPipe) id: string) {
