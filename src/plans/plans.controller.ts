@@ -11,6 +11,8 @@ import {
     Query,
     ParseUUIDPipe,
     BadRequestException,
+    UsePipes,
+    ValidationPipe,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express'; // ✅ this one
 import { PlansService } from './plans.service';
@@ -33,6 +35,12 @@ export class PlansController {
     @Post()
     @UseInterceptors(
         FilesInterceptor('planImages', 10),
+    )
+    @UsePipes(
+        new ValidationPipe({
+            transform: true,
+            whitelist: true,
+        }),
     )
     async createPlan(
         @Body() dto: PlansDto,

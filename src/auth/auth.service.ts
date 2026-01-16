@@ -460,21 +460,32 @@ export class AuthService {
             });
         }
 
-        if (process.env.NODE_ENV === 'STAGING') {
+        // if (process.env.NODE_ENV === 'STAGING') {
+        //     const numbers = await this.prisma.phoneNumbers.findUnique({
+        //         where: { phone: phone }
+        //     })
+        //     if (!numbers) {
+        //         throw new NotFoundException("Phone Number Not Found")
+        //     }
+        //     return {
+        //         message: 'OTP sent successfully',
+        //         sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
+        //         otp: "123456",
+        //         status: 200,
+        //     };
+        // }
+        if (process.env.NODE_ENV === 'PRODUCTION') {
             const numbers = await this.prisma.phoneNumbers.findUnique({
                 where: { phone: phone }
             })
-            if (!numbers) {
-                throw new NotFoundException("Phone Number Not Found")
+            if (numbers) {
+                return {
+                    message: 'OTP sent successfully',
+                    sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
+                    otp: "123456",
+                    status: 200,
+                };
             }
-            return {
-                message: 'OTP sent successfully',
-                sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
-                otp: "123456",
-                status: 200,
-            };
-        }
-        else if (process.env.NODE_ENV === 'PRODUCTION') {
             const otpResponse = await this.otpservice.sendOtp(phone);
             return {
                 message: 'OTP sent successfully',
@@ -538,21 +549,32 @@ export class AuthService {
             });
         }
 
-        if (process.env.NODE_ENV === 'STAGING') {
+        // if (process.env.NODE_ENV === 'STAGING') {
+        //     const numbers = await this.prisma.phoneNumbers.findUnique({
+        //         where: { phone: phone }
+        //     })
+        //     if (!numbers) {
+        //         throw new NotFoundException("Phone Number Not Found")
+        //     }
+        //     return {
+        //         message: 'OTP sent successfully',
+        //         sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
+        //         otp: "123456",
+        //         status: 200,
+        //     };
+        // }
+        if (process.env.NODE_ENV === 'PRODUCTION') {
             const numbers = await this.prisma.phoneNumbers.findUnique({
                 where: { phone: phone }
             })
-            if (!numbers) {
-                throw new NotFoundException("Phone Number Not Found")
+            if (numbers) {
+                return {
+                    message: 'OTP sent successfully',
+                    sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
+                    otp: "123456",
+                    status: 200,
+                };
             }
-            return {
-                message: 'OTP sent successfully',
-                sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
-                otp: "123456",
-                status: 200,
-            };
-        }
-        else if (process.env.NODE_ENV === 'PRODUCTION') {
             const otpResponse = await this.otpservice.sendOtp(phone);
             return {
                 message: 'OTP sent successfully',

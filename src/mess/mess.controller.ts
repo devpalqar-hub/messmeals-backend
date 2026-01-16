@@ -16,6 +16,8 @@ import {
     NotFoundException,
     UseInterceptors,
     UploadedFiles,
+    UsePipes,
+    ValidationPipe,
 } from '@nestjs/common';
 import { MessService } from './mess.service';
 import { CreateMessDto, UpdateMessDto } from './dto/create-mess.dto';
@@ -40,22 +42,31 @@ export class MessController {
     @UseInterceptors(
         FilesInterceptor('files', 10),
     )
+    @UsePipes(
+        new ValidationPipe({
+            transform: true,
+            whitelist: true,
+        }),
+    )
     async create(@Body() dto: CreateMessDto, @UploadedFiles() files: Express.Multer.File[],) {
-        const totalGallerySize = files.reduce(
-            (sum, file) => sum + file.size,
-            0,
-        );
-
-        if (totalGallerySize > maxSizeGallery) {
-            throw new BadRequestException(
-                'Total gallery image size must not exceed 50MB',
-            );
-        }
         let galleryImages: any[] = [];
-        if (files) {
-            const folder = "uploads/mess/gallery"
+
+        if (files && files.length > 0) {
+            const totalGallerySize = files.reduce(
+                (sum, file) => sum + file.size,
+                0,
+            );
+
+            if (totalGallerySize > maxSizeGallery) {
+                throw new BadRequestException(
+                    'Total gallery image size must not exceed 50MB',
+                );
+            }
+
+            const folder = 'uploads/mess/gallery';
             galleryImages = await this.s3Service.uploadMultipleFiles(files, folder);
         }
+
         const imagePayload = galleryImages.map((url) => ({ url }));
         return this.messService.create(dto, imagePayload);
     }

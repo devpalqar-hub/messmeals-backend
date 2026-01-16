@@ -1,3 +1,5 @@
+import { BadRequestException } from '@nestjs/common';
+import { Transform } from 'class-transformer';
 import { IsString, IsOptional, IsBoolean, IsEmail, IsObject } from 'class-validator';
 
 export class CreateMessDto {
@@ -22,11 +24,13 @@ export class CreateMessDto {
 
     @IsOptional()
     @IsBoolean()
+    @Transform(({ value }) => value === 'true' || value === true)
     is_active?: boolean;
 
     // New Fields - phase 4
     @IsOptional()
     @IsBoolean()
+    @Transform(({ value }) => value === 'true' || value === true)
     is_verified?: boolean;
 
     /**
@@ -36,8 +40,25 @@ export class CreateMessDto {
      *   "Tuesday": "9:30-4"
      * }
      */
+
     @IsOptional()
     @IsObject()
+    @Transform(({ value }) => {
+        if (typeof value === 'string') {
+            try {
+                const parsed = JSON.parse(value);
+                if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+                    throw new Error();
+                }
+                return parsed;
+            } catch {
+                throw new BadRequestException(
+                    'openingHours must be a valid JSON object',
+                );
+            }
+        }
+        return value;
+    })
     openingHours?: Record<string, string>;
 
     @IsOptional()
@@ -84,3 +105,5 @@ export class UpdateMessDto {
     @IsString()
     location?: string;
 }
+
+
