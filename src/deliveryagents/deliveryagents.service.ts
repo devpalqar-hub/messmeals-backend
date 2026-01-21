@@ -277,13 +277,19 @@ export class DeliveryAgentService {
     }
 
 
-    async DeliveryStats(userId: string) {
-        // 1. Validate user and get delivery profile
+    async DeliveryStats(
+        userId: string,
+        filters?: {
+            date1?: Date;
+            date2?: Date;
+            status?: DeliveryStatus;
+            variationId?: string;
+        },
+    ) {
+        // 1️⃣ Validate user and delivery partner profile
         const user = await this.prisma.user.findUnique({
             where: { id: userId },
-            include: {
-                deliveryPartnerProfile: true,
-            },
+            include: { deliveryPartnerProfile: true },
         });
 
         if (!user) {
@@ -296,15 +302,57 @@ export class DeliveryAgentService {
             throw new BadRequestException('User is not a delivery partner');
         }
 
-        // 2. Completed deliveries count
-        const completedDeliveries = await this.prisma.deliveries.count({
+        // 2️⃣ Base where condition (always applied)
+        const where: any = {
+            partnerId: profile.id,
+        };
+
+        // 3️⃣ Status filter (optional)
+        if (filters?.status) {
+            where.status = filters.status;
+        }
+
+        // 4️⃣ Date filters (optional)
+        if (filters?.date1 && filters?.date2) {
+            where.date = {
+                gte: new Date(filters.date1),
+                lte: new Date(filters.date2),
+            };
+        } else if (filters?.date1) {
+            const start = new Date(filters.date1);
+            const end = new Date(filters.date1);
+            end.setHours(23, 59, 59, 999);
+
+            where.date = {
+                gte: start,
+                lte: end,
+            };
+        }
+
+        // 5️⃣ Variation filter (optional)
+        if (filters?.variationId) {
+            where.plan = {
+                Variation: {
+                    some: {
+                        id: filters.variationId,
+                    },
+                },
+            };
+        }
+
+        // 6️⃣ Filtered deliveries count
+        const filteredDeliveriesCount = await this.prisma.deliveries.count({
+            where,
+        });
+
+        // 7️⃣ Total deliveries count (no filters)
+        const totalDeliveriesCount = await this.prisma.deliveries.count({
             where: {
                 partnerId: profile.id,
-                status: DeliveryStatus.DELIVERED,
             },
         });
 
-        // 3. Active user subscriptions
+        // 8️⃣ Active subscriptions (unchanged logic)
         const activeSubscriptions = await this.prisma.userSubscriptions.count({
             where: {
                 deliveryPartnerProfileId: profile.id,
@@ -312,11 +360,14 @@ export class DeliveryAgentService {
             },
         });
 
-        // 4. Return response
+        // 9️⃣ Response
         return {
             userId: user.id,
             profileId: profile.id,
-            totalCompletedDeliveries: completedDeliveries,
+
+            totalDeliveriesCount,
+            filteredDeliveriesCount,
+
             totalActiveOrders: activeSubscriptions,
         };
     }
