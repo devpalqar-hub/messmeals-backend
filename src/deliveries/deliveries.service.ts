@@ -3,7 +3,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { UpdateDeliveryDto } from './dto/update-delivery.dto';
 import { UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
-import { AssignDeliveryPartnerDto, AssignDeliveryPartnerPhs2Dto } from './dto/assign-partner.dto';
+import { AssignDeliveryPartnerDto, AssignDeliveryPartnerPhs2Dto, AssignDeliveryPartnerToDeliveriesDto } from './dto/assign-partner.dto';
 import { DeliveryStatus, ScheduleType } from '@prisma/client';
 import { tr } from '@faker-js/faker';
 
@@ -466,5 +466,74 @@ export class DeliveriesService {
         };
     }
 
+    async assignPartnerToDeliveries(
+        dto: AssignDeliveryPartnerToDeliveriesDto,
+        userId: string,
+    ) {
+        const { partnerId, deliveryIds, subscriptionId, fromDate, toDate } = dto;
+
+        // 1️⃣ Validate partner
+        const partner = await this.prisma.deliveryPartnerProfile.findUnique({
+            where: { id: partnerId },
+        });
+
+        if (!partner) {
+            throw new NotFoundException('Delivery partner not found');
+        }
+
+        // 2️⃣ Build delivery filter
+        const where: any = {
+            mess: {
+                messAdmins: {
+                    some: { id: userId },
+                },
+            },
+        };
+
+        if (deliveryIds?.length) {
+            where.id = { in: deliveryIds };
+        }
+
+        if (subscriptionId) {
+            where.subscriptionId = subscriptionId;
+        }
+
+        if (fromDate || toDate) {
+            where.date = {};
+            if (fromDate) where.date.gte = new Date(fromDate);
+            if (toDate) where.date.lte = new Date(toDate);
+        }
+
+        // 3️⃣ Verify deliveries exist
+        const deliveries = await this.prisma.deliveries.findMany({
+            where,
+            select: { id: true },
+        });
+
+        if (!deliveries.length) {
+            throw new NotFoundException('No deliveries found for reassignment');
+        }
+
+        // 4️⃣ Update deliveries
+        const result = await this.prisma.deliveries.updateMany({
+            where: {
+                id: { in: deliveries.map(d => d.id) },
+            },
+            data: {
+                partnerId: partnerId,
+                updatedAt: new Date(),
+            },
+        });
+
+        return {
+            message: 'Delivery partner reassigned successfully',
+            data: {
+                totalUpdated: result.count,
+                partnerId,
+            },
+        };
+    }
+
 
 }
+

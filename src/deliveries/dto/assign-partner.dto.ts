@@ -1,4 +1,4 @@
-import { IsEnum, IsString } from "class-validator";
+import { IsArray, IsDateString, IsEnum, IsOptional, IsString } from "class-validator";
 import { DeliveryStatus } from "@prisma/client";
 
 export class AssignDeliveryPartnerDto {
@@ -19,4 +19,27 @@ export class AssignDeliveryPartnerPhs2Dto {
     @IsString()
     subscptnId: string;
 
+}
+
+export class AssignDeliveryPartnerToDeliveriesDto {
+    @IsString()
+    partnerId: string;
+
+    // Option 1: assign for specific deliveries
+    @IsOptional()
+    @IsArray()
+    deliveryIds?: string[];
+
+    // Option 2: assign for a subscription (date filtered)
+    @IsOptional()
+    @IsString()
+    subscriptionId?: string;
+
+    @IsOptional()
+    @IsDateString()
+    fromDate?: string;
+
+    @IsOptional()
+    @IsDateString()
+    toDate?: string;
 }

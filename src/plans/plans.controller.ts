@@ -11,6 +11,8 @@ import {
     Query,
     ParseUUIDPipe,
     BadRequestException,
+    UsePipes,
+    ValidationPipe,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express'; // ✅ this one
 import { PlansService } from './plans.service';
@@ -19,55 +21,52 @@ import { UpdatePlanDto } from './dto/update-plan.dto';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
+import { S3Service } from 'src/s3/s3.service';
+const maxSize = 10 * 1024 * 1024; // 50MB per media
+const maxSizeGallery = 50 * 1024 * 1024; // 50 MB
 
 @Controller('plans')
 export class PlansController {
-    constructor(private readonly plansService: PlansService) { }
+    constructor(private readonly plansService: PlansService,
+        private readonly s3Service: S3Service
+    ) { }
 
 
     @Post()
     @UseInterceptors(
-        FilesInterceptor('planImages', 10, {
-            storage: diskStorage({
-                destination: './uploads/', // folder to store images
-                filename: (req, file, callback) => {
-                    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-                    callback(null, `${file.fieldname}-${uniqueSuffix}${extname(file.originalname)}`);
-                },
-            }),
-
-            // ✅ Limit file size to 1MB per image
-            limits: {
-                fileSize: 1 * 1024 * 1024, // 1 MB
-            },
-
-            // ✅ Accept only image files
-            fileFilter: (req, file, callback) => {
-                // if (!file.mimetype.match(/^image\//)) {
-                //     return callback(new BadRequestException('Only image files are allowed!'), false);
-                // }
-                callback(null, true);
-            },
+        FilesInterceptor('planImages', 10),
+    )
+    @UsePipes(
+        new ValidationPipe({
+            transform: true,
+            whitelist: true,
         }),
     )
     async createPlan(
         @Body() dto: PlansDto,
         @UploadedFiles() files: Express.Multer.File[],
     ) {
+        const totalGallerySize = files.reduce(
+            (sum, file) => sum + file.size,
+            0,
+        );
+
+        if (totalGallerySize > maxSizeGallery) {
+            throw new BadRequestException(
+                'Total gallery image size must not exceed 50MB',
+            );
+        }
+        let galleryImages: any[] = [];
+        if (files) {
+            const folder = "uploads/plans/gallery"
+            galleryImages = await this.s3Service.uploadMultipleFiles(files, folder);
+        }
+        const imagePayload = galleryImages.map((url) => ({ url }));
         if (dto.variationIds && typeof dto.variationIds === 'string') {
             dto.variationIds = JSON.parse(dto.variationIds);
         }
 
-        // ✅ Handle case when files are missing or invalid
-        if (files && files.length > 0) {
-            for (const file of files) {
-                if (file.size > 1 * 1024 * 1024) {
-                    throw new BadRequestException('Each image must be less than 1MB');
-                }
-            }
-        }
-
-        return this.plansService.createPlan(dto, { planImages: files });
+        return this.plansService.createPlan(dto, imagePayload);
     }
 
 
@@ -123,23 +122,67 @@ export class PlansController {
         return this.plansService.remove(id);
     }
 
-    // ✅ PATCH images separately
-    @Patch(':id/images')
-    @UseInterceptors(
-        FilesInterceptor('images', 10, {
-            storage: diskStorage({
-                destination: './uploads/plans',
-                filename: (req, file, cb) => {
-                    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-                    cb(null, `${uniqueSuffix}${extname(file.originalname)}`);
-                },
-            }),
-        }),
-    )
-    updateImages(
-        @Param('id', new ParseUUIDPipe()) id: string,
+
+    // @UseGuards(JwtAuthGuard, RolesGuard)
+    // @Roles(Role.MESS_ADMIN)
+    @Post(':planId/plan/images')
+    @UseInterceptors(FilesInterceptor('files', 10))
+    async addPlanImages(
+        @Param('planId') planId: string,
         @UploadedFiles() files: Express.Multer.File[],
     ) {
-        return this.plansService.updateImages(id, files);
+        if (!files || files.length === 0) {
+            throw new BadRequestException('At least one image is required');
+        }
+
+        const totalGallerySize = files.reduce(
+            (sum, file) => sum + file.size,
+            0,
+        );
+
+        if (totalGallerySize > maxSizeGallery) {
+            throw new BadRequestException(
+                'Total Plan image size must not exceed 50MB',
+            );
+        }
+
+        const folder = "uploads/plans/gallery";
+        const uploadedUrls = await this.s3Service.uploadMultipleFiles(
+            files,
+            folder,
+        );
+
+        const imagePayload = uploadedUrls.map((url) => ({ url }));
+
+        return this.plansService.addPlanImages(planId, imagePayload);
+    }
+
+    // =========================
+    // GET MESS IMAGES
+    // =========================
+    // @UseGuards(JwtAuthGuard, RolesGuard)
+    // @Roles(Role.MESS_ADMIN)
+
+    // @ApiOperation({ summary: 'Get mess gallery images' })
+    // @ApiResponse({
+    //     status: 200,
+    //     description: 'Mess images fetched successfully',
+    // })
+    @Get(':planId/gallery/images')
+    async getMessImages(@Param('planId') planId: string) {
+        return this.plansService.getPlanImages(planId);
+    }
+
+    // =========================
+    // DELETE MESS IMAGE
+    // =========================
+    // @UseGuards(JwtAuthGuard, RolesGuard)
+    // @Roles(Role.MESS_ADMIN)
+    @Delete(':planId/gallery/images/:imageId')
+    async deleteMessGalleryImage(
+        @Param('planId') planId: string,
+        @Param('imageId') imageId: string,
+    ) {
+        return this.plansService.deletePlanImages(planId, imageId);
     }
 }

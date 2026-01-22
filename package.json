@@ -23,6 +23,8 @@
     "seed:reema": "ts-node prisma/seed-reema.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.970.0",
+    "@aws-sdk/s3-request-presigner": "^3.970.0",
     "@faker-js/faker": "^10.0.0",
     "@nestjs-modules/mailer": "^2.0.2",
     "@nestjs/common": "^11.0.1",

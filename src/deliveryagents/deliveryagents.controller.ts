@@ -53,13 +53,21 @@ export class DeliveryAgentController {
     }
 
 
-    @UseGuards(JwtAuthGuard)  // Optional based on your setup
+    @UseGuards(JwtAuthGuard)
     @Get('get/stats')
     async getDeliveryStats(
         @Req() req,
+        @Query('date1') date1?: string,
+        @Query('date2') date2?: string,
+        @Query('status') status?: DeliveryStatus,
+        @Query('variationId') variationId?: string,
     ) {
-        return this.service.DeliveryStats(req.user.id);
-
+        return this.service.DeliveryStats(req.user.id, {
+            date1: date1 ? new Date(date1) : undefined,
+            date2: date2 ? new Date(date2) : undefined,
+            status,
+            variationId,
+        });
     }
 
     @UseGuards(JwtAuthGuard)

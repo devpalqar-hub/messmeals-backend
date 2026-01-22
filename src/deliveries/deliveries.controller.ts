@@ -8,13 +8,15 @@ import {
     Body, Query,
     ParseUUIDPipe,
     Req,
+    UseGuards,
 } from '@nestjs/common';
 import { DeliveriesService } from './deliveries.service';
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { UpdateDeliveryDto } from './dto/update-delivery.dto';
 import { UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
-import { AssignDeliveryPartnerDto, AssignDeliveryPartnerPhs2Dto } from './dto/assign-partner.dto';
+import { AssignDeliveryPartnerDto, AssignDeliveryPartnerPhs2Dto, AssignDeliveryPartnerToDeliveriesDto } from './dto/assign-partner.dto';
 import { DeliveryStatus } from '@prisma/client';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 
 @Controller('deliveries')
 export class DeliveriesController {
@@ -97,6 +99,7 @@ export class DeliveriesController {
     }
 
     // phase 2 api.
+    @UseGuards(JwtAuthGuard)
     @Patch("assign/partner/subscription")
     AssignPartner(@Param('id') id: string,
         @Body() dto: AssignDeliveryPartnerPhs2Dto,
@@ -106,4 +109,12 @@ export class DeliveriesController {
         return this.deliveriesService.AssignPartner(dto, req.user.id)
     }
 
+    @UseGuards(JwtAuthGuard)
+    @Patch('assign/partner/deliveries')
+    assignPartnerToDeliveries(
+        @Body() dto: AssignDeliveryPartnerToDeliveriesDto,
+        @Req() req,
+    ) {
+        return this.deliveriesService.assignPartnerToDeliveries(dto, req.user.id);
+    }
 }
