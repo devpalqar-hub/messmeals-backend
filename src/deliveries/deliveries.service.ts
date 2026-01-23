@@ -4,7 +4,7 @@ import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { UpdateDeliveryDto } from './dto/update-delivery.dto';
 import { UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
 import { AssignDeliveryPartnerDto, AssignDeliveryPartnerPhs2Dto, AssignDeliveryPartnerToDeliveriesDto } from './dto/assign-partner.dto';
-import { DeliveryStatus, ScheduleType } from '@prisma/client';
+import { DeliveryStatus, Role, ScheduleType } from '@prisma/client';
 import { tr } from '@faker-js/faker';
 
 @Injectable()
@@ -31,39 +31,56 @@ export class DeliveriesService {
         return delivery;
     }
 
-    async findAll(query: {
-        page?: number | string;
-        limit?: number | string;
-        status?: DeliveryStatus;
-        date?: string;
-        messId?: string;
-        partnerId?: string;   // ✅ delivery agent profileId
-    }) {
-        // 1️⃣ Convert and set defaults
+    async findAll(
+        query: {
+            page?: number | string;
+            limit?: number | string;
+            status?: DeliveryStatus;
+            date?: string;
+            messId?: string;
+            partnerId?: string;
+        },
+        user: {
+            id: string;
+            role: Role;
+            customerProfileId?: string;
+            deliveryPartnerProfileId?: string;
+            messId?: string;
+        },
+    ) {
         const page = Number(query.page) || 1;
         const limit = Number(query.limit) || 10;
         const skip = (page - 1) * limit;
 
-        const { status, date, messId, partnerId } = query;
+        const { status, date } = query;
 
-        // 2️⃣ Build filters dynamically
         const where: any = {};
 
-        // Filter by partner/delivery agent
-        if (partnerId) {
-            where.partnerId = partnerId;
+        /* ================= ROLE-BASED VISIBILITY ================= */
+
+        if (user.role === Role.USER) {
+            // User → only their deliveries
+            where.customerProfileId = user.customerProfileId;
         }
 
-        // Filter by messId
-        if (messId) {
-            where.messId = messId;
+        if (user.role === Role.DELIVERYAGENT) {
+            // Delivery agent → only assigned deliveries
+            where.partnerId = user.deliveryPartnerProfileId;
         }
+
+        if (user.role === Role.MESSADMIN) {
+            // Mess admin → only their mess
+            where.messId = user.messId;
+        }
+
+        // SUPERADMIN → no restriction
+
+        /* ================= ADDITIONAL FILTERS ================= */
 
         if (status) {
             where.status = status;
         }
 
-        // Filter by specific date
         if (date) {
             const selectedDate = new Date(date);
             const nextDate = new Date(selectedDate);
@@ -75,23 +92,35 @@ export class DeliveriesService {
             };
         }
 
-        // 3️⃣ Fetch data + count
+        /* ================= QUERY ================= */
+
         const [deliveries, totalCount] = await this.prisma.$transaction([
             this.prisma.deliveries.findMany({
                 where,
                 include: {
                     customer: {
                         include: {
-                            user: { select: { id: true, name: true, phone: true, email: true } },
+                            user: {
+                                select: { id: true, name: true, phone: true, email: true },
+                            },
                         },
                     },
                     mess: { select: { id: true, name: true } },
                     plan: { select: { id: true, planName: true, price: true } },
                     partner: {
-                        include: { user: true }, // delivery partner user details
+                        include: { user: true },
                     },
                 },
-                orderBy: { date: 'desc' },
+                orderBy: [
+                    {
+                        UserSubscriptions: {
+                            deliveryPriority: 'asc',
+                        },
+                    },
+                    {
+                        date: 'desc',
+                    },
+                ],
                 skip,
                 take: limit,
             }),
@@ -99,7 +128,8 @@ export class DeliveriesService {
             this.prisma.deliveries.count({ where }),
         ]);
 
-        // 4️⃣ Response
+        /* ================= RESPONSE (UNCHANGED) ================= */
+
         return {
             message: 'Deliveries fetched successfully',
             page,
@@ -109,8 +139,8 @@ export class DeliveriesService {
             filters: {
                 status: status || 'ALL',
                 date: date || null,
-                messId: messId || null,
-                partnerId: partnerId || null,
+                messId: user.role === Role.SUPERADMIN ? query.messId || null : null,
+                partnerId: user.role === Role.SUPERADMIN ? query.partnerId || null : null,
             },
             data: deliveries,
         };

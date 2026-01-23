@@ -64,6 +64,7 @@ export class CustomerService {
             throw new BadRequestException('Selected days are required for CUSTOM schedule type');
         }
 
+
         // 1️⃣ Validate delivery partner
         const deliveryPartner = await this.prisma.deliveryPartnerProfile.findUnique({
             where: { id: deliveryPartnerId },
@@ -152,6 +153,12 @@ export class CustomerService {
         // 6️⃣ Create Deliveries based on scheduleType
         const deliveriesToCreate: any[] = [];
         const currentDate = new Date(startDate);
+        console.log({
+            startDate,
+            endDate,
+            currentDate,
+            comparison: currentDate <= endDate,
+        });
 
         if (scheduleType === ScheduleType.EVERYDAY) {
             // ➤ Create deliveries for each day in range

@@ -15,8 +15,10 @@ import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { UpdateDeliveryDto } from './dto/update-delivery.dto';
 import { UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
 import { AssignDeliveryPartnerDto, AssignDeliveryPartnerPhs2Dto, AssignDeliveryPartnerToDeliveriesDto } from './dto/assign-partner.dto';
-import { DeliveryStatus } from '@prisma/client';
+import { DeliveryStatus, Role } from '@prisma/client';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/decorators/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
 
 @Controller('deliveries')
 export class DeliveriesController {
@@ -28,18 +30,22 @@ export class DeliveriesController {
         return this.deliveriesService.create(dto);
     }
 
-    // ✅ GET all
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.DELIVERYAGENT, Role.MESSADMIN, Role.SUPERADMIN, Role.USER)
     @Get()
     findAll(
+        @Req() req: any,
         @Query('page') page?: number | string,
         @Query('limit') limit?: number | string,
         @Query('status') status?: DeliveryStatus,
-        @Query('date') date?: string, // 🆕 Added date filter
+        @Query('date') date?: string,
         @Query('messId') messId?: string,
         @Query('partnerId') partnerId?: string,
-
     ) {
-        return this.deliveriesService.findAll({ page, limit, status, date, messId, partnerId });
+        return this.deliveriesService.findAll(
+            { page, limit, status, date, messId, partnerId },
+            req.user,
+        );
     }
 
     // ✅ GET by ID

@@ -95,7 +95,9 @@ model UserSubscriptions {
   is_active                Boolean      @default(true)
   cancelled_on             DateTime?
   customerProfileId        String?
-  createdAt                DateTime     @default(now())
+  deliveryPriority         Int?
+
+  createdAt DateTime @default(now())
 
   isActive Boolean @default(true)
 
@@ -105,6 +107,9 @@ model UserSubscriptions {
   mess                   Mess                    @relation(fields: [messId], references: [id], onDelete: Cascade)
   UserAddress            UserAddress?            @relation(fields: [userAddressId], references: [id])
   deliveries             Deliveries[]
+
+  @@unique([messId, deliveryPriority])
+  @@index([messId, deliveryPriority])
 }
 
 model DeliveryPartnerProfile {

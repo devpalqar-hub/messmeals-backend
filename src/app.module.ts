@@ -20,10 +20,11 @@ import { ConfigModule } from '@nestjs/config';
 import { AddressModule } from './user-address/user-address.module';
 import { CategoryModule } from './category/category.module';
 import { TestimonialsModule } from './testimonials/testimonials.module';
+import { UserSubscriptionsModule } from './subscriptions/user-subscriptions.module';
 
 
 @Module({
-  imports: [AuthModule, CustomerModule, DeliveriesModule, DeliveryAgentModule,
+  imports: [AuthModule, CustomerModule, DeliveriesModule, DeliveryAgentModule, UserSubscriptionsModule,
     PlansModule, PrismaModule, UserModule, VariationModule, ContactFormModule,
     MessModule, MessAdminModule, AddressModule, CategoryModule, TestimonialsModule,
     ServeStaticModule.forRoot({
