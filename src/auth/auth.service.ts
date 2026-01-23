@@ -15,6 +15,10 @@ import { MailerService } from '@nestjs-modules/mailer';
 import { subDays, startOfDay, endOfDay } from 'date-fns';
 import { OtpVerifyDto } from './dto/otp-verify.dto';
 import { TwoFactorService } from 'src/twofactor/twofactor.service';
+import { SuperAdminLoginDto } from './dto/superadmin-login.dto';
+import { SuperAdminRegisterDto } from './dto/superadmin-register.dto';
+import * as bcrypt from 'bcrypt';
+
 
 @Injectable()
 export class AuthService {
@@ -594,4 +598,84 @@ export class AuthService {
     }
 
 
+
+    async registerSuperAdmin(dto: SuperAdminRegisterDto) {
+        const existingUser = await this.prisma.user.findFirst({
+            where: {
+                OR: [{ email: dto.email }, { phone: dto.phone }],
+            },
+        });
+
+        if (existingUser) {
+            throw new BadRequestException('User already exists');
+        }
+
+        const hashedPassword = await bcrypt.hash(dto.password, 10);
+
+        const superAdmin = await this.prisma.user.create({
+            data: {
+                name: dto.name,
+                email: dto.email,
+                phone: dto.phone,
+                password: hashedPassword,
+                role: Role.SUPERADMIN,
+                is_verified: true,
+            },
+        });
+
+        // ✅ JWT payload
+        const payload = {
+            sub: superAdmin.id,
+            role: superAdmin.role,
+            email: superAdmin.email,
+        };
+
+        // ✅ Generate access token
+        const accessToken = await this.jwtService.signAsync(payload);
+
+        return {
+            message: 'Super Admin registered successfully',
+            accessToken,
+            user: {
+                id: superAdmin.id,
+                name: superAdmin.name,
+                email: superAdmin.email,
+                role: superAdmin.role,
+            },
+        };
+    }
+
+    async loginSuperAdmin(dto: SuperAdminLoginDto) {
+        const user = await this.prisma.user.findUnique({
+            where: { email: dto.email },
+        });
+
+        if (!user || user.role !== Role.SUPERADMIN || !user.password) {
+            throw new UnauthorizedException('Invalid credentials');
+        }
+
+        const passwordMatch = await bcrypt.compare(dto.password, user.password);
+
+        if (!passwordMatch) {
+            throw new UnauthorizedException('Invalid credentials');
+        }
+
+        const payload = {
+            sub: user.id,
+            role: user.role,
+            email: user.email,
+        };
+
+        const token = await this.jwtService.signAsync(payload);
+
+        return {
+            accessToken: token,
+            user: {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+            },
+        };
+    }
 }

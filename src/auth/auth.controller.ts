@@ -7,6 +7,8 @@ import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
+import { SuperAdminRegisterDto } from './dto/superadmin-register.dto';
+import { SuperAdminLoginDto } from './dto/superadmin-login.dto';
 
 
 @Controller('auth')
@@ -69,5 +71,16 @@ export class AuthController {
     @Post('admin/add/number')
     async AddPhoneNumber(@Body('phone') number: string) {
         return this.authService.AddPhoneNumber(number);
+    }
+
+
+    @Post('superadmin/register')
+    registerSuperAdmin(@Body() dto: SuperAdminRegisterDto) {
+        return this.authService.registerSuperAdmin(dto);
+    }
+
+    @Post('superadmin/login')
+    loginSuperAdmin(@Body() dto: SuperAdminLoginDto) {
+        return this.authService.loginSuperAdmin(dto);
     }
 }

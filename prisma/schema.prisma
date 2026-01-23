@@ -48,6 +48,7 @@ model User {
   is_verified            Boolean                 @default(false)
   is_active              Boolean                 @default(true)
   role                   Role                    @default(USER)
+  password               String?
   customerProfile        CustomerProfile?
   deliveryPartnerProfile DeliveryPartnerProfile?
   messAdminProfile       MessAdminProfile?
@@ -251,6 +252,7 @@ model UserAddress {
   latitudeLogitude String?
   phone            String?
   email            String?
+  locationLink     String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
