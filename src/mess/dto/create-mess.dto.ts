@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Transform } from 'class-transformer';
-import { IsString, IsOptional, IsBoolean, IsEmail, IsObject } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsEmail, IsObject, IsArray, IsUUID } from 'class-validator';
 
 export class CreateMessDto {
     @IsString()
@@ -64,6 +64,12 @@ export class CreateMessDto {
     @IsOptional()
     @IsString()
     location?: string;
+
+    // ✅ NEW: Admin assignment
+    @IsOptional()
+    @IsArray()
+    @IsUUID('all', { each: true })
+    messAdminIds?: string[];
 }
 
 export class UpdateMessDto {

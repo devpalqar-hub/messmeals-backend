@@ -11,10 +11,26 @@ export class MessService {
 
     async create(
         dto: CreateMessDto,
-        images: {
-            url: string;
-        }[] = [],) {
+        images: { url: string }[] = [],
+    ) {
+        let adminProfiles: { id: string }[] = [];
+        // 🔹 Validate admin IDs if provided
+        if (dto.messAdminIds?.length) {
+            adminProfiles = await this.prisma.messAdminProfile.findMany({
+                where: {
+                    id: { in: dto.messAdminIds },
+                },
+                select: { id: true },
+            });
 
+            if (adminProfiles.length !== dto.messAdminIds.length) {
+                throw new BadRequestException(
+                    'One or more MessAdminProfile IDs are invalid',
+                );
+            }
+        }
+
+        // 🔹 Create mess with admin connections
         const mess = await this.prisma.mess.create({
             data: {
                 name: dto.name,
@@ -25,29 +41,31 @@ export class MessService {
                 is_active: dto.is_active ?? true,
                 is_verified: dto.is_verified ?? false,
                 location: dto.location,
-                openingHours: dto.openingHours
+                openingHours: dto.openingHours,
 
+                ...(adminProfiles.length && {
+                    messAdmins: {
+                        connect: adminProfiles.map((admin) => ({ id: admin.id })),
+                    },
+                }),
             },
+            include: { messAdmins: { include: { user: true } } }
         });
 
+        // 🔹 Handle images
         if (images.length) {
-            const galleryData = images.map((image) => ({
-                messId: mess.id,
-                url: image.url,
-            }));
-
             await this.prisma.messImages.createMany({
-                data: galleryData,
+                data: images.map((image) => ({
+                    messId: mess.id,
+                    url: image.url,
+                })),
             });
         }
 
-        // ✅ Fetch images and attach (response structure unchanged)
+        // 🔹 Attach images to response
         const messImages = await this.prisma.messImages.findMany({
             where: { messId: mess.id },
-            select: {
-                id: true,
-                url: true,
-            },
+            select: { id: true, url: true },
         });
 
         return {
@@ -55,9 +73,14 @@ export class MessService {
             data: {
                 ...mess,
                 images: messImages,
+                admins: mess.messAdmins.map((admin) => ({
+                    id: admin.id,
+                    user: admin.user,
+                })),
             },
         };
     }
+
 
     async findAll(
         page: number = 1,

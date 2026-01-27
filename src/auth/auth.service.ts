@@ -30,14 +30,28 @@ export class AuthService {
     ) { }
     async sendOtpForRegistration(dto: RegisterDto) {
         const { email, name, phone, messId } = dto;
-        const existingUser = await this.prisma.user.findUnique({ where: { phone } });
-        const mess = await this.prisma.mess.findUnique({ where: { id: messId } });
-        if (!mess) {
-            throw new Error("Mess not found");
+
+        const existingUser = await this.prisma.user.findUnique({
+            where: { phone },
+            include: { messAdminProfile: true },
+        });
+
+        let mess;
+
+        // 🔹 Validate mess ONLY if messId is provided
+        if (messId) {
+            mess = await this.prisma.mess.findUnique({
+                where: { id: messId },
+            });
+
+            if (!mess) {
+                throw new NotFoundException('Mess not found');
+            }
         }
-        // const otp = '123456'
-        // Create user only if not present
+
         let user = existingUser;
+
+        // 🔹 Create user if not exists
         if (!existingUser) {
             user = await this.prisma.user.create({
                 data: {
@@ -45,15 +59,17 @@ export class AuthService {
                     email,
                     phone,
                     role: Role.MESSADMIN,
-                    // otp: otp, //remove this 
-                    // expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now //remove this
                     is_verified: false,
+
+                    // 🔹 Create MessAdminProfile only once
                     messAdminProfile: {
-                        create: {
-                            messes: {
-                                connect: [{ id: messId }],
-                            },
-                        },
+                        create: messId
+                            ? {
+                                messes: {
+                                    connect: [{ id: messId }],
+                                },
+                            }
+                            : {}, // no mess linked
                     },
                 },
                 include: {
@@ -61,32 +77,34 @@ export class AuthService {
                 },
             });
         }
-        // if (process.env.NODE_ENV === 'STAGING') {
-        //     const numbers = await this.prisma.phoneNumbers.findUnique({
-        //         where: { phone: phone }
-        //     })
-        //     if (!numbers) {
-        //         throw new NotFoundException("Phone Number Not Found")
-        //     }
-        //     return {
-        //         message: 'OTP sent successfully',
-        //         sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
-        //         otp: "123456",
-        //         status: 200,
-        //     };
-        // }
-        else if (process.env.NODE_ENV === 'PRODUCTION') {
+
+        // 🔹 If user exists but messId is provided and not linked yet
+        else if (messId && existingUser.messAdminProfile) {
+            await this.prisma.messAdminProfile.update({
+                where: { id: existingUser.messAdminProfile.id },
+                data: {
+                    messes: {
+                        connect: [{ id: messId }],
+                    },
+                },
+            });
+        }
+
+        // 🔹 OTP logic (unchanged)
+        if (process.env.NODE_ENV === 'PRODUCTION') {
             const numbers = await this.prisma.phoneNumbers.findUnique({
-                where: { phone: phone }
-            })
+                where: { phone },
+            });
+
             if (numbers) {
                 return {
                     message: 'OTP sent successfully',
-                    sessionId: "2b37ee5f-41ee-4da6-abcf-d0702168c339",
-                    otp: "123456",
+                    sessionId: '2b37ee5f-41ee-4da6-abcf-d0702168c339',
+                    otp: '123456',
                     status: 200,
                 };
             }
+
             const otpResponse = await this.otpservice.sendOtp(phone);
             return {
                 message: 'OTP sent successfully',
@@ -94,8 +112,12 @@ export class AuthService {
                 status: 200,
             };
         }
-    }
 
+        return {
+            message: 'OTP sent successfully',
+            status: 200,
+        };
+    }
 
     //dummy otp of 123456 is given right now. after dlt registration change it to otp variable
     async sendOtpForLogin(loginDto: LoginDto) {
