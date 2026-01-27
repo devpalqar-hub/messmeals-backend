@@ -147,6 +147,7 @@ export class MessService {
                         },
                     },
                     Testimonials: true,
+                    images: true
                 },
                 orderBy: { createdAt: 'desc' },
             }),
@@ -191,7 +192,8 @@ export class MessService {
                 },
                 Testimonials: true,
                 DeliveryPartnerProfile: true,
-                UserSubscriptions: true
+                UserSubscriptions: true,
+                images: true
             },
 
         });
