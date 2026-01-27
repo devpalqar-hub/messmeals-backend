@@ -132,11 +132,7 @@ export class MessService {
                 where,
                 include: {
                     plans: {
-                        select: {
-                            id: true,
-                            planName: true,
-                            price: true,
-                        },
+                        include: { Variation: true }
                     },
                     messAdmins: {
                         include: {
@@ -151,8 +147,6 @@ export class MessService {
                         },
                     },
                     Testimonials: true,
-                    DeliveryPartnerProfile: true,
-                    UserSubscriptions: true
                 },
                 orderBy: { createdAt: 'desc' },
             }),
