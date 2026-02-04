@@ -17,5 +17,17 @@ export class CreateContactFormDto {
     @IsNotEmpty()
     message: string;
 
-}
+    @IsString()
+    @IsNotEmpty()
+    messname: string;
 
+    @IsString()
+    @IsNotEmpty()
+    district: string;
+
+    @IsString()
+    @IsNotEmpty()
+    pincode: string;
+
+
+}

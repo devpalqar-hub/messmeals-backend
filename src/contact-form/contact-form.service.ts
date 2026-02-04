@@ -15,7 +15,7 @@ export class ContactFormService {
     ) { }
 
     async submitForm(dto: CreateContactFormDto) {
-        const { Name, phone_number, email, message } = dto;
+        const { Name, phone_number, email, message, messname, district, pincode } = dto;
 
         // 🔹 Create enquiry (MESS_OWNER)
         await this.prisma.enquiry.create({
@@ -24,6 +24,9 @@ export class ContactFormService {
                 email,
                 phone: phone_number,
                 message,
+                messname,
+                district,
+                pincode,
                 enquiryType: 'MESS_OWNER',
             },
         });
