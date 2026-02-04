@@ -20,7 +20,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "db:seed": "prisma db seed",
     "seed:special": "ts-node prisma/seed-special-mess.ts",
-    "seed:reema": "ts-node prisma/seed-reema.ts"
+    "seed:reema": "ts-node prisma/seed-reema.ts",
+    "seed:agnes": "ts-node prisma/seed-agnes.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.970.0",
