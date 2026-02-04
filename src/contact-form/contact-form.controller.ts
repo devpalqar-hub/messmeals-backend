@@ -1,6 +1,9 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { CreateContactFormDto } from './dto/contact-form.dto';
 import { ContactFormService } from './contact-form.service';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { Role } from '@prisma/client';
+import { RolesGuard } from 'src/common/guards/roles.guard';
 
 @Controller('contact-form')
 export class ContactFormController {
@@ -25,6 +28,7 @@ export class ContactFormController {
         return this.service.submitMessEnquiry(dto);
     }
 
+    @UseGuards(JwtAuthGuard)
     @Get()
     findAll(
         @Req() req: any,
