@@ -2,6 +2,8 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from 'src/prisma/prisma.service';
 import { Prisma, Role } from '@prisma/client';
 import { CreateUserDto } from './dto/create-user.dto';
+import { paginate } from 'src/common/utility/pagination.util';
+import { GetUsersQueryDto } from './dto/list-users.query.dto';
 
 @Injectable()
 export class UserService {
@@ -102,6 +104,83 @@ export class UserService {
             where: { id: userId },
             include: includeOptions,
         });
+    }
+
+
+    async getAllUsersForSuperAdmin(query: GetUsersQueryDto) {
+        const { search, is_active, role, page, limit } = query;
+
+        const where: Prisma.UserWhereInput = {};
+
+        /* Search: name | phone | email */
+        if (search) {
+            where.OR = [
+                { name: { contains: search } },
+                { phone: { contains: search } },
+                { email: { contains: search } },
+            ];
+        }
+
+        /* Filter: is_active */
+        if (is_active !== undefined) {
+            where.is_active = is_active === 'true';
+        }
+
+        /* Filter: role */
+        if (role) {
+            where.role = role;
+        }
+
+        return paginate({
+            prismaModel: this.prisma.user,
+            page,
+            limit,
+            where,
+            orderBy: {
+                createdAt: 'desc',
+            },
+            include: {
+                customerProfile: true,
+                deliveryPartnerProfile: true,
+                messAdminProfile: true,
+            },
+        });
+    }
+
+    async getUserByIdForSuperAdmin(userId: string) {
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            include: {
+                customerProfile: {
+                    include: {
+                        deliveries: true,
+                        userSubscriptions: true,
+                        addresses: true,
+                        Wallet: true,
+                        Testimonials: true,
+                    },
+                },
+                deliveryPartnerProfile: {
+                    include: {
+                        mess: true,
+                        deliveries: true,
+                        userSubscriptions: true,
+                        Testimonials: true,
+                    },
+                },
+                messAdminProfile: {
+                    include: {
+                        messes: true,
+                    },
+                },
+            },
+        });
+
+        if (!user) {
+            throw new NotFoundException('User not found');
+        }
+
+        return user;
     }
 
 }

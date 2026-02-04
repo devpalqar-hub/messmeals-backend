@@ -38,6 +38,35 @@ enum DayOfWeek {
   SATURDAY
 }
 
+enum EnquiryType {
+  USER
+  MESS_OWNER
+}
+
+enum FoodType {
+  VEG
+  NON_VEG
+  MIXED
+}
+
+enum Tags {
+  HOME_STYLE_FOOD
+  MONTHLY_PLANS
+  DAILY_FRESH_MEALS
+  FIXED_MENU
+  HYGIENIC_KITCHEN
+  AFFORDABLE_PRICING
+  VEG_AND_NON_VEG
+  ON_TIME_SERVING
+  QUALITY_INGREDIENTS
+  CONSISTENT_TASTE
+  STUDENT_FRIENDLY
+  FAMILY_MESS
+  FLEXIBLE_BOOKING
+  NO_HIDDEN_CHARGES
+  TRUSTED_MESS
+}
+
 model User {
   id                     String                  @id @default(uuid())
   name                   String
@@ -207,6 +236,9 @@ model Mess {
   email       String?
   is_active   Boolean @default(true)
 
+  foodTypes MessFoodType[] // ✅ relation
+  tags      MessTag[] // ✅ relation
+
   is_verified  Boolean      @default(false)
   openingHours Json?
   images       MessImages[]
@@ -221,6 +253,9 @@ model Mess {
   Deliveries             Deliveries[]
   UserSubscriptions      UserSubscriptions[]
   Testimonials           Testimonials[]
+  District               District?                @relation(fields: [districtId], references: [id])
+  districtId             String?
+  Enquiry                Enquiry[]
 }
 
 model MessImages {
@@ -320,4 +355,48 @@ model Testimonials {
   mess            Mess                    @relation(fields: [messId], references: [id], onDelete: Cascade)
   customer        CustomerProfile         @relation(fields: [customerId], references: [id], onDelete: Cascade)
   deliveryPartner DeliveryPartnerProfile? @relation(fields: [DeliveryagentId], references: [id], onDelete: Cascade)
+}
+
+model District {
+  id    String @id @default(uuid())
+  image String
+  name  String
+
+  mess      Mess[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Enquiry {
+  id          String      @id @default(uuid())
+  name        String
+  email       String
+  phone       String?
+  message     String      @db.Text
+  enquiryType EnquiryType @default(USER)
+  messId      String?
+
+  mess      Mess?    @relation(fields: [messId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model MessFoodType {
+  id       String   @id @default(uuid())
+  messId   String
+  foodType FoodType
+
+  mess Mess @relation(fields: [messId], references: [id])
+
+  @@unique([messId, foodType])
+}
+
+model MessTag {
+  id     String @id @default(uuid())
+  messId String
+  tag    Tags
+
+  mess Mess @relation(fields: [messId], references: [id])
+
+  @@unique([messId, tag])
 }

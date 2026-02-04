@@ -2,24 +2,23 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateMessDto, UpdateMessDto } from './dto/create-mess.dto';
 import { S3Service } from 'src/s3/s3.service';
+import { FoodType } from '@prisma/client';
 
 @Injectable()
 export class MessService {
     constructor(private prisma: PrismaService,
         private readonly s3Service: S3Service
     ) { }
-
     async create(
         dto: CreateMessDto,
         images: { url: string }[] = [],
     ) {
         let adminProfiles: { id: string }[] = [];
+
         // 🔹 Validate admin IDs if provided
         if (dto.messAdminIds?.length) {
             adminProfiles = await this.prisma.messAdminProfile.findMany({
-                where: {
-                    id: { in: dto.messAdminIds },
-                },
+                where: { id: { in: dto.messAdminIds } },
                 select: { id: true },
             });
 
@@ -30,7 +29,7 @@ export class MessService {
             }
         }
 
-        // 🔹 Create mess with admin connections
+        // 🔹 Create mess
         const mess = await this.prisma.mess.create({
             data: {
                 name: dto.name,
@@ -43,14 +42,40 @@ export class MessService {
                 location: dto.location,
                 openingHours: dto.openingHours,
 
+                ...(dto.districtId && {
+                    district: { connect: { id: dto.districtId } },
+                }),
+
                 ...(adminProfiles.length && {
                     messAdmins: {
                         connect: adminProfiles.map((admin) => ({ id: admin.id })),
                     },
                 }),
             },
-            include: { messAdmins: { include: { user: true } } }
+            include: { messAdmins: { include: { user: true } } },
         });
+
+        // 🔹 Attach food types (optional)
+        if (dto.foodTypes?.length) {
+            await this.prisma.messFoodType.createMany({
+                data: dto.foodTypes.map((foodType) => ({
+                    messId: mess.id,
+                    foodType,
+                })),
+                skipDuplicates: true,
+            });
+        }
+
+        // 🔹 Attach tags (optional)
+        if (dto.tags?.length) {
+            await this.prisma.messTag.createMany({
+                data: dto.tags.map((tag) => ({
+                    messId: mess.id,
+                    tag,
+                })),
+                skipDuplicates: true,
+            });
+        }
 
         // 🔹 Handle images
         if (images.length) {
@@ -81,7 +106,6 @@ export class MessService {
         };
     }
 
-
     async findAll(
         page: number = 1,
         limit: number = 10,
@@ -90,6 +114,10 @@ export class MessService {
         ratings?: number,
         is_active?: boolean,
         is_verified?: boolean,
+        location?: string,          // ✅ NEW
+        variationId?: string,       // ✅ NEW
+        foodType?: FoodType,        // ✅ NEW (enum)
+        districtName?: string,   // ✅ NEW
     ) {
         const skip = (page - 1) * limit;
 
@@ -114,13 +142,52 @@ export class MessService {
         }
 
         if (ratings !== undefined) {
-            where.ratings = ratings; // assumes ratings field exists
+            where.ratings = ratings;
         }
 
         if (categoryId) {
             where.categories = {
                 some: {
                     id: categoryId,
+                },
+            };
+        }
+
+        // 📍 Location filter
+        if (location) {
+            where.location = {
+                contains: location,
+            };
+        }
+        // 🏘️ District name filter
+        if (districtName) {
+            where.District = {
+                name: {
+                    contains: districtName,
+                },
+            };
+        }
+
+        // 🍱 Food type filter
+        if (foodType) {
+            where.foodTypes = {
+                some: {
+                    foodType,
+                },
+            };
+        }
+
+        // 🍽️ Variation-based filtering (Breakfast / Lunch / Dinner)
+        if (variationId) {
+            where.plans = {
+                some: {
+                    isActive: true,
+                    Variation: {
+                        some: {
+                            id: variationId,
+                            isActive: true,
+                        },
+                    },
                 },
             };
         }
@@ -132,7 +199,7 @@ export class MessService {
                 where,
                 include: {
                     plans: {
-                        include: { Variation: true }
+                        include: { Variation: true },
                     },
                     messAdmins: {
                         include: {
@@ -146,8 +213,10 @@ export class MessService {
                             },
                         },
                     },
+                    foodTypes: true,
+                    tags: true,
                     Testimonials: true,
-                    images: true
+                    images: true,
                 },
                 orderBy: { createdAt: 'desc' },
             }),
@@ -165,6 +234,7 @@ export class MessService {
             },
         };
     }
+
 
 
     async findOne(id: string) {
@@ -190,6 +260,8 @@ export class MessService {
                         },
                     },
                 },
+                foodTypes: true,
+                tags: true,
                 Testimonials: true,
                 DeliveryPartnerProfile: true,
                 UserSubscriptions: true,
@@ -223,22 +295,61 @@ export class MessService {
                 ...(dto.openingHours !== undefined && { openingHours: dto.openingHours }),
                 ...(dto.location !== undefined && { location: dto.location }),
                 ...(dto.is_verified !== undefined && { is_verified: dto.is_verified }),
+
+                ...(dto.districtId !== undefined && {
+                    district: dto.districtId
+                        ? { connect: { id: dto.districtId } }
+                        : { disconnect: true },
+                }),
             },
             include: {
                 plans: true,
                 messAdmins: {
-                    include: {
-                        user: true,
-                    },
+                    include: { user: true },
                 },
             },
         });
+
+        // ✅ Update food types (optional)
+        if (dto.foodTypes) {
+            await this.prisma.messFoodType.deleteMany({
+                where: { messId: id },
+            });
+
+            if (dto.foodTypes.length) {
+                await this.prisma.messFoodType.createMany({
+                    data: dto.foodTypes.map((foodType) => ({
+                        messId: id,
+                        foodType,
+                    })),
+                    skipDuplicates: true,
+                });
+            }
+        }
+
+        // ✅ Update tags (optional)
+        if (dto.tags) {
+            await this.prisma.messTag.deleteMany({
+                where: { messId: id },
+            });
+
+            if (dto.tags.length) {
+                await this.prisma.messTag.createMany({
+                    data: dto.tags.map((tag) => ({
+                        messId: id,
+                        tag,
+                    })),
+                    skipDuplicates: true,
+                });
+            }
+        }
 
         return {
             message: 'Mess updated successfully',
             data: updated,
         };
     }
+
 
     async remove(id: string) {
         const mess = await this.prisma.mess.findUnique({ where: { id } });
@@ -304,6 +415,8 @@ export class MessService {
                         name: true,
                         description: true,
                         address: true,
+                        foodTypes: true,
+                        tags: true,
                     },
                     orderBy: { name: 'asc' },
                 },

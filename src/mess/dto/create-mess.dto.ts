@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Transform } from 'class-transformer';
-import { IsString, IsOptional, IsBoolean, IsEmail, IsObject, IsArray, IsUUID } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsEmail, IsObject, IsArray, IsUUID, IsEnum } from 'class-validator';
+import { FoodType, Tags } from '@prisma/client';
 
 export class CreateMessDto {
     @IsString()
@@ -38,9 +39,7 @@ export class CreateMessDto {
      * {
      *   "Monday": "9:30-4",
      *   "Tuesday": "9:30-4"
-     * }
      */
-
     @IsOptional()
     @IsObject()
     @Transform(({ value }) => {
@@ -70,7 +69,25 @@ export class CreateMessDto {
     @IsArray()
     @IsUUID('all', { each: true })
     messAdminIds?: string[];
+
+    // ✅ NEW: Food types (optional, enum-safe)
+    @IsOptional()
+    @IsArray()
+    @IsEnum(FoodType, { each: true })
+    foodTypes?: FoodType[];
+
+    // ✅ NEW: Tags (optional, enum-safe)
+    @IsOptional()
+    @IsArray()
+    @IsEnum(Tags, { each: true })
+    tags?: Tags[];
+
+    // ✅ NEW: District (optional)
+    @IsOptional()
+    @IsUUID()
+    districtId?: string;
 }
+
 
 export class UpdateMessDto {
     @IsOptional()
@@ -110,6 +127,23 @@ export class UpdateMessDto {
     @IsOptional()
     @IsString()
     location?: string;
+
+    // ✅ NEW: Food types
+    @IsOptional()
+    @IsArray()
+    @IsEnum(FoodType, { each: true })
+    foodTypes?: FoodType[];
+
+    // ✅ NEW: Tags
+    @IsOptional()
+    @IsArray()
+    @IsEnum(Tags, { each: true })
+    tags?: Tags[];
+
+    // ✅ NEW: District
+    @IsOptional()
+    @IsUUID()
+    districtId?: string;
 }
 
 
