@@ -54,8 +54,9 @@ export class ContactFormService {
         phone?: string;
         message: string;
         messId: string;
+        planId: string;
     }) {
-        const { name, email, phone, message, messId } = dto;
+        const { name, email, phone, message, messId, planId } = dto;
 
         // 🔹 Fetch mess with admins and user emails
         const mess = await this.prisma.mess.findUnique({
@@ -84,6 +85,7 @@ export class ContactFormService {
                 message,
                 enquiryType: 'USER',
                 messId,
+                planId
             },
         });
 

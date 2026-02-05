@@ -24,7 +24,7 @@ import { CreateMessDto, UpdateMessDto } from './dto/create-mess.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
-import { Role } from '@prisma/client';
+import { FoodType, Role } from '@prisma/client';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { S3Service } from 'src/s3/s3.service';
 const maxSize = 10 * 1024 * 1024; // 50MB per media
@@ -80,6 +80,12 @@ export class MessController {
         @Query('ratings') ratings?: string,
         @Query('is_active') is_active?: string,
         @Query('is_verified') is_verified?: string,
+        @Query('location') location?: string,
+        @Query('variationId') variationId?: string,
+        @Query('foodType') foodType?: FoodType,
+        @Query('districtName') districtName?: string,
+        @Query('latitude') latitude?: string,
+        @Query('logitude') logitude?: string,
     ) {
         return this.messService.findAll(
             page,

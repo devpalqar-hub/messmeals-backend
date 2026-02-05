@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Transform } from 'class-transformer';
-import { IsString, IsOptional, IsBoolean, IsEmail, IsObject, IsArray, IsUUID, IsEnum } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsEmail, IsObject, IsArray, IsUUID, IsEnum, ArrayNotEmpty } from 'class-validator';
 import { FoodType, Tags } from '@prisma/client';
 
 export class CreateMessDto {
@@ -27,6 +27,11 @@ export class CreateMessDto {
     @IsBoolean()
     @Transform(({ value }) => value === 'true' || value === true)
     is_active?: boolean;
+
+    @IsOptional()
+    @IsBoolean()
+    @Transform(({ value }) => value === 'true' || value === true)
+    isPremium?: boolean;
 
     // New Fields - phase 4
     @IsOptional()
@@ -86,6 +91,12 @@ export class CreateMessDto {
     @IsOptional()
     @IsUUID()
     districtId?: string;
+
+    @IsOptional()
+    @IsArray()
+    @ArrayNotEmpty()
+    @IsString({ each: true })
+    features?: string[];
 }
 
 
@@ -120,6 +131,11 @@ export class UpdateMessDto {
     @IsBoolean()
     is_verified?: boolean;
 
+
+    @IsOptional()
+    @IsBoolean()
+    isPremium?: boolean;
+
     @IsOptional()
     @IsObject()
     openingHours?: Record<string, string>;
@@ -144,6 +160,14 @@ export class UpdateMessDto {
     @IsOptional()
     @IsUUID()
     districtId?: string;
+
+
+    @IsOptional()
+    @IsArray()
+    @ArrayNotEmpty()
+    @IsString({ each: true })
+    features?: string[];
+
 }
 
 

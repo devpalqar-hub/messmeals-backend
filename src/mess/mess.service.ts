@@ -39,8 +39,11 @@ export class MessService {
                 email: dto.email,
                 is_active: dto.is_active ?? true,
                 is_verified: dto.is_verified ?? false,
+                isPremium: dto.isPremium ?? false,
                 location: dto.location,
                 openingHours: dto.openingHours,
+                features: dto.features,
+
 
                 ...(dto.districtId && {
                     district: { connect: { id: dto.districtId } },
@@ -118,6 +121,8 @@ export class MessService {
         variationId?: string,       // ✅ NEW
         foodType?: FoodType,        // ✅ NEW (enum)
         districtName?: string,   // ✅ NEW
+        latitude?: string,          // ✅ NEW
+        logitude?: string,       // ✅ NEW
     ) {
         const skip = (page - 1) * limit;
 
@@ -295,6 +300,8 @@ export class MessService {
                 ...(dto.openingHours !== undefined && { openingHours: dto.openingHours }),
                 ...(dto.location !== undefined && { location: dto.location }),
                 ...(dto.is_verified !== undefined && { is_verified: dto.is_verified }),
+                ...(dto.isPremium !== undefined && { isPremium: dto.isPremium }),
+                ...(dto.features !== undefined && { features: dto.features }),
 
                 ...(dto.districtId !== undefined && {
                     district: dto.districtId

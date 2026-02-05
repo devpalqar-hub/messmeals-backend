@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE `Mess` ADD COLUMN `isPremium` BOOLEAN NOT NULL DEFAULT false,
+    ADD COLUMN `latitude` VARCHAR(191) NULL,
+    ADD COLUMN `logitude` VARCHAR(191) NULL;

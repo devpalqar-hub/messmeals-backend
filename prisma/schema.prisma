@@ -178,6 +178,7 @@ model Plans {
   usersubscriptions UserSubscriptions[]
   deliveries        Deliveries[]
   Variation         Variation[]
+  Enquiry           Enquiry[]
 }
 
 model PlanImages {
@@ -231,10 +232,14 @@ model Mess {
   id          String  @id @default(uuid())
   name        String
   description String? @db.Text
+  features    Json?
   address     String? @db.LongText
   phone       String?
   email       String?
+  isPremium   Boolean @default(false)
   is_active   Boolean @default(true)
+  latitude    String?
+  logitude    String?
 
   foodTypes MessFoodType[] // ✅ relation
   tags      MessTag[] // ✅ relation
@@ -263,6 +268,7 @@ model MessImages {
   messId    String
   url       String
   altText   String?
+  isCover   Boolean  @default(false)
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -358,9 +364,10 @@ model Testimonials {
 }
 
 model District {
-  id    String @id @default(uuid())
-  image String
-  name  String
+  id        String  @id @default(uuid())
+  image     String
+  name      String
+  isPopular Boolean @default(false)
 
   mess      Mess[]
   createdAt DateTime @default(now())
@@ -372,9 +379,12 @@ model Enquiry {
   name        String
   email       String
   phone       String?
+  planId      String?
   message     String      @db.Text
   enquiryType EnquiryType @default(USER)
   messId      String?
+
+  plan Plans? @relation(fields: [planId], references: [id], onDelete: Cascade)
 
   messname String?
   district String?
