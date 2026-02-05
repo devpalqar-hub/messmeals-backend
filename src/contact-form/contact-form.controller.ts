@@ -23,6 +23,7 @@ export class ContactFormController {
             phone?: string;
             message: string;
             messId: string;
+            planId: string;
         },
     ) {
         return this.service.submitMessEnquiry(dto);
