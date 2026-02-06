@@ -85,7 +85,9 @@ export class MessController {
         @Query('foodType') foodType?: FoodType,
         @Query('districtName') districtName?: string,
         @Query('latitude') latitude?: string,
-        @Query('logitude') logitude?: string,
+        @Query('longitude') longitude?: string,
+        @Query('date1') date1?: string,
+        @Query('date2') date2?: string,
     ) {
         return this.messService.findAll(
             page,

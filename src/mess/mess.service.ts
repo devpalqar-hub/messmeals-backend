@@ -109,6 +109,39 @@ export class MessService {
         };
     }
 
+    private getDistanceKm(
+        lat1: number,
+        lon1: number,
+        lat2: number,
+        lon2: number,
+    ) {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+
+        const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) *
+            Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) *
+            Math.sin(dLon / 2);
+
+        return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+    }
+
+    private getDaysBetween(date1: string, date2?: string) {
+        if (!date1) return 0;
+
+        const d1 = new Date(date1);
+        const d2 = date2 ? new Date(date2) : new Date(date1);
+
+        const diff = Math.ceil(
+            (d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)
+        );
+
+        return diff || 1;
+    }
+
     async findAll(
         page: number = 1,
         limit: number = 10,
@@ -123,6 +156,9 @@ export class MessService {
         districtName?: string,   // ✅ NEW
         latitude?: string,          // ✅ NEW
         logitude?: string,       // ✅ NEW
+        date1?: string,
+        date2?: string,
+
     ) {
         const skip = (page - 1) * limit;
 
@@ -222,15 +258,89 @@ export class MessService {
                     tags: true,
                     Testimonials: true,
                     images: true,
-                },
-                orderBy: { createdAt: 'desc' },
+                }
             }),
             this.prisma.mess.count({ where }),
         ]);
 
-        // ❗ Response structure unchanged
+        const hasLocationFilter = latitude && logitude;
+        const lat = Number(latitude);
+        const lng = Number(logitude);
+
+        const days = date1 ? this.getDaysBetween(date1, date2) : 0;
+
+        const processedMesses = messes.map((mess) => {
+
+            const ratingsCount = mess.Testimonials?.length || 0;
+
+            let distance: number | null = null;
+
+            if (
+                hasLocationFilter &&
+                mess.latitude &&
+                mess.logitude
+            ) {
+                distance = this.getDistanceKm(
+                    lat,
+                    lng,
+                    Number(mess.latitude),
+                    Number(mess.logitude),
+                );
+            }
+
+            let startingPrice: number | null = null;
+
+            if (date1) {
+                const dailyPlan = mess.plans
+                    ?.filter(p => p.isActive && p.isDailyPlan)
+                    ?.sort((a, b) => Number(a.price) - Number(b.price))[0];
+
+                const monthlyPlan = mess.plans
+                    ?.filter(p => p.isActive && p.isMonthlyPlan)
+                    ?.sort((a, b) => Number(a.price) - Number(b.price))[0];
+
+                if (!date2) {
+                    if (dailyPlan) {
+                        startingPrice = Number(dailyPlan.price);
+                    }
+                } else if (days < 30) {
+                    if (dailyPlan) {
+                        startingPrice = Number(dailyPlan.price) * days;
+                    }
+                } else {
+                    if (monthlyPlan) {
+                        startingPrice = Number(
+                            monthlyPlan.minPrice ?? monthlyPlan.price
+                        );
+                    }
+                }
+            }
+
+            return {
+                ...mess,
+                startingPrice,
+                __ratingsCount: ratingsCount,
+                __distance: distance,
+            };
+        });
+
+        if (hasLocationFilter) {
+            processedMesses.sort(
+                (a, b) =>
+                    (a.__distance ?? Infinity) -
+                    (b.__distance ?? Infinity)
+            );
+        } else {
+            processedMesses.sort(
+                (a, b) =>
+                    b.__ratingsCount - a.__ratingsCount
+            );
+        }
+
+        const finalMesses = processedMesses.map(({ __ratingsCount, __distance, ...m }) => m);
+
         return {
-            data: messes,
+            data: finalMesses,
             meta: {
                 total,
                 page,
@@ -238,6 +348,8 @@ export class MessService {
                 totalPages: Math.ceil(total / limit),
             },
         };
+
+
     }
 
 
