@@ -414,11 +414,12 @@ export class DeliveryAgentService {
         };
     }
 
-
     async myDeliveries(
         userId: string,
         status?: DeliveryStatus,
-        date?: string // expected in YYYY-MM-DD format
+        date?: string,
+        page: number = 1,
+        limit: number = 10,
     ) {
         // 1️⃣ Fetch user + delivery partner profile
         const user = await this.prisma.user.findUnique({
@@ -434,16 +435,18 @@ export class DeliveryAgentService {
 
         const profileId = user.deliveryPartnerProfile.id;
 
+        // pagination calculation
+        const skip = (page - 1) * limit;
+
         // 2️⃣ Build WHERE filter
         const where: any = {
             partnerId: profileId,
         };
 
         if (status) {
-            where.status = status; // apply only if provided
+            where.status = status;
         }
 
-        // 2️⃣ Adding optional date filter (full-day range)
         if (date) {
             const startOfDay = new Date(date + "T00:00:00.000Z");
             const endOfDay = new Date(date + "T23:59:59.999Z");
@@ -454,7 +457,7 @@ export class DeliveryAgentService {
             };
         }
 
-        // 3️⃣ Fetch deliveries
+        // 3️⃣ Fetch deliveries (pagination added)
         const deliveries = await this.prisma.deliveries.findMany({
             where,
             include: {
@@ -476,14 +479,18 @@ export class DeliveryAgentService {
                 },
             },
             orderBy: { createdAt: "desc" },
+            skip,
+            take: limit,
         });
 
-        // 4️⃣ Response formatting
+        // 4️⃣ Response formatting (UNCHANGED STRUCTURE)
         return {
             message: "Deliveries fetched successfully",
             filters: {
                 status: status || "ALL",
                 date: date || "ALL",
+                page,
+                limit,
             },
             user: {
                 userId: user.id,
@@ -519,6 +526,7 @@ export class DeliveryAgentService {
             })),
         };
     }
+
 
 
 

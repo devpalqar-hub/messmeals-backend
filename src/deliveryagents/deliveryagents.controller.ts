@@ -78,17 +78,25 @@ export class DeliveryAgentController {
         return this.service.getDeliveryAgentProfile(req.user.id);
     }
 
-    @UseGuards(JwtAuthGuard)
+
     @Get('my/deliveries')
+    @UseGuards(JwtAuthGuard)
     async myDeliveries(
         @Req() req,
         @Query('status') status?: DeliveryStatus,
         @Query('date') date?: string,
+        @Query('page') page?: number,
+        @Query('limit') limit?: number,
     ) {
-        const userId = req.user.id; // assuming JWT adds { user: { id } }
-
-        return this.service.myDeliveries(userId, status, date);
+        return this.service.myDeliveries(
+            req.user.id,
+            status,
+            date,
+            Number(page) || 1,
+            Number(limit) || 10,
+        );
     }
+
 
     @UseGuards(JwtAuthGuard)
     @Get('active/orders')
