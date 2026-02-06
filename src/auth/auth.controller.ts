@@ -45,9 +45,16 @@ export class AuthController {
     @Roles("MESSADMIN", "SUPERADMIN")
     async getDashboardStats(
         @Req() req,
-        @Query('messId') messId?: string
+        @Query('messId') messId?: string,
+        @Query('date1') date1?: string,
+        @Query('date2') date2?: string,
     ) {
-        return this.authService.getDashboardStats(req.user, messId);
+        return this.authService.getDashboardStats(
+            req.user,
+            messId,
+            date1,
+            date2
+        );
     }
 
 

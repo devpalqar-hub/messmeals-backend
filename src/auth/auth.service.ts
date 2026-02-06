@@ -322,8 +322,12 @@ export class AuthService {
         };
     }
 
-
-    async getDashboardStats(user: any, messId?: string) {
+    async getDashboardStats(
+        user: any,
+        messId?: string,
+        date1?: string,
+        date2?: string,
+    ) {
 
         let allowedMessIds: string[] = [];
 
@@ -376,6 +380,40 @@ export class AuthService {
                 : {};
 
         // ---------------------------------------------------
+        // Date filter construction
+        // ---------------------------------------------------
+
+        let dateFilter: any = {};
+
+        if (date1 && !date2) {
+            // single day insight
+            const start = startOfDay(new Date(date1));
+            const end = endOfDay(new Date(date1));
+
+            dateFilter = {
+                start_date: {
+                    gte: start,
+                    lte: end,
+                },
+            };
+        }
+
+        if (date1 && date2) {
+            // date range insight
+            const start = startOfDay(new Date(date1));
+            const end = endOfDay(new Date(date2));
+
+            dateFilter = {
+                start_date: {
+                    gte: start,
+                    lte: end,
+                },
+            };
+        }
+
+
+
+        // ---------------------------------------------------
         // 2️⃣ Total Customers
         // ---------------------------------------------------
 
@@ -384,8 +422,12 @@ export class AuthService {
                 role: 'USER',
                 customerProfile: {
                     userSubscriptions: {
-                        some: messFilter,
-                    },
+                        some: {
+                            ...messFilter,
+                            ...dateFilter,
+                        },
+                    }
+
                 },
             },
         });
@@ -414,12 +456,17 @@ export class AuthService {
             },
         });
 
+
         // ---------------------------------------------------
         // 4️⃣ Subscriptions
         // ---------------------------------------------------
 
         const subscriptions = await this.prisma.userSubscriptions.findMany({
-            where: messFilter,
+            where: {
+                ...messFilter,
+                ...dateFilter,
+            },
+
             select: {
                 totalPrice: true,
                 discountedPrice: true,
