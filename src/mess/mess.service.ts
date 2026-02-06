@@ -232,7 +232,7 @@ export class MessService {
                 },
             };
         }
-
+        console.log("heloo 1")
         const [messes, total] = await this.prisma.$transaction([
             this.prisma.mess.findMany({
                 skip,
@@ -262,15 +262,18 @@ export class MessService {
             }),
             this.prisma.mess.count({ where }),
         ]);
-
-        const hasLocationFilter = latitude && logitude;
+        console.log("heloo 2")
         const lat = Number(latitude);
         const lng = Number(logitude);
+
+        const hasLocationFilter =
+            !isNaN(lat) &&
+            !isNaN(lng);
 
         const days = date1 ? this.getDaysBetween(date1, date2) : 0;
 
         const processedMesses = messes.map((mess) => {
-
+            console.log("heloo 3")
             const ratingsCount = mess.Testimonials?.length || 0;
 
             let distance: number | null = null;
@@ -280,13 +283,28 @@ export class MessService {
                 mess.latitude &&
                 mess.logitude
             ) {
-                distance = this.getDistanceKm(
-                    lat,
-                    lng,
-                    Number(mess.latitude),
-                    Number(mess.logitude),
-                );
+                const messLat = Number(mess.latitude);
+                const messLng = Number(mess.logitude);
+
+                if (!isNaN(messLat) && !isNaN(messLng)) {
+                    distance = this.getDistanceKm(
+                        lat,
+                        lng,
+                        messLat,
+                        messLng,
+                    );
+                }
             }
+
+            console.log({
+                mess: mess.name,
+                lat,
+                lng,
+                messLat: mess.latitude,
+                messLng: mess.logitude,
+                calculated: distance
+            });
+
 
             let startingPrice: number | null = null;
 
@@ -314,8 +332,17 @@ export class MessService {
                         );
                     }
                 }
-            }
+                console.log({
+                    mess: mess.name,
+                    lat,
+                    lng,
+                    messLat: mess.latitude,
+                    messLng: mess.logitude,
+                    calculated: distance
+                });
 
+            }
+            console.log("heloo 4")
             return {
                 ...mess,
                 startingPrice,
@@ -327,9 +354,10 @@ export class MessService {
         if (hasLocationFilter) {
             processedMesses.sort(
                 (a, b) =>
-                    (a.__distance ?? Infinity) -
-                    (b.__distance ?? Infinity)
+                    (a.__distance ?? Number.MAX_SAFE_INTEGER) -
+                    (b.__distance ?? Number.MAX_SAFE_INTEGER)
             );
+
         } else {
             processedMesses.sort(
                 (a, b) =>
@@ -644,4 +672,64 @@ export class MessService {
             message: 'Mess image deleted successfully',
         };
     }
+
+
+
+    //Only for development/testing:
+    async addMissingCoordinates() {
+
+        // Base coordinate (Kochi center)
+        const BASE_LAT = 9.9312;
+        const BASE_LNG = 76.2673;
+
+        // Fetch messes with missing coordinates
+        const messes = await this.prisma.mess.findMany({
+            where: {
+                OR: [
+                    { latitude: null },
+                    { logitude: null },
+                ],
+            },
+            select: {
+                id: true,
+                latitude: true,
+                logitude: true,
+            },
+        });
+
+        if (!messes.length) {
+            return {
+                message: "No messes found with missing coordinates",
+            };
+        }
+
+        const updates: Promise<any>[] = [];
+
+        for (const mess of messes) {
+
+            // random offset within ~5km radius
+            const latOffset = (Math.random() - 0.5) * 0.05;
+            const lngOffset = (Math.random() - 0.5) * 0.05;
+
+            const latitude = (BASE_LAT + latOffset).toFixed(6);
+            const longitude = (BASE_LNG + lngOffset).toFixed(6);
+
+            updates.push(
+                this.prisma.mess.update({
+                    where: { id: mess.id },
+                    data: {
+                        latitude,
+                        logitude: longitude,
+                    },
+                })
+            );
+        }
+
+        await Promise.all(updates);
+
+        return {
+            message: `${updates.length} messes updated with coordinates`,
+        };
+    }
+
 }

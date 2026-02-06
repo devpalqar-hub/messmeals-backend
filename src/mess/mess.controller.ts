@@ -85,7 +85,7 @@ export class MessController {
         @Query('foodType') foodType?: FoodType,
         @Query('districtName') districtName?: string,
         @Query('latitude') latitude?: string,
-        @Query('longitude') longitude?: string,
+        @Query('longitude') logitude?: string,
         @Query('date1') date1?: string,
         @Query('date2') date2?: string,
     ) {
@@ -97,7 +97,16 @@ export class MessController {
             ratings !== undefined ? Number(ratings) : undefined,
             is_active !== undefined ? is_active === 'true' : undefined,
             is_verified !== undefined ? is_verified === 'true' : undefined,
+            location,
+            variationId,
+            foodType,
+            districtName,
+            latitude,
+            logitude,   // <-- IMPORTANT
+            date1,
+            date2,
         );
+
     }
 
 
@@ -191,4 +200,12 @@ export class MessController {
     ) {
         return this.messService.deleteMessImage(messId, imageId);
     }
+
+
+    //Only for development/testing:
+    @Post('fix/coordinates')
+    addMissingCoordinates() {
+        return this.messService.addMissingCoordinates();
+    }
+
 }
