@@ -3,6 +3,7 @@ import {
     UnauthorizedException,
     BadRequestException,
     NotFoundException,
+    ForbiddenException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -322,11 +323,62 @@ export class AuthService {
     }
 
 
-    async getDashboardStats(messId?: string) {
-        // Add filter object (empty if messId is not passed)
-        const messFilter = messId ? { messId } : {};
+    async getDashboardStats(user: any, messId?: string) {
 
-        // 1️⃣ Total Customers (role = USER, mess-specific)
+        let allowedMessIds: string[] = [];
+
+        // ---------------------------------------------------
+        // 1️⃣ Resolve allowed mess scope
+        // ---------------------------------------------------
+
+        if (user.role === 'SUPERADMIN') {
+
+            if (messId) {
+                allowedMessIds = [messId];
+            } else {
+                const messes = await this.prisma.mess.findMany({
+                    select: { id: true },
+                });
+                allowedMessIds = messes.map(m => m.id);
+            }
+
+        } else if (user.role === 'MESSADMIN') {
+
+            const adminProfile = await this.prisma.messAdminProfile.findUnique({
+                where: { userId: user.id },
+                select: {
+                    messes: {
+                        select: { id: true },
+                    },
+                },
+            });
+
+            const adminMessIds = adminProfile?.messes.map(m => m.id) || [];
+
+            if (messId) {
+                if (!adminMessIds.includes(messId)) {
+                    throw new ForbiddenException(
+                        'You are not allowed to access this mess'
+                    );
+                }
+                allowedMessIds = [messId];
+            } else {
+                allowedMessIds = adminMessIds;
+            }
+        }
+
+        // count for response
+        const messesCount = allowedMessIds.length;
+
+        const messFilter =
+            allowedMessIds.length > 0
+                ? { messId: { in: allowedMessIds } }
+                : {};
+
+        // ---------------------------------------------------
+        // 2️⃣ Total Customers
+        // ---------------------------------------------------
+
         const totalCustomers = await this.prisma.user.count({
             where: {
                 role: 'USER',
@@ -338,11 +390,19 @@ export class AuthService {
             },
         });
 
-        // 2️⃣ Total Partners (role = DELIVERYAGENT, mess-specific)
+        // ---------------------------------------------------
+        // 3️⃣ Delivery Partners
+        // ---------------------------------------------------
+
+        const partnerFilter =
+            allowedMessIds.length > 0
+                ? { deliveryPartnerProfile: { messId: { in: allowedMessIds } } }
+                : {};
+
         const totalPartners = await this.prisma.user.count({
             where: {
                 role: 'DELIVERYAGENT',
-                deliveryPartnerProfile: messId ? { messId } : {},
+                ...partnerFilter,
             },
         });
 
@@ -350,11 +410,14 @@ export class AuthService {
             where: {
                 role: 'DELIVERYAGENT',
                 is_active: true,
-                deliveryPartnerProfile: messId ? { messId } : {},
+                ...partnerFilter,
             },
         });
 
-        // 3️⃣ Subscriptions data (mess-specific)
+        // ---------------------------------------------------
+        // 4️⃣ Subscriptions
+        // ---------------------------------------------------
+
         const subscriptions = await this.prisma.userSubscriptions.findMany({
             where: messFilter,
             select: {
@@ -366,32 +429,47 @@ export class AuthService {
             },
         });
 
-        // 4️⃣ Calculations
+        // ---------------------------------------------------
+        // 5️⃣ Calculations (UNCHANGED)
+        // ---------------------------------------------------
+
         const totalRevenue = subscriptions.reduce(
             (sum, s) => sum + Number(s.discountedPrice || s.totalPrice),
             0
         );
 
-        const completedOrders = subscriptions.filter((s) => s.is_active).length;
+        const completedOrders = subscriptions.filter(s => s.is_active).length;
         const totalOrders = subscriptions.length;
 
         const pendingRevenue = subscriptions
-            .filter((s) => !s.is_active)
-            .reduce((sum, s) => sum + Number(s.discountedPrice || s.totalPrice), 0);
+            .filter(s => !s.is_active)
+            .reduce(
+                (sum, s) =>
+                    sum + Number(s.discountedPrice || s.totalPrice),
+                0
+            );
 
         const today = new Date();
+
         const todaysRevenue = subscriptions
             .filter(
-                (s) =>
+                s =>
                     s.start_date >= startOfDay(today) &&
                     s.start_date <= endOfDay(today)
             )
-            .reduce((sum, s) => sum + Number(s.discountedPrice || s.totalPrice), 0);
+            .reduce(
+                (sum, s) =>
+                    sum + Number(s.discountedPrice || s.totalPrice),
+                0
+            );
 
         const avgPerCustomer =
             totalCustomers > 0 ? totalRevenue / totalCustomers : 0;
 
-        // 5️⃣ Final response
+        // ---------------------------------------------------
+        // 6️⃣ Final response (ONLY ADD messesCount)
+        // ---------------------------------------------------
+
         return {
             totalRevenue,
             completedOrders,
@@ -402,8 +480,12 @@ export class AuthService {
             avgPerCustomer,
             pendingRevenue,
             todaysRevenue,
+            messesCount, // ✅ newly added
         };
     }
+
+
+
     async getallmessadmin() {
         const users = await this.prisma.user.findMany({
             include: {

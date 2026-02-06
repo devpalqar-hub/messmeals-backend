@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Get, Query, UseGuards, Param } from '@nestjs/common';
+import { Body, Controller, Post, Get, Query, UseGuards, Param, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDeliveryAgentDto, RegisterDto, UserRegisterDto } from './dto/Registration.dto';
 import { LoginDto } from './dto/login.dto';
@@ -40,12 +40,17 @@ export class AuthController {
         return this.authService.ListDeliveryAgents(Number(page), Number(limit), search);
     }
 
+    @Get('stats')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles("MESSADMIN", "SUPERADMIN")
-    @Get('stats')
-    async getDashboardStats(@Query('messId') messId?: string) {
-        return this.authService.getDashboardStats(messId);
+    async getDashboardStats(
+        @Req() req,
+        @Query('messId') messId?: string
+    ) {
+        return this.authService.getDashboardStats(req.user, messId);
     }
+
+
 
     @Get('mess-admins/')
     async getAllMessAdmins() {
