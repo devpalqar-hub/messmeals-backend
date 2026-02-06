@@ -126,12 +126,42 @@ export class CustomerService {
         // 4️⃣ Calculate duration and price
         const startDate = new Date(start_date);
         const endDate = new Date(end_date);
-        const diffInMs = endDate.getTime() - startDate.getTime();
-        const diffInDays = Math.ceil(diffInMs / (1000 * 60 * 60 * 24));
-
         const numericDiscount = Number(discount);
-        const totalPrice = diffInDays * Number(plan.price);
+        let chargeableDays = 0;
+
+        const tempDate = new Date(startDate);
+
+        if (scheduleType === ScheduleType.EVERYDAY) {
+            while (tempDate <= endDate) {
+                chargeableDays++;
+                tempDate.setDate(tempDate.getDate() + 1);
+            }
+        }
+
+        if (scheduleType === ScheduleType.CUSTOM) {
+            const selectedDaysUpper = selectedDays.map(d => d.toUpperCase());
+            const weekdayMap = [
+                'SUNDAY',
+                'MONDAY',
+                'TUESDAY',
+                'WEDNESDAY',
+                'THURSDAY',
+                'FRIDAY',
+                'SATURDAY',
+            ];
+
+            while (tempDate <= endDate) {
+                const dayName = weekdayMap[tempDate.getDay()];
+                if (selectedDaysUpper.includes(dayName)) {
+                    chargeableDays++;
+                }
+                tempDate.setDate(tempDate.getDate() + 1);
+            }
+        }
+
+        const totalPrice = chargeableDays * Number(plan.price);
         const discountedPrice = totalPrice - numericDiscount;
+
 
         // 5️⃣ Create subscription
         const userSubscription = await this.prisma.userSubscriptions.create({
