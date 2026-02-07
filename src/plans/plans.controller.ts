@@ -87,24 +87,12 @@ export class PlansController {
         return this.plansService.findOne(id);
     }
 
+
     @Patch(':id')
-    @UseInterceptors(
-        FilesInterceptor('planImages', 10, {
-            storage: diskStorage({
-                destination: './uploads',
-                filename: (req, file, callback) => {
-                    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-                    callback(null, `${file.fieldname}-${uniqueSuffix}${extname(file.originalname)}`);
-                },
-            }),
-        }),
-    )
     async updatePlan(
         @Param('id') id: string,
         @Body() dto: UpdatePlanDto,
-        @UploadedFiles() files: Express.Multer.File[],
     ) {
-        // 🧩 Handle JSON string conversion for variationIds if sent as string
         if (typeof dto.variationIds === 'string') {
             try {
                 dto.variationIds = JSON.parse(dto.variationIds);
@@ -113,8 +101,9 @@ export class PlansController {
             }
         }
 
-        return this.plansService.updatePlan(id, { ...dto }, { planImages: files });
+        return this.plansService.updatePlan(id, dto);
     }
+
 
     // ✅ DELETE
     @Delete(':id')

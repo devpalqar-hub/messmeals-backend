@@ -49,9 +49,9 @@ export class UpdatePlanDto {
 
     @IsOptional()
     @IsArray()
-    @ValidateNested({ each: true })
-    @Type(() => PlanImagesDto)
-    images?: PlanImagesDto[];
+    @IsString({ each: true })
+    planImages?: string[];
+
 
     //default false
     @IsOptional()
