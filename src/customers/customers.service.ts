@@ -2,13 +2,14 @@ import {
     Injectable,
     NotFoundException,
     BadRequestException,
+    ForbiddenException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UserService } from 'src/user/user.service';
 import { choosePlanDto, CreateCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
 import { RenewSubscriptionDto } from './dto/renew-Subscription.dto';
-import { ScheduleType, Prisma, DeliveryStatus } from '@prisma/client';
+import { ScheduleType, Prisma, DeliveryStatus, Role } from '@prisma/client';
 import { CancelSubDto } from './dto/cancel-sub.dto';
 import { PauseSubDto } from './dto/pause-sub.dto';
 import { Subscription } from 'rxjs';
@@ -80,12 +81,27 @@ export class CustomerService {
         if (plan.messId !== deliveryPartner.messId) {
             throw new BadRequestException('Plan does not belong to the specified Mess');
         }
-
+        console.log("helloooo - 1")
         // 3️⃣ Check if user exists
-        let user = await this.prisma.user.findUnique({ where: { email } });
+        let user = await this.prisma.user.findFirst({
+            where: {
+                OR: [
+                    { email: email },
+                    { phone: phone },
+                ],
+            },
+        });
+
+        if (user) {
+            if (user.role !== Role.DELIVERYAGENT, Role.DELIVERYAGENT, Role.MESSADMIN, Role.SUPERADMIN) {
+                throw new ForbiddenException("Email or Phone already registered for another roles")
+            }
+        }
+
         let customerProfile;
 
         if (!user) {
+            console.log("helloooo - 2")
             // 🆕 Create user
             user = await this.userService.createUser({
                 name,
