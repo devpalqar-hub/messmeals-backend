@@ -75,17 +75,30 @@ export class CreateMessDto {
     @IsUUID('all', { each: true })
     messAdminIds?: string[];
 
-    // ✅ NEW: Food types (optional, enum-safe)
+
     @IsOptional()
     @IsArray()
     @IsEnum(FoodType, { each: true })
+    @Transform(({ value }) => {
+        if (typeof value === 'string') {
+            return JSON.parse(value);
+        }
+        return value;
+    })
     foodTypes?: FoodType[];
 
-    // ✅ NEW: Tags (optional, enum-safe)
+
     @IsOptional()
     @IsArray()
     @IsEnum(Tags, { each: true })
+    @Transform(({ value }) => {
+        if (typeof value === 'string') {
+            return JSON.parse(value);
+        }
+        return value;
+    })
     tags?: Tags[];
+
 
     // ✅ NEW: District (optional)
     @IsOptional()

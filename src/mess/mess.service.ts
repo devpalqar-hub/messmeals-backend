@@ -9,6 +9,8 @@ export class MessService {
     constructor(private prisma: PrismaService,
         private readonly s3Service: S3Service
     ) { }
+
+
     async create(
         dto: CreateMessDto,
         images: { url: string }[] = [],
@@ -55,7 +57,17 @@ export class MessService {
                     },
                 }),
             },
-            include: { messAdmins: { include: { user: true } } },
+            include: {
+                messAdmins: {
+                    include: { user: true },
+                },
+                images: true,
+                foodTypes: true,
+                tags: true,
+                District: true,
+                categories: true,
+            },
+
         });
 
         // 🔹 Attach food types (optional)
@@ -96,17 +108,35 @@ export class MessService {
             select: { id: true, url: true },
         });
 
+        const fullMess = await this.prisma.mess.findUnique({
+            where: { id: mess.id },
+            include: {
+                messAdmins: {
+                    include: { user: true },
+                },
+                images: true,
+                foodTypes: true,
+                tags: true,
+                District: true,
+                categories: true,
+            },
+        });
+
+        if (!fullMess) {
+            throw new NotFoundException('Mess not found');
+        }
+
         return {
             message: 'Mess created successfully',
             data: {
-                ...mess,
-                images: messImages,
-                admins: mess.messAdmins.map((admin) => ({
+                ...fullMess,
+                admins: fullMess.messAdmins.map((admin) => ({
                     id: admin.id,
                     user: admin.user,
                 })),
             },
         };
+
     }
 
     private getDistanceKm(
