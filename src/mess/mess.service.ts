@@ -48,7 +48,7 @@ export class MessService {
 
 
                 ...(dto.districtId && {
-                    district: { connect: { id: dto.districtId } },
+                    District: { connect: { id: dto.districtId } },
                 }),
 
                 ...(adminProfiles.length && {
