@@ -105,7 +105,7 @@ export class CustomerService {
                 );
             }
         }
-
+        console.log("user found: ", user)
 
         let customerProfile;
 
@@ -129,6 +129,7 @@ export class CustomerService {
                     latitude_logitude,
                 },
             });
+            console.log("user created: ", user)
         } else {
             // ✅ Fetch or create customer profile
             customerProfile = await this.prisma.customerProfile.findUnique({
