@@ -93,10 +93,19 @@ export class CustomerService {
         });
 
         if (user) {
-            if (user.role !== Role.DELIVERYAGENT, Role.DELIVERYAGENT, Role.MESSADMIN, Role.SUPERADMIN) {
-                throw new ForbiddenException("Email or Phone already registered for another roles")
+            const allowedRoles: Role[] = [
+                Role.DELIVERYAGENT,
+                Role.MESSADMIN,
+                Role.SUPERADMIN,
+            ];
+
+            if (!allowedRoles.includes(user.role)) {
+                throw new ForbiddenException(
+                    "Email or Phone already registered for another role",
+                );
             }
         }
+
 
         let customerProfile;
 
