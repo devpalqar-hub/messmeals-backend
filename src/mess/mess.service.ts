@@ -474,7 +474,7 @@ export class MessService {
                 ...(dto.features !== undefined && { features: dto.features }),
 
                 ...(dto.districtId !== undefined && {
-                    district: dto.districtId
+                    District: dto.districtId
                         ? { connect: { id: dto.districtId } }
                         : { disconnect: true },
                 }),
@@ -520,11 +520,36 @@ export class MessService {
                 });
             }
         }
+        const fullMess = await this.prisma.mess.findUnique({
+            where: { id },
+            include: {
+                plans: true,
+                messAdmins: {
+                    include: { user: true },
+                },
+                images: true,
+                foodTypes: true,
+                tags: true,
+                District: true,
+                categories: true,
+            },
+        });
+
+        if (!fullMess) {
+            throw new NotFoundException('Mess not found');
+        }
 
         return {
             message: 'Mess updated successfully',
-            data: updated,
+            data: {
+                ...fullMess,
+                admins: fullMess.messAdmins.map((admin) => ({
+                    id: admin.id,
+                    user: admin.user,
+                })),
+            },
         };
+
     }
 
 
