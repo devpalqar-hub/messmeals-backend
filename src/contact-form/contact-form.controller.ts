@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query, Req, U
 import { CreateContactFormDto } from './dto/contact-form.dto';
 import { ContactFormService } from './contact-form.service';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
-import { Role } from '@prisma/client';
+import { EnquiryType, Role } from '@prisma/client';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 
 @Controller('contact-form')
@@ -37,6 +37,7 @@ export class ContactFormController {
         @Query('limit') limit?: number,
         @Query('search') search?: string,
         @Query('messId') messId?: string,
+        @Query('enquiryType') enquiryType?: EnquiryType, // ✅ added
     ) {
         return this.service.findAllEnquiries({
             user: req.user,
@@ -44,6 +45,7 @@ export class ContactFormController {
             limit: limit ? Number(limit) : undefined,
             search,
             messId,
+            enquiryType, // ✅ pass forward
         });
     }
 

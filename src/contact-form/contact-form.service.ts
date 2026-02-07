@@ -5,7 +5,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateContactFormDto } from './dto/contact-form.dto';
 import { MailerService } from '@nestjs-modules/mailer';
 import { paginate } from 'src/common/utility/pagination.util';
-import { Role } from '@prisma/client';
+import { EnquiryType, Role } from '@prisma/client';
 
 @Injectable()
 export class ContactFormService {
@@ -130,8 +130,9 @@ export class ContactFormService {
         limit?: number;
         search?: string;
         messId?: string;
+        enquiryType?: EnquiryType; // ✅ added
     }) {
-        const { user, page, limit, search, messId } = params;
+        const { user, page, limit, search, messId, enquiryType } = params;
 
         let where: any = {};
 
@@ -142,6 +143,11 @@ export class ContactFormService {
                 { email: { contains: search } },
                 { phone: { contains: search } },
             ];
+        }
+
+        // 🔹 Enquiry Type Filter
+        if (enquiryType) {
+            where.enquiryType = enquiryType;
         }
 
         // 🔹 Role-based access
