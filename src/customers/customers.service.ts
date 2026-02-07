@@ -99,7 +99,7 @@ export class CustomerService {
                 Role.SUPERADMIN,
             ];
 
-            if (!allowedRoles.includes(user.role)) {
+            if (allowedRoles.includes(user.role)) {
                 throw new ForbiddenException(
                     "Email or Phone already registered for another role",
                 );
