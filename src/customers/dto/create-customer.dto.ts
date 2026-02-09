@@ -6,7 +6,6 @@ export class CreateCustomerDto {
     @IsString()
     name: string;
 
-    @IsPhoneNumber()
     @IsString()
     phone: string;
 

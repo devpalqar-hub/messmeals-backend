@@ -520,6 +520,60 @@ export class MessService {
                 });
             }
         }
+
+        // ✅ Update images (optional)
+        if (dto.images !== undefined) {
+
+            const existingImages = await this.prisma.messImages.findMany({
+                where: { messId: id },
+                select: { id: true },
+            });
+
+            const existingIds = existingImages.map(i => i.id);
+            const incomingIds = dto.images
+                .filter(img => img.id)
+                .map(img => img.id as string);
+
+            // delete removed images
+            const idsToDelete = existingIds.filter(
+                existingId => !incomingIds.includes(existingId),
+            );
+
+            if (idsToDelete.length) {
+                await this.prisma.messImages.deleteMany({
+                    where: { id: { in: idsToDelete } },
+                });
+            }
+
+            // update existing images
+            for (const image of dto.images.filter(img => img.id)) {
+                await this.prisma.messImages.update({
+                    where: { id: image.id },
+                    data: {
+                        url: image.url,
+                        altText: image.altText,
+                        isCover: image.isCover ?? false,
+                        sortOrder: image.sortOrder ?? 0,
+                    },
+                });
+            }
+
+            // create new images
+            const newImages = dto.images.filter(img => !img.id);
+
+            if (newImages.length) {
+                await this.prisma.messImages.createMany({
+                    data: newImages.map(img => ({
+                        messId: id,
+                        url: img.url,
+                        altText: img.altText,
+                        isCover: img.isCover ?? false,
+                        sortOrder: img.sortOrder ?? 0,
+                    })),
+                });
+            }
+        }
+
         const fullMess = await this.prisma.mess.findUnique({
             where: { id },
             include: {

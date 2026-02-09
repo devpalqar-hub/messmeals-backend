@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
-import { Transform } from 'class-transformer';
-import { IsString, IsOptional, IsBoolean, IsEmail, IsObject, IsArray, IsUUID, IsEnum, ArrayNotEmpty } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsString, IsOptional, IsBoolean, IsEmail, IsObject, IsArray, IsUUID, IsEnum, ArrayNotEmpty, IsInt, ValidateNested } from 'class-validator';
 import { FoodType, Tags } from '@prisma/client';
 
 export class CreateMessDto {
@@ -112,6 +112,27 @@ export class CreateMessDto {
     features?: string[];
 }
 
+export class UpdateMessImageDto {
+    @IsOptional()
+    @IsUUID()
+    id?: string; // present only for existing images
+
+    @IsString()
+    url: string;
+
+    @IsOptional()
+    @IsString()
+    altText?: string;
+
+    @IsOptional()
+    @IsBoolean()
+    isCover?: boolean;
+
+    @IsOptional()
+    @IsInt()
+    sortOrder?: number;
+}
+
 
 export class UpdateMessDto {
     @IsOptional()
@@ -180,6 +201,13 @@ export class UpdateMessDto {
     @ArrayNotEmpty()
     @IsString({ each: true })
     features?: string[];
+
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => UpdateMessImageDto)
+    images?: UpdateMessImageDto[];
+
 
 }
 
