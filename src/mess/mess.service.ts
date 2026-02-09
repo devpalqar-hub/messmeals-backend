@@ -3,6 +3,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateMessDto, UpdateMessDto } from './dto/create-mess.dto';
 import { S3Service } from 'src/s3/s3.service';
 import { FoodType } from '@prisma/client';
+import { CreateMessImageDto } from './dto/create-mess-image.dto';
 
 @Injectable()
 export class MessService {
@@ -839,6 +840,42 @@ export class MessService {
         return {
             message: `${updates.length} messes updated with coordinates`,
         };
+    }
+
+
+    async addMessImage(dto: CreateMessImageDto) {
+        // 1️⃣ Check mess exists
+        const mess = await this.prisma.mess.findUnique({
+            where: { id: dto.messId },
+        });
+
+        if (!mess) {
+            throw new NotFoundException('Mess not found');
+        }
+
+        // 2️⃣ If image is cover, unset existing cover
+        if (dto.isCover) {
+            await this.prisma.messImages.updateMany({
+                where: {
+                    messId: dto.messId,
+                    isCover: true,
+                },
+                data: { isCover: false },
+            });
+        }
+
+        // 3️⃣ Create image entry
+        const image = await this.prisma.messImages.create({
+            data: {
+                messId: dto.messId,
+                url: dto.image,
+                altText: dto.altText,
+                isCover: dto.isCover ?? false,
+                sortOrder: dto.sortOrder ?? 0,
+            },
+        });
+
+        return image;
     }
 
 }

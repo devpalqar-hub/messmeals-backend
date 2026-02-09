@@ -27,6 +27,7 @@ import { Roles } from 'src/common/decorators/roles.decorator';
 import { FoodType, Role } from '@prisma/client';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { S3Service } from 'src/s3/s3.service';
+import { CreateMessImageDto } from './dto/create-mess-image.dto';
 const maxSize = 10 * 1024 * 1024; // 50MB per media
 const maxSizeGallery = 50 * 1024 * 1024; // 50 MB
 
@@ -207,5 +208,13 @@ export class MessController {
     addMissingCoordinates() {
         return this.messService.addMissingCoordinates();
     }
+
+
+
+    @Post('/image')
+    async addImage(@Body() dto: CreateMessImageDto) {
+        return this.messService.addMessImage(dto);
+    }
+
 
 }

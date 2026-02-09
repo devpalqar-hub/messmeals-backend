@@ -958,6 +958,26 @@ export class CustomerService {
             throw new BadRequestException('Pause end date cannot exceed subscription end date');
         }
 
+        // 2️⃣.1 Validate against already paused range
+        if (
+            subscription.pause_start_date &&
+            subscription.pause_end_date
+        ) {
+            const existingStart = new Date(subscription.pause_start_date);
+            const existingEnd = new Date(subscription.pause_end_date);
+
+            const isOverlapping =
+                pauseStart <= existingEnd &&
+                pauseEnd >= existingStart;
+
+            if (isOverlapping) {
+                throw new BadRequestException(
+                    'Selected pause dates overlap with already paused dates'
+                );
+            }
+        }
+
+
         // 4️⃣ Calculate pause duration (in days)
         const pauseDurationDays =
             Math.ceil((pauseEnd.getTime() - pauseStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
