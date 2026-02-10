@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateDeliveryPriorityDto } from './dto/update-delivery-priority.dto';
 import { paginate } from 'src/common/utility/pagination.util';
@@ -261,11 +261,7 @@ export class UserSubscriptionsService {
         return subscription;
     }
 
-
-    async update(
-        id: string,
-        dto: UpdateUserSubscriptionDto,
-    ) {
+    async update(id: string, dto: UpdateUserSubscriptionDto) {
         const existing = await this.prisma.userSubscriptions.findUnique({
             where: { id },
         });
@@ -274,10 +270,28 @@ export class UserSubscriptionsService {
             throw new NotFoundException('User subscription not found');
         }
 
+        const startDate = dto.start_date
+            ? new Date(dto.start_date)
+            : undefined;
+
+        const endDate = dto.end_date
+            ? new Date(dto.end_date)
+            : undefined;
+
+        if (startDate && isNaN(startDate.getTime())) {
+            throw new BadRequestException('Invalid start_date');
+        }
+
+        if (endDate && isNaN(endDate.getTime())) {
+            throw new BadRequestException('Invalid end_date');
+        }
+
         const updated = await this.prisma.userSubscriptions.update({
             where: { id },
             data: {
                 ...dto,
+                start_date: startDate,
+                end_date: endDate,
             },
             include: {
                 plan: true,
@@ -291,24 +305,5 @@ export class UserSubscriptionsService {
 
         return updated;
     }
-
-    async delete(id: string) {
-        const existing = await this.prisma.userSubscriptions.findUnique({
-            where: { id },
-        });
-
-        if (!existing) {
-            throw new NotFoundException('User subscription not found');
-        }
-
-        await this.prisma.userSubscriptions.delete({
-            where: { id },
-        });
-
-        return {
-            message: 'User subscription deleted successfully',
-        };
-    }
-
 
 }

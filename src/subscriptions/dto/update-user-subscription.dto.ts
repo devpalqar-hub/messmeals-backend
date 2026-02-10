@@ -1,7 +1,7 @@
 import {
     IsOptional,
     IsUUID,
-    IsDateString,
+    IsString,
     IsEnum,
     IsNumber,
     IsBoolean,
@@ -12,27 +12,27 @@ import { ScheduleType } from '@prisma/client';
 export class UpdateUserSubscriptionDto {
 
     @IsOptional()
-    @IsDateString()
+    @IsString()
     start_date?: Date;
 
     @IsOptional()
-    @IsDateString()
+    @IsString()
     end_date?: Date;
 
     @IsOptional()
-    @IsDateString()
+    @IsString()
     pause_start_date?: Date;
 
     @IsOptional()
-    @IsDateString()
+    @IsString()
     pause_end_date?: Date;
 
     @IsOptional()
-    @IsDateString()
+    @IsString()
     cancellation_start_date?: Date;
 
     @IsOptional()
-    @IsDateString()
+    @IsString()
     cancellation_end_date?: Date;
 
     @IsOptional()
@@ -72,7 +72,7 @@ export class UpdateUserSubscriptionDto {
     is_active?: boolean;
 
     @IsOptional()
-    @IsDateString()
+    @IsString()
     cancelled_on?: Date;
 
     @IsOptional()
