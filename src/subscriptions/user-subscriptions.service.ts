@@ -278,6 +278,23 @@ export class UserSubscriptionsService {
             ? new Date(dto.end_date)
             : undefined;
 
+        const pauseStartDate = dto.pause_start_date
+            ? new Date(dto.pause_start_date)
+            : undefined;
+
+        const pauseEndDate = dto.pause_end_date
+            ? new Date(dto.pause_end_date)
+            : undefined;
+
+        const cancellationStartDate = dto.cancellation_start_date
+            ? new Date(dto.cancellation_start_date)
+            : null;
+
+        const cancellationEndDate = dto.cancellation_end_date
+            ? new Date(dto.cancellation_end_date)
+            : null;
+
+
         if (startDate && isNaN(startDate.getTime())) {
             throw new BadRequestException('Invalid start_date');
         }
@@ -290,8 +307,13 @@ export class UserSubscriptionsService {
             where: { id },
             data: {
                 ...dto,
+
                 start_date: startDate,
                 end_date: endDate,
+                pause_start_date: pauseStartDate,
+                pause_end_date: pauseEndDate,
+                cancellation_start_date: cancellationStartDate,
+                cancellation_end_date: cancellationEndDate,
             },
             include: {
                 plan: true,
@@ -302,6 +324,7 @@ export class UserSubscriptionsService {
                 deliveries: true,
             },
         });
+
 
         return updated;
     }
