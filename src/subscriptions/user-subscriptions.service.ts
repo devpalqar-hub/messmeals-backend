@@ -306,4 +306,24 @@ export class UserSubscriptionsService {
         return updated;
     }
 
+
+    async delete(id: string) {
+        const existing = await this.prisma.userSubscriptions.findUnique({
+            where: { id },
+        });
+
+        if (!existing) {
+            throw new NotFoundException('User subscription not found');
+        }
+
+        await this.prisma.userSubscriptions.delete({
+            where: { id },
+        });
+
+        return {
+            message: 'User subscription deleted successfully',
+        };
+    }
+
+
 }
