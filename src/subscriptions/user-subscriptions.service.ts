@@ -4,6 +4,7 @@ import { UpdateDeliveryPriorityDto } from './dto/update-delivery-priority.dto';
 import { paginate } from 'src/common/utility/pagination.util';
 import { ForbiddenException } from '@nestjs/common';
 import { Role } from '@prisma/client';
+import { UpdateUserSubscriptionDto } from './dto/update-user-subscription.dto';
 
 
 @Injectable()
@@ -259,4 +260,55 @@ export class UserSubscriptionsService {
 
         return subscription;
     }
+
+
+    async update(
+        id: string,
+        dto: UpdateUserSubscriptionDto,
+    ) {
+        const existing = await this.prisma.userSubscriptions.findUnique({
+            where: { id },
+        });
+
+        if (!existing) {
+            throw new NotFoundException('User subscription not found');
+        }
+
+        const updated = await this.prisma.userSubscriptions.update({
+            where: { id },
+            data: {
+                ...dto,
+            },
+            include: {
+                plan: true,
+                mess: true,
+                CustomerProfile: true,
+                UserAddress: true,
+                DeliveryPartnerProfile: true,
+                deliveries: true,
+            },
+        });
+
+        return updated;
+    }
+
+    async delete(id: string) {
+        const existing = await this.prisma.userSubscriptions.findUnique({
+            where: { id },
+        });
+
+        if (!existing) {
+            throw new NotFoundException('User subscription not found');
+        }
+
+        await this.prisma.userSubscriptions.delete({
+            where: { id },
+        });
+
+        return {
+            message: 'User subscription deleted successfully',
+        };
+    }
+
+
 }

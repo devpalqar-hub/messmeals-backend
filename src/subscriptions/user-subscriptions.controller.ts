@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, Patch, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Query, Req, UseGuards } from '@nestjs/common';
 import { UserSubscriptionsService } from './user-subscriptions.service';
 import { UpdateDeliveryPriorityDto } from './dto/update-delivery-priority.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
+import { UpdateUserSubscriptionDto } from './dto/update-user-subscription.dto';
 
 @Controller('user-subscriptions')
 export class UserSubscriptionsController {
@@ -47,5 +48,24 @@ export class UserSubscriptionsController {
     @Get(':id')
     getById(@Param('id') id: string) {
         return this.userSubscriptionsService.getById(id);
+    }
+
+
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.SUPERADMIN)
+    @Patch(':id')
+    async update(
+        @Param('id') id: string,
+        @Body() dto: UpdateUserSubscriptionDto,
+    ) {
+        return this.userSubscriptionsService.update(id, dto);
+    }
+
+    /**
+     * Admin delete subscription (soft delete)
+     */
+    @Delete(':id')
+    async delete(@Param('id') id: string) {
+        return this.userSubscriptionsService.delete(id);
     }
 }

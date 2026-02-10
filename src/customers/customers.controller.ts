@@ -27,15 +27,24 @@ export class CustomerController {
         return this.cusomerservice.updateCustomerProfile(id, dto);
     }
 
+
     @Get()
     async findAll(
         @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
         @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
         @Query('search') search?: string,
         @Query('messId') messId?: string,
+        @Query('isActive') isActive?: string,
     ) {
-        return this.cusomerservice.findAll(page, limit, search, messId);
+        return this.cusomerservice.findAll(
+            page,
+            limit,
+            search,
+            messId,
+            isActive !== undefined ? isActive === 'true' : undefined,
+        );
     }
+
 
     // 🔍 GET /customers/:id
     @Get(':id')

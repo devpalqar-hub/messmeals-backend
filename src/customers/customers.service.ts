@@ -371,16 +371,15 @@ export class CustomerService {
     }
 
 
-
     async findAll(
         page: number = 1,
         limit: number = 10,
         search?: string,
-        messId?: string, // ✅ new parameter
+        messId?: string,
+        isActive?: boolean, // ✅ NEW
     ) {
         const skip = (page - 1) * limit;
 
-        // ✅ Build dynamic filter for search and mess
         const where: any = {
             ...(search
                 ? {
@@ -399,7 +398,9 @@ export class CustomerService {
                             userSubscriptions: {
                                 some: {
                                     plan: {
-                                        planName: { contains: search.toLowerCase() },
+                                        planName: {
+                                            contains: search.toLowerCase(),
+                                        },
                                     },
                                 },
                             },
@@ -407,18 +408,25 @@ export class CustomerService {
                     ],
                 }
                 : {}),
+
             ...(messId
                 ? {
                     userSubscriptions: {
-                        some: {
-                            messId, // ✅ filter by mess
-                        },
+                        some: { messId },
+                    },
+                }
+                : {}),
+
+            // ✅ is_active filter
+            ...(isActive !== undefined
+                ? {
+                    user: {
+                        is_active: isActive,
                     },
                 }
                 : {}),
         };
 
-        // ✅ Fetch data + count in a transaction
         const [customers, total] = await this.prisma.$transaction([
             this.prisma.customerProfile.findMany({
                 skip,
@@ -429,7 +437,7 @@ export class CustomerService {
                     userSubscriptions: {
                         where: {
                             is_active: true,
-                            ...(messId ? { messId } : {}), // ✅ filter inside subscriptions too
+                            ...(messId ? { messId } : {}),
                         },
                         include: {
                             plan: {
@@ -448,21 +456,31 @@ export class CustomerService {
             this.prisma.customerProfile.count({ where }),
         ]);
 
-        // ✅ Transform response
         const result = customers.map((c) => {
             const activeSubs = c.userSubscriptions.filter(
-                (sub) => (!sub.end_date || sub.end_date > new Date()) && (!messId || sub.messId === messId)
+                (sub) =>
+                    (!sub.end_date ||
+                        sub.end_date > new Date()) &&
+                    (!messId || sub.messId === messId)
             );
 
             const totalOrders = activeSubs.length;
+
             const totalSpent = c.userSubscriptions
                 .filter((sub) => !messId || sub.messId === messId)
-                .reduce((sum, sub) => sum + Number(sub.totalPrice), 0);
+                .reduce(
+                    (sum, sub) => sum + Number(sub.totalPrice),
+                    0
+                );
 
             const daysLeft =
-                activeSubs.length > 0 && activeSubs[0].end_date
+                activeSubs.length > 0 &&
+                    activeSubs[0].end_date
                     ? Math.ceil(
-                        (new Date(activeSubs[0].end_date).getTime() - new Date().getTime()) /
+                        (new Date(
+                            activeSubs[0].end_date
+                        ).getTime() -
+                            new Date().getTime()) /
                         (1000 * 60 * 60 * 24)
                     )
                     : null;
@@ -490,19 +508,23 @@ export class CustomerService {
                     is_active: sub.is_active,
                     totalPrice: Number(sub.totalPrice),
                     discountedPrice: Number(sub.discountedPrice),
-                    deliveryPartnerProfileId: sub.deliveryPartnerProfileId,
+                    deliveryPartnerProfileId:
+                        sub.deliveryPartnerProfileId,
                     plan: sub.plan
                         ? {
                             id: sub.plan.id,
                             name: sub.plan.planName,
                             price: Number(sub.plan.price),
-                            description: sub.plan.description,
+                            description:
+                                sub.plan.description,
                             variation: sub.plan.Variation,
                             mess: sub.plan.mess,
-                            images: sub.plan.images.map((img) => ({
-                                url: img.url,
-                                altText: img.altText,
-                            })),
+                            images: sub.plan.images.map(
+                                (img) => ({
+                                    url: img.url,
+                                    altText: img.altText,
+                                })
+                            ),
                         }
                         : null,
                 })),
@@ -519,6 +541,7 @@ export class CustomerService {
             },
         };
     }
+
 
 
 
