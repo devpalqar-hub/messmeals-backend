@@ -1,8 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateMessDto, UpdateMessDto } from './dto/create-mess.dto';
 import { S3Service } from 'src/s3/s3.service';
-import { FoodType } from '@prisma/client';
+import { FoodType, Role } from '@prisma/client';
 import { CreateMessImageDto } from './dto/create-mess-image.dto';
 
 @Injectable()
@@ -737,7 +737,7 @@ export class MessService {
         });
 
         if (!mess) {
-            throw new NotFoundException('Doula profile not found');
+            throw new NotFoundException('Mess not found');
         }
 
         const images = await this.prisma.messImages.findMany({
@@ -762,7 +762,7 @@ export class MessService {
         });
 
         if (!mess) {
-            throw new NotFoundException('Doula profile not found');
+            throw new NotFoundException('Mess not found');
         }
 
         const image = await this.prisma.messImages.findUnique({
@@ -843,39 +843,93 @@ export class MessService {
     }
 
 
-    async addMessImage(dto: CreateMessImageDto) {
-        // 1️⃣ Check mess exists
+    async addCoverImages(
+        messId: string,
+        images: { url: string }[] = [],
+        userId: string,
+        role: Role,
+        altText?: string,
+    ) {
+        if (!images || images.length === 0) {
+            throw new BadRequestException('At least one image is required');
+        }
+
         const mess = await this.prisma.mess.findUnique({
-            where: { id: dto.messId },
+            where: { id: messId },
+            include: {
+                messAdmins: {
+                    select: { userId: true },
+                },
+            },
         });
 
         if (!mess) {
             throw new NotFoundException('Mess not found');
         }
 
-        // 2️⃣ If image is cover, unset existing cover
-        if (dto.isCover) {
-            await this.prisma.messImages.updateMany({
-                where: {
-                    messId: dto.messId,
-                    isCover: true,
-                },
-                data: { isCover: false },
-            });
+        /* ===============================
+           AUTHORIZATION CHECK
+           =============================== */
+
+        if (role === Role.MESSADMIN) {
+            const isOwner = mess.messAdmins.some(
+                (admin) => admin.userId === userId,
+            );
+
+            if (!isOwner) {
+                throw new ForbiddenException(
+                    'You are not allowed to modify this mess',
+                );
+            }
         }
 
-        // 3️⃣ Create image entry
-        const image = await this.prisma.messImages.create({
-            data: {
-                messId: dto.messId,
-                url: dto.image,
-                altText: dto.altText,
-                isCover: dto.isCover ?? false,
-                sortOrder: dto.sortOrder ?? 0,
+        if (role !== Role.SUPERADMIN && role !== Role.MESSADMIN) {
+            throw new ForbiddenException('Insufficient permissions');
+        }
+
+        const newImageUrl = images[0].url;
+
+        await this.prisma.$transaction(async (tx) => {
+
+            const existingCover = await tx.messImages.findFirst({
+                where: {
+                    messId,
+                    isCover: true,
+                },
+            });
+
+            if (existingCover) {
+                await this.s3Service.deleteFile(existingCover.url);
+
+                await tx.messImages.delete({
+                    where: { id: existingCover.id },
+                });
+            }
+
+            await tx.messImages.create({
+                data: {
+                    messId,
+                    url: newImageUrl,
+                    altText,
+                    isCover: true,
+                },
+            });
+        });
+
+        const messImages = await this.prisma.messImages.findMany({
+            where: { messId },
+            select: {
+                id: true,
+                url: true,
+                isCover: true,
             },
         });
 
-        return image;
+        return {
+            message: 'Cover image updated successfully',
+            data: messImages,
+        };
     }
+
 
 }

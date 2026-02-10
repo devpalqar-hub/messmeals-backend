@@ -211,10 +211,36 @@ export class MessController {
 
 
 
-    @Post('/image')
-    async addImage(@Body() dto: CreateMessImageDto) {
-        return this.messService.addMessImage(dto);
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.SUPERADMIN, Role.MESSADMIN)
+    @Post(':messId/cover/image')
+    @UseInterceptors(FilesInterceptor('file', 1))
+    async addCoverImages(
+        @Param('messId') messId: string,
+        @UploadedFiles() files: Express.Multer.File[],
+        @Req() req: any,
+    ) {
+        if (!files || files.length === 0) {
+            throw new BadRequestException('At least one image is required');
+        }
+
+        const folder = 'uploads/mess/cover';
+        const uploadedUrls = await this.s3Service.uploadMultipleFiles(
+            files,
+            folder,
+        );
+
+        const imagePayload = uploadedUrls.map((url) => ({ url }));
+
+        console.log("helo", messId, imagePayload, req.user.id, req.user.role);
+        return this.messService.addCoverImages(
+            messId,
+            imagePayload,
+            req.user.id,
+            req.user.role,
+        );
     }
+
 
 
 }
