@@ -69,11 +69,17 @@ export class CreateMessDto {
     @IsString()
     location?: string;
 
-    // ✅ NEW: Admin assignment
     @IsOptional()
     @IsArray()
     @IsUUID('all', { each: true })
+    @Transform(({ value }) => {
+        if (typeof value === 'string') {
+            return JSON.parse(value);
+        }
+        return value;
+    })
     messAdminIds?: string[];
+
 
 
     @IsOptional()
