@@ -89,6 +89,8 @@ export class MessController {
         @Query('longitude') logitude?: string,
         @Query('date1') date1?: string,
         @Query('date2') date2?: string,
+        @Query('minPrice') minPrice?: string,
+        @Query('maxPrice') maxPrice?: string,
     ) {
         return this.messService.findAll(
             page,
@@ -106,6 +108,8 @@ export class MessController {
             logitude,   // <-- IMPORTANT
             date1,
             date2,
+            minPrice,
+            maxPrice,
         );
 
     }

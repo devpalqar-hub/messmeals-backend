@@ -189,6 +189,8 @@ export class MessService {
         logitude?: string,       // ✅ NEW
         date1?: string,
         date2?: string,
+        minPrice?: string,
+        maxPrice?: string,
 
     ) {
         const skip = (page - 1) * limit;
@@ -244,7 +246,9 @@ export class MessService {
         if (foodType) {
             where.foodTypes = {
                 some: {
-                    foodType,
+                    foodType: {
+                        equals: foodType,
+                    },
                 },
             };
         }
@@ -262,6 +266,35 @@ export class MessService {
                     },
                 },
             };
+        }
+        // 💰 Price range filter
+        if (minPrice || maxPrice) {
+
+            const priceFilter: any = {};
+
+            if (minPrice) {
+                priceFilter.gte = Number(minPrice);
+            }
+
+            if (maxPrice) {
+                priceFilter.lte = Number(maxPrice);
+            }
+
+            // Merge with existing plans filter (variation filter may already exist)
+            if (where.plans) {
+                where.plans.some = {
+                    ...where.plans.some,
+                    price: priceFilter,
+                    isActive: true,
+                };
+            } else {
+                where.plans = {
+                    some: {
+                        price: priceFilter,
+                        isActive: true,
+                    },
+                };
+            }
         }
         console.log("heloo 1")
         const [messes, total] = await this.prisma.$transaction([
@@ -339,39 +372,72 @@ export class MessService {
 
             let startingPrice: number | null = null;
 
-            if (date1) {
-                const dailyPlan = mess.plans
-                    ?.filter(p => p.isActive && p.isDailyPlan)
-                    ?.sort((a, b) => Number(a.price) - Number(b.price))[0];
+            const activePlans = mess.plans?.filter(p => p.isActive !== false) || [];
 
-                const monthlyPlan = mess.plans
-                    ?.filter(p => p.isActive && p.isMonthlyPlan)
-                    ?.sort((a, b) => Number(a.price) - Number(b.price))[0];
+            if (!date1) {
+
+                // ✅ NORMAL CASE
+                // Ignore daily/monthly — just lowest plan
+
+                const lowestPlan = activePlans
+                    .sort(
+                        (a, b) =>
+                            Number(a.price.toString()) -
+                            Number(b.price.toString())
+                    )[0];
+
+                if (lowestPlan) {
+                    startingPrice = Number(
+                        lowestPlan.minPrice
+                            ? lowestPlan.minPrice.toString()
+                            : lowestPlan.price.toString()
+                    );
+                }
+
+            } else {
+
+                // 🚨 Only NOW care about daily/monthly
+
+                const lowestDailyPlan = activePlans
+                    .filter(p => p.isDailyPlan)
+                    .sort(
+                        (a, b) =>
+                            Number(a.price.toString()) -
+                            Number(b.price.toString())
+                    )[0];
+
+                const lowestMonthlyPlan = activePlans
+                    .filter(p => p.isMonthlyPlan)
+                    .sort(
+                        (a, b) =>
+                            Number(a.price.toString()) -
+                            Number(b.price.toString())
+                    )[0];
+
+                const days = this.getDaysBetween(date1, date2);
 
                 if (!date2) {
-                    if (dailyPlan) {
-                        startingPrice = Number(dailyPlan.price);
-                    }
-                } else if (days < 30) {
-                    if (dailyPlan) {
-                        startingPrice = Number(dailyPlan.price) * days;
-                    }
-                } else {
-                    if (monthlyPlan) {
+                    if (lowestDailyPlan) {
                         startingPrice = Number(
-                            monthlyPlan.minPrice ?? monthlyPlan.price
+                            lowestDailyPlan.price.toString()
                         );
                     }
                 }
-                console.log({
-                    mess: mess.name,
-                    lat,
-                    lng,
-                    messLat: mess.latitude,
-                    messLng: mess.logitude,
-                    calculated: distance
-                });
-
+                else if (days < 30) {
+                    if (lowestDailyPlan) {
+                        startingPrice =
+                            Number(lowestDailyPlan.price.toString()) * days;
+                    }
+                }
+                else {
+                    if (lowestMonthlyPlan) {
+                        startingPrice = Number(
+                            lowestMonthlyPlan.minPrice
+                                ? lowestMonthlyPlan.minPrice.toString()
+                                : lowestMonthlyPlan.price.toString()
+                        );
+                    }
+                }
             }
             console.log("heloo 4")
             return {
