@@ -16,6 +16,10 @@ export class AnalyticsQueryDto {
     @IsString()
     ownerId?: string;
 
+    @IsOptional()
+    @IsString()
+    variationId?: string;
+
     // alias support
     @IsOptional()
     @IsString()

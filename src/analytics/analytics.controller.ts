@@ -9,7 +9,7 @@ import { ValidationPipe } from '@nestjs/common';
 
 @Controller('analytics')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.SUPERADMIN)
+@Roles(Role.SUPERADMIN, Role.MESSADMIN)
 export class AnalyticsController {
     constructor(private readonly service: AnalyticsService) { }
 

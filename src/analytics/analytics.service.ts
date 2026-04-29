@@ -19,7 +19,7 @@ export class AnalyticsService {
         return undefined; // no filtering
     }
 
-    async revenueSummary({ date1, date2, messId, ownerId }: any) {
+    async revenueSummary({ date1, date2, messId, ownerId, variationId }: any) {
         if (!date1) throw new BadRequestException('date1 is required');
         const from = startOfDay(new Date(date1));
         const to = endOfDay(new Date(date2 || date1));
@@ -31,8 +31,14 @@ export class AnalyticsService {
             processedAt: { gte: from, lte: to },
         };
 
-        if (messIds) {
-            where.userSubscriptions = { messId: { in: messIds } };
+        // Build userSubscriptions nested where if needed
+        const userSubsWhere: any = {};
+        if (messIds) userSubsWhere.messId = { in: messIds };
+        if (variationId) {
+            userSubsWhere.plan = { Variation: { some: { id: variationId } } };
+        }
+        if (Object.keys(userSubsWhere).length) {
+            where.userSubscriptions = userSubsWhere;
         }
 
         const agg = await this.prisma.payments.aggregate({
@@ -47,7 +53,7 @@ export class AnalyticsService {
         };
     }
 
-    async revenueGraph({ date1, date2, messId, ownerId }: any) {
+    async revenueGraph({ date1, date2, messId, ownerId, variationId }: any) {
         if (!date1) throw new BadRequestException('date1 is required');
         const from = startOfDay(new Date(date1));
         const to = endOfDay(new Date(date2 || date1));
@@ -58,7 +64,11 @@ export class AnalyticsService {
             status: 'SUCCESS',
             processedAt: { gte: from, lte: to },
         };
-        if (messIds) where.userSubscriptions = { messId: { in: messIds } };
+
+        const userSubsWhere: any = {};
+        if (messIds) userSubsWhere.messId = { in: messIds };
+        if (variationId) userSubsWhere.plan = { Variation: { some: { id: variationId } } };
+        if (Object.keys(userSubsWhere).length) where.userSubscriptions = userSubsWhere;
 
         const payments = await this.prisma.payments.findMany({
             where,
@@ -86,7 +96,7 @@ export class AnalyticsService {
         return { series };
     }
 
-    async orderStatsGraph({ date1, date2, messId, ownerId }: any) {
+    async orderStatsGraph({ date1, date2, messId, ownerId, variationId }: any) {
         if (!date1) throw new BadRequestException('date1 is required');
         const from = startOfDay(new Date(date1));
         const to = endOfDay(new Date(date2 || date1));
@@ -97,6 +107,9 @@ export class AnalyticsService {
             date: { gte: from, lte: to },
         } as any;
         if (messIds) where.messId = { in: messIds };
+        if (variationId) {
+            where.plan = { Variation: { some: { id: variationId } } };
+        }
 
         const deliveries = await this.prisma.deliveries.findMany({
             where,

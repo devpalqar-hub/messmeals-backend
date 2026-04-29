@@ -73,12 +73,15 @@ export class PlansService {
     }
 
 
-    async findAll(page: number = 1, limit: number = 10, messId?: string) {
+    async findAll(page: number = 1, limit: number = 10, messId?: string, search?: string) {
         const skip = (page - 1) * limit;
 
         const where: any = {};
         if (messId) {
             where.messId = messId;
+        }
+        if (search) {
+            where.planName = { contains: search, mode: 'insensitive' };
         }
 
         const [plans, total] = await this.prisma.$transaction([

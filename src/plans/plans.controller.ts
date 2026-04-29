@@ -82,8 +82,9 @@ export class PlansController {
         @Query('page') page?: string,
         @Query('limit') limit?: string,
         @Query('messId') messId?: string,
+        @Query('search') search?: string,
     ) {
-        return this.plansService.findAll(Number(page) || 1, Number(limit) || 10, messId);
+        return this.plansService.findAll(Number(page) || 1, Number(limit) || 10, messId, search);
     }
 
 

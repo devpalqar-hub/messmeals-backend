@@ -24,6 +24,42 @@ export class CustomerService {
         private readonly paymentsService: PaymentsService,
     ) { }
 
+    // Ensure a Wallet exists for a customer profile. Returns the wallet.
+    private async ensureWallet(profileId: string) {
+        const existing = await this.prisma.wallet.findUnique({ where: { userId: profileId } });
+        if (existing) return existing;
+
+        // create wallet with initial amount from customerProfile if available
+        const profile = await this.prisma.customerProfile.findUnique({ where: { id: profileId } });
+        const initialAmount = profile?.walletAmount || 0;
+        return this.prisma.wallet.create({ data: { userId: profileId, walletAmount: initialAmount } });
+    }
+
+    // Create a wallet transaction and update wallet balance atomically
+    private async createWalletTransaction(profileId: string, amount: number, meta?: any) {
+        // use a transaction to update wallet amount and create transaction record
+        const result = await this.prisma.$transaction(async (tx) => {
+            const wallet = await tx.wallet.upsert({
+                where: { userId: profileId },
+                create: { userId: profileId, walletAmount: amount },
+                update: { walletAmount: { increment: amount } },
+            });
+
+            const txn = await tx.transaction.create({
+                data: {
+                    walletId: wallet.id,
+                    amount: amount,
+                    balanceAfter: wallet.walletAmount,
+                    meta: meta || null,
+                },
+            });
+
+            return { wallet, txn };
+        });
+
+        return result;
+    }
+
     private ensureHttpsUrl(url: string): string {
         if (!url) return url;
         if (url.startsWith('http://') || url.startsWith('https://')) {
@@ -259,13 +295,21 @@ export class CustomerService {
             });
         }
 
-        // 7️⃣ Update wallet
-        await this.prisma.customerProfile.update({
+        // 7️⃣ Update wallet (debit for subscription)
+        const updatedProfile = await this.prisma.customerProfile.update({
             where: { id: customerProfile.id },
             data: {
                 walletAmount: Number(customerProfile.walletAmount) - discountedPrice,
             },
         });
+
+        // create transaction record (negative amount)
+        try {
+            await this.createWalletTransaction(customerProfile.id, -Number(discountedPrice), { note: 'Subscription purchase', subscriptionId: userSubscription.id });
+        } catch (err) {
+            // non-fatal: log and continue
+            console.error('Failed to create wallet transaction:', err);
+        }
 
         // ✅ Return success response
         return {
@@ -673,12 +717,19 @@ export class CustomerService {
                 customerProfileId: customerProfileId
             }
         })
-        await this.prisma.customerProfile.update({
+        const updatedProfile = await this.prisma.customerProfile.update({
             where: { id: customerProfileId },
             data: {
                 walletAmount: Number(customerProfile?.walletAmount) - discountedPrice
             }
         })
+
+        // create wallet debit transaction for renewal
+        try {
+            await this.createWalletTransaction(customerProfileId, -Number(discountedPrice), { note: 'Subscription renewal', subscriptionId: userSubscription.id });
+        } catch (err) {
+            console.error('Failed to create wallet transaction on renewal:', err);
+        }
         return {
             message: 'Subscription Renewed successfully',
             data: { userSubscription }
@@ -690,11 +741,51 @@ export class CustomerService {
     async UpdateWalletAmount(userId: string, amount: number) {
         // Logic to update wallet amount
         console.log('Updating wallet for user:', userId, 'by amount:', amount);
-        await this.prisma.customerProfile.update({
+        const updatedProfile = await this.prisma.customerProfile.update({
             where: { id: userId },
             data: { walletAmount: { increment: amount } },
         });
-        return { message: 'Wallet amount updated successfully' };
+
+        // create wallet transaction (credit)
+        try {
+            await this.createWalletTransaction(userId, Number(amount), { note: 'Wallet top-up' });
+        } catch (err) {
+            console.error('Failed to create wallet transaction on top-up:', err);
+        }
+
+        return { message: 'Wallet amount updated successfully', walletBalance: Number(updatedProfile.walletAmount) };
+    }
+
+    async getWalletTransactionsForUser(userId: string, page: number = 1, limit: number = 20) {
+        const skip = (page - 1) * limit;
+
+        const profile = await this.prisma.customerProfile.findUnique({ where: { userId } });
+        if (!profile) throw new NotFoundException('Customer profile not found');
+
+        const wallet = await this.prisma.wallet.findUnique({ where: { userId: profile.id } });
+        if (!wallet) {
+            return { data: [], meta: { total: 0, page, limit, totalPages: 0 } };
+        }
+
+        const [transactions, total] = await this.prisma.$transaction([
+            this.prisma.transaction.findMany({
+                where: { walletId: wallet.id },
+                orderBy: { createdAt: 'desc' },
+                skip,
+                take: limit,
+            }),
+            this.prisma.transaction.count({ where: { walletId: wallet.id } }),
+        ]);
+
+        return {
+            data: transactions,
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit),
+            },
+        };
     }
 
 
@@ -760,10 +851,17 @@ export class CustomerService {
             deletedDeliveriesCount = result.count;
 
             // Update wallet with refund
-            await this.prisma.customerProfile.update({
+            const updatedProfileRefund = await this.prisma.customerProfile.update({
                 where: { id: subscription.CustomerProfile.id },
                 data: { walletAmount: customerWallet + refundAmount },
             });
+
+            // create wallet credit transaction for refund
+            try {
+                await this.createWalletTransaction(subscription.CustomerProfile.id, Number(refundAmount), { note: 'Subscription partial cancellation refund', subscriptionId });
+            } catch (err) {
+                console.error('Failed to create wallet transaction on partial cancellation:', err);
+            }
 
             // Update subscription
             await this.prisma.userSubscriptions.update({
@@ -803,10 +901,17 @@ export class CustomerService {
             deletedDeliveriesCount = result.count;
 
             // Update wallet
-            await this.prisma.customerProfile.update({
+            const updatedProfileRefund = await this.prisma.customerProfile.update({
                 where: { id: subscription.CustomerProfile.id },
                 data: { walletAmount: customerWallet + refundAmount },
             });
+
+            // create wallet credit transaction for refund
+            try {
+                await this.createWalletTransaction(subscription.CustomerProfile.id, Number(refundAmount), { note: 'Subscription full cancellation refund', subscriptionId });
+            } catch (err) {
+                console.error('Failed to create wallet transaction on full cancellation:', err);
+            }
 
             // Update subscription
             await this.prisma.userSubscriptions.update({
@@ -1259,10 +1364,16 @@ export class CustomerService {
             deletedDeliveriesCount = result.count;
 
             // Update wallet with refund
-            await this.prisma.customerProfile.update({
+            const updatedProfileRefund = await this.prisma.customerProfile.update({
                 where: { id: subscription.CustomerProfile.id },
                 data: { walletAmount: customerWallet + refundAmount },
             });
+
+            try {
+                await this.createWalletTransaction(subscription.CustomerProfile.id, Number(refundAmount), { note: 'Subscription partial cancellation refund', subscriptionId });
+            } catch (err) {
+                console.error('Failed to create wallet transaction on user partial cancellation:', err);
+            }
 
             // Update subscription
             await this.prisma.userSubscriptions.update({
@@ -1302,10 +1413,16 @@ export class CustomerService {
             deletedDeliveriesCount = result.count;
 
             // Update wallet
-            await this.prisma.customerProfile.update({
+            const updatedProfileRefund = await this.prisma.customerProfile.update({
                 where: { id: subscription.CustomerProfile.id },
                 data: { walletAmount: customerWallet + refundAmount },
             });
+
+            try {
+                await this.createWalletTransaction(subscription.CustomerProfile.id, Number(refundAmount), { note: 'Subscription full cancellation refund', subscriptionId });
+            } catch (err) {
+                console.error('Failed to create wallet transaction on user full cancellation:', err);
+            }
 
             // Update subscription
             await this.prisma.userSubscriptions.update({
