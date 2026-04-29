@@ -9,7 +9,7 @@ import { Roles } from 'src/common/decorators/roles.decorator';
 import { PauseSubDto } from './dto/pause-sub.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles("MESSADMIN")
+@Roles("MESSADMIN", "SUPERADMIN")
 @Controller('customer')
 export class CustomerController {
     constructor(private readonly cusomerservice: CustomerService) { }

@@ -9,10 +9,16 @@ import {
     ParseUUIDPipe,
     DefaultValuePipe,
     ParseIntPipe,
+    UseGuards,
 } from '@nestjs/common';
 import { MessAdminService } from './mess-admin.service';
 import { AssignMessAdminDto, RemoveMessAdminDto, CreateMessAdminDto } from './dto/mess-admin.dto';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/decorators/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
 
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('SUPERADMIN')
 @Controller('mess-admin')
 export class MessAdminController {
     constructor(private readonly messAdminService: MessAdminService) { }

@@ -7,11 +7,17 @@ import {
     Patch,
     Delete,
     ParseUUIDPipe,
+    UseGuards,
 } from '@nestjs/common';
 import { TestimonialsService } from './testimonials.service';
 import { CreateTestimonialDto } from './dto/create-testimonial.dto';
 import { UpdateTestimonialDto } from './dto/update-testimonial.dto';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/decorators/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
 
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('SUPERADMIN')
 @Controller('testimonials')
 export class TestimonialsController {
     constructor(private readonly testimonialsService: TestimonialsService) { }

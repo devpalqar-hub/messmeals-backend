@@ -22,12 +22,14 @@ import { CategoryModule } from './category/category.module';
 import { TestimonialsModule } from './testimonials/testimonials.module';
 import { UserSubscriptionsModule } from './subscriptions/user-subscriptions.module';
 import { DistrictModule } from './district/district.module';
+import { PaymentsModule } from './payments/payments.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 
 @Module({
   imports: [AuthModule, CustomerModule, DeliveriesModule, DeliveryAgentModule, UserSubscriptionsModule,
     PlansModule, PrismaModule, UserModule, VariationModule, ContactFormModule, DistrictModule,
-    MessModule, MessAdminModule, AddressModule, CategoryModule, TestimonialsModule,
+    MessModule, MessAdminModule, AddressModule, CategoryModule, TestimonialsModule, PaymentsModule, AnalyticsModule,
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'uploads'),
       serveRoot: "/uploads",

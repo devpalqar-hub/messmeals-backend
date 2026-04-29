@@ -7,11 +7,17 @@ import {
     Param,
     Body,
     Query,
+    UseGuards,
 } from '@nestjs/common';
 import { CategoryService } from './category.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/decorators/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
 
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('SUPERADMIN')
 @Controller('categories')
 export class CategoryController {
     constructor(private readonly categoryService: CategoryService) { }

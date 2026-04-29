@@ -18,7 +18,7 @@ import { TwoFactorService } from 'src/twofactor/twofactor.service';
         PassportModule.register({ defaultStrategy: 'jwt' }), // 👈 register jwt
         JwtModule.register({
             secret: process.env.JWT_SECRET || 'super-secret-key',
-            signOptions: { expiresIn: '7d' },
+            signOptions: { expiresIn: '6m' },
         }),
     ],
     providers: [AuthService, PrismaService, JwtStrategy, TwoFactorService],

@@ -2,18 +2,25 @@ import { Body, Controller, DefaultValuePipe, Delete, Get, Param, ParseIntPipe, P
 import { DeliveryAgentService } from './deliveryagents.service';
 import { DeliveryAgentCreateDto, DeliveryAgentUpdateDto } from './dto/deliveryagents-create.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
-import { DeliveryStatus } from '@prisma/client';
+import { RolesGuard } from 'src/common/decorators/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
+import { DeliveryStatus, Role } from '@prisma/client';
+import { AssignDeliveryAgentDto } from './dto/assign-delivery-agent.dto';
 import { UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
 
 @Controller('delivery-agent')
 export class DeliveryAgentController {
     constructor(private readonly service: DeliveryAgentService) { }
 
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.SUPERADMIN, Role.MESSADMIN)
     @Post()
     create(@Body() dto: DeliveryAgentCreateDto) {
         return this.service.create(dto);
     }
 
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.SUPERADMIN, Role.MESSADMIN)
     @Get()
     async findAll(
         @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
@@ -26,19 +33,32 @@ export class DeliveryAgentController {
 
 
 
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.SUPERADMIN, Role.MESSADMIN)
     @Get(':id')
     getById(@Param('id') id: string) {
         return this.service.getById(id);
     }
 
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.SUPERADMIN, Role.MESSADMIN)
     @Patch(':id')
     update(@Param('id') id: string, @Body() dto: DeliveryAgentUpdateDto) {
         return this.service.updateDeliveryAgent(id, dto);
     }
 
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.SUPERADMIN, Role.MESSADMIN)
     @Delete(':id')
     delete(@Param('id') id: string) {
         return this.service.delete(id);
+    }
+
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.SUPERADMIN, Role.MESSADMIN)
+    @Post('assign-delivery-agent-to-mess')
+    async assignDeliveryAgentToMess(@Body() dto: AssignDeliveryAgentDto) {
+        return this.service.assignDeliveryAgentToMess(dto.agentId, dto.messId);
     }
 
 

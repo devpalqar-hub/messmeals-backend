@@ -13,7 +13,11 @@ import {
     BadRequestException,
     UsePipes,
     ValidationPipe,
+    UseGuards,
 } from '@nestjs/common';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/decorators/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
 import { FileFieldsInterceptor } from '@nestjs/platform-express'; // ✅ this one
 import { PlansService } from './plans.service';
 import { PlansDto } from './dto/create-plan.dto';
@@ -32,6 +36,8 @@ export class PlansController {
     ) { }
 
 
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles('SUPERADMIN')
     @Post()
     @UseInterceptors(
         FilesInterceptor('planImages', 10),
@@ -88,6 +94,8 @@ export class PlansController {
     }
 
 
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles('SUPERADMIN')
     @Patch(':id')
     async updatePlan(
         @Param('id') id: string,

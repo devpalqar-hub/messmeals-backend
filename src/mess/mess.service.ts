@@ -505,18 +505,62 @@ export class MessService {
                 foodTypes: true,
                 tags: true,
                 Testimonials: true,
-                DeliveryPartnerProfile: true,
+                DeliveryPartnerProfile: {
+                    include: { user: true },
+                },
                 UserSubscriptions: true,
-                images: true
+                images: true,
             },
-
         });
 
         if (!mess) {
             throw new NotFoundException('Mess not found');
         }
 
-        return mess;
+        // Order summary
+        const [totalOrders, deliveredOrders, pendingOrders, inProgressOrders] = await this.prisma.$transaction([
+            this.prisma.deliveries.count({ where: { messId: id } }),
+            this.prisma.deliveries.count({ where: { messId: id, status: 'DELIVERED' } }),
+            this.prisma.deliveries.count({ where: { messId: id, status: 'PENDING' } }),
+            this.prisma.deliveries.count({ where: { messId: id, status: 'PROGRESS' } }),
+        ]);
+
+        // Revenue summary from payments linked to subscriptions/plans of this mess
+        const revenueAgg = await this.prisma.payments.aggregate({
+            where: { status: 'SUCCESS', userSubscriptions: { messId: id } },
+            _sum: { amount: true },
+            _count: { id: true },
+        });
+
+        const totalRevenue = Number(revenueAgg._sum.amount || 0);
+        const totalPayments = revenueAgg._count.id || 0;
+
+        // Delivery partners assigned to this mess
+        const deliveryPartners = await this.prisma.deliveryPartnerProfile.findMany({
+            where: { messId: id },
+            include: { user: { select: { id: true, name: true, phone: true, email: true, is_active: true } } },
+        });
+
+        // Plans and subscriptions are already included in the mess object; format them
+        const plans = mess.plans || [];
+        const subscriptions = mess.UserSubscriptions || [];
+
+        return {
+            ...mess,
+            orderSummary: {
+                totalOrders,
+                deliveredOrders,
+                pendingOrders,
+                inProgressOrders,
+            },
+            revenueSummary: {
+                totalRevenue,
+                totalPayments,
+            },
+            deliveryPartners,
+            plans,
+            subscriptions,
+        };
     }
 
     async update(id: string, dto: UpdateMessDto) {

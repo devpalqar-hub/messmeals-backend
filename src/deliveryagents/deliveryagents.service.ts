@@ -258,6 +258,37 @@ export class DeliveryAgentService {
         });
     }
 
+    /**
+     * Assign a delivery agent to a mess (replace existing mess linkage)
+     */
+    async assignDeliveryAgentToMess(agentId: string, messId: string) {
+        // validate agent exists and is delivery agent
+        const user = await this.prisma.user.findUnique({ where: { id: agentId }, include: { deliveryPartnerProfile: true } });
+        if (!user || user.role !== Role.DELIVERYAGENT) {
+            throw new NotFoundException('Delivery agent not found');
+        }
+
+        // validate mess exists
+        const mess = await this.prisma.mess.findUnique({ where: { id: messId } });
+        if (!mess) {
+            throw new BadRequestException('Mess not found');
+        }
+
+        // if profile exists, update messId; otherwise create profile
+        if (user.deliveryPartnerProfile) {
+            const updated = await this.prisma.deliveryPartnerProfile.update({
+                where: { id: user.deliveryPartnerProfile.id },
+                data: { messId },
+            });
+            return { message: 'Delivery agent assigned to mess', data: updated };
+        } else {
+            const created = await this.prisma.deliveryPartnerProfile.create({
+                data: { userId: agentId, messId },
+            });
+            return { message: 'Delivery agent profile created and assigned to mess', data: created };
+        }
+    }
+
 
     // -------------------------------------------------------
     // PHASE 3

@@ -4,10 +4,12 @@ import { CustomerService } from './customers.service';
 import { CustomerController } from './customers.controller';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UserModule } from 'src/user/user.module';
+import { PaymentsModule } from 'src/payments/payments.module';
 
 @Module({
     imports: [
         UserModule,
+        PaymentsModule,
         JwtModule.register({
             secret: process.env.JWT_SECRET || 'super-secret-key',
             signOptions: { expiresIn: '7d' },

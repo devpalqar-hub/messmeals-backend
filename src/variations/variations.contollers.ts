@@ -6,11 +6,17 @@ import {
     Param,
     Patch,
     Post,
+    UseGuards,
 } from '@nestjs/common';
 import { VariationService } from './variations.service';
 import { CreateVariationDto } from './dto/create-variations.dto';
 import { UpdateVariationDto } from './dto/update-variation.dto';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/decorators/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
 
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('SUPERADMIN')
 @Controller('variation')
 export class VariationController {
     constructor(private readonly variationService: VariationService) { }

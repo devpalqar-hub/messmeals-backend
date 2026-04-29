@@ -3,9 +3,17 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { VersioningType } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import * as bodyParser from 'body-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  // Capture raw request body for webhook signature verification
+  app.use(bodyParser.json({
+    verify: (req: any, _res, buf: Buffer) => {
+      req.rawBody = buf;
+    },
+  }));
+  app.use(bodyParser.urlencoded({ extended: true, verify: (req: any, _res, buf: Buffer) => { req.rawBody = buf; } }));
   app.enableVersioning({
     type: VersioningType.URI
   })

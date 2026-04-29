@@ -7,6 +7,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UserService } from 'src/user/user.service';
+import { PaymentsService } from 'src/payments/payments.service';
 import { choosePlanDto, CreateCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
 import { RenewSubscriptionDto } from './dto/renew-Subscription.dto';
 import { ScheduleType, Prisma, DeliveryStatus, Role } from '@prisma/client';
@@ -20,7 +21,7 @@ export class CustomerService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly userService: UserService,
-
+        private readonly paymentsService: PaymentsService,
     ) { }
 
     private ensureHttpsUrl(url: string): string {
@@ -882,9 +883,32 @@ export class CustomerService {
     }
 
     async getAllMesses(userId: string) {
-        // Find the messAdminProfile for this user
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { role: true },
+        });
+
+        if (!user) {
+            throw new NotFoundException('User not found');
+        }
+
+        // SUPERADMIN can see all active messes.
+        if (user.role === Role.SUPERADMIN) {
+            return this.prisma.mess.findMany({
+                where: { is_active: true },
+                select: {
+                    id: true,
+                    name: true,
+                    description: true,
+                    address: true,
+                },
+                orderBy: { name: 'asc' },
+            });
+        }
+
+        // MESSADMIN sees only linked messes.
         const messAdmin = await this.prisma.messAdminProfile.findUnique({
-            where: { userId: userId },
+            where: { userId },
             include: {
                 messes: {
                     where: { is_active: true },
@@ -900,7 +924,7 @@ export class CustomerService {
         });
 
         if (!messAdmin) {
-            throw new Error('MessAdmin profile not found for this user');
+            return [];
         }
 
         return messAdmin.messes;
@@ -1104,11 +1128,7 @@ export class CustomerService {
             throw new BadRequestException('Address not found');
         }
 
-        //Check if user exists
-        let user = await this.prisma.customerProfile.findUnique({ where: { userId: userId } });
-        if (!user) {
-            throw new BadRequestException('User not found');
-        }
+        // customer existence is validated below when fetching profile with user relation
         //Validate plan
         const plan = await this.prisma.plans.findUnique({
             where: { id: planId },
@@ -1116,21 +1136,27 @@ export class CustomerService {
         if (!plan) throw new BadRequestException('Plan not found');
 
 
-        //Calculate duration and price
+        // Calculate duration and price
         const startDate = new Date(start_date);
         const endDate = new Date(end_date);
         const diffInMs = endDate.getTime() - startDate.getTime();
         const diffInDays = Math.ceil(diffInMs / (1000 * 60 * 60 * 24));
         const totalPrice = diffInDays * Number(plan.price);
 
-        //discount logic 
-        // const discountedPrice = totalPrice - numericDiscount;
+        // Create a pending (inactive) subscription. It will be activated only after successful payment.
+        // Include the user relation to access email/phone
+        const customerProfile = await this.prisma.customerProfile.findUnique({
+            where: { userId: userId },
+            include: { user: true },
+        });
 
-        //Create subscription
-        // add once payment is succesfull.
+        if (!customerProfile) {
+            throw new BadRequestException('Customer profile not found');
+        }
+
         const userSubscription = await this.prisma.userSubscriptions.create({
             data: {
-                customerProfileId: user.id,
+                customerProfileId: customerProfile.id,
                 start_date: startDate,
                 end_date: endDate,
                 discount: 0,
@@ -1141,26 +1167,26 @@ export class CustomerService {
                 scheduleType,
                 selectedDays: scheduleType === 'CUSTOM' ? selectedDays : undefined,
                 userAddressId: addressId,
-                //add address
+                is_active: false, // mark inactive until payment success
             },
         });
 
+        // Create a Razorpay order and return session URL so frontend can redirect user to payment
+        const paymentResult = await this.paymentsService.createPaymentOrder(
+            userSubscription.id,
+            Number(totalPrice),
+            customerProfile.user?.email || '',
+            customerProfile.user?.phone || '',
+            customerProfile.user?.name || '',
+            successUrl,
+            cancelUrl,
+        );
 
-
-        // Update wallet
-        await this.prisma.customerProfile.update({
-            where: { id: user.id },
-            data: {
-                walletAmount: Number(user.walletAmount) - 0, //0 here is discounted price
-            },
-        });
-
-        //  Return success response
         return {
-            message: "Subscription created successfully",
+            message: 'Payment initiated',
             data: {
-                user,
-                userSubscription,
+                subscription: userSubscription,
+                payment: paymentResult.data,
             },
         };
     }

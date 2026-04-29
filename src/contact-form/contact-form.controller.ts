@@ -2,8 +2,9 @@ import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query, Req, U
 import { CreateContactFormDto } from './dto/contact-form.dto';
 import { ContactFormService } from './contact-form.service';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
-import { EnquiryType, Role } from '@prisma/client';
 import { RolesGuard } from 'src/common/guards/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
+import { EnquiryType, Role } from '@prisma/client';
 
 @Controller('contact-form')
 export class ContactFormController {
@@ -29,7 +30,8 @@ export class ContactFormController {
         return this.service.submitMessEnquiry(dto);
     }
 
-    @UseGuards(JwtAuthGuard)
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.SUPERADMIN, Role.MESSADMIN)
     @Get()
     findAll(
         @Req() req: any,

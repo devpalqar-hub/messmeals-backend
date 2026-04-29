@@ -136,6 +136,7 @@ model UserSubscriptions {
   mess                   Mess                    @relation(fields: [messId], references: [id], onDelete: Cascade)
   UserAddress            UserAddress?            @relation(fields: [userAddressId], references: [id])
   deliveries             Deliveries[]
+  payments               Payments[]
 
   @@unique([messId, deliveryPriority])
   @@index([messId, deliveryPriority])
@@ -328,6 +329,25 @@ model Transaction {
   balanceAfter Decimal  @default(0.00) // wallet balance after transaction, stored to allow auditing
   meta         Json? // optional metadata: { fromUserId, toUserId, note, externalId }
   createdAt    DateTime @default(now())
+}
+
+model Payments {
+  id                String    @id @default(uuid())
+  subscriptionId    String
+  razorpayOrderId   String    @unique
+  razorpayPaymentId String?
+  amount            Decimal
+  status            String    @default("PENDING") // PENDING, SUCCESS, FAILED
+  customerEmail     String
+  customerPhone     String
+  customerName      String
+  metadata          Json? // Razorpay order metadata
+  failureReason     String?
+  processedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  userSubscriptions UserSubscriptions @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 }
 
 model PhoneNumbers {
