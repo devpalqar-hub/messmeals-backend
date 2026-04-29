@@ -17,7 +17,7 @@ import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('SUPERADMIN')
+// @Roles('SUPERADMIN')
 @Controller('categories')
 export class CategoryController {
     constructor(private readonly categoryService: CategoryService) { }

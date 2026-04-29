@@ -7,7 +7,7 @@ import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('SUPERADMIN')
+// @Roles('SUPERADMIN')
 @Controller('districts')
 export class DistrictController {
     constructor(private readonly districtService: DistrictService) { }
