@@ -37,7 +37,7 @@ export class PlansController {
 
 
     @UseGuards(JwtAuthGuard, RolesGuard)
-    @Roles('SUPERADMIN')
+    // @Roles('SUPERADMIN')
     @Post()
     @UseInterceptors(
         FilesInterceptor('planImages', 10),
@@ -96,7 +96,7 @@ export class PlansController {
 
 
     @UseGuards(JwtAuthGuard, RolesGuard)
-    @Roles('SUPERADMIN')
+    // @Roles('SUPERADMIN')
     @Patch(':id')
     async updatePlan(
         @Param('id') id: string,
