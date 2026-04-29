@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Get, Query, UseGuards, Param, Req } from '@nestjs/common';
+import { Body, Controller, Post, Get, Query, UseGuards, Param, Req, Patch } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDeliveryAgentDto, RegisterDto, UserRegisterDto } from './dto/Registration.dto';
 import { LoginDto } from './dto/login.dto';
@@ -9,6 +9,7 @@ import { Roles } from 'src/common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
 import { SuperAdminRegisterDto } from './dto/superadmin-register.dto';
 import { SuperAdminLoginDto } from './dto/superadmin-login.dto';
+import { CreateMessAdminBySuperAdminDto, MessAdminListQueryDto, UpdateMessAdminBySuperAdminDto } from './dto/messadmin-admin.dto';
 
 
 @Controller('auth')
@@ -59,9 +60,28 @@ export class AuthController {
 
 
 
-    @Get('mess-admins/')
-    async getAllMessAdmins() {
-        return this.authService.getallmessadmin();
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.SUPERADMIN)
+    @Get('mess-admins')
+    async getAllMessAdmins(@Query() query: MessAdminListQueryDto) {
+        return this.authService.getallmessadmin(query);
+    }
+
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.SUPERADMIN)
+    @Post('mess-admins')
+    async createMessAdmin(@Body() dto: CreateMessAdminBySuperAdminDto) {
+        return this.authService.createMessAdminBySuperAdmin(dto);
+    }
+
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.SUPERADMIN)
+    @Patch('mess-admins/:id')
+    async updateMessAdmin(
+        @Param('id') id: string,
+        @Body() dto: UpdateMessAdminBySuperAdminDto,
+    ) {
+        return this.authService.updateMessAdminBySuperAdmin(id, dto);
     }
 
 

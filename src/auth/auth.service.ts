@@ -18,6 +18,7 @@ import { OtpVerifyDto } from './dto/otp-verify.dto';
 import { TwoFactorService } from 'src/twofactor/twofactor.service';
 import { SuperAdminLoginDto } from './dto/superadmin-login.dto';
 import { SuperAdminRegisterDto } from './dto/superadmin-register.dto';
+import { CreateMessAdminBySuperAdminDto, UpdateMessAdminBySuperAdminDto, MessAdminListQueryDto } from './dto/messadmin-admin.dto';
 import * as bcrypt from 'bcrypt';
 
 
@@ -533,15 +534,193 @@ export class AuthService {
 
 
 
-    async getallmessadmin() {
+    async getallmessadmin(query?: MessAdminListQueryDto) {
+        const { search, isActive } = query || {};
+
+        const where: any = {
+            role: Role.MESSADMIN,
+        };
+
+        if (search) {
+            where.OR = [
+                { name: { contains: search } },
+                { email: { contains: search } },
+                { phone: { contains: search } },
+            ];
+        }
+
+        if (isActive !== undefined) {
+            where.is_active = isActive === 'true';
+        }
+
         const users = await this.prisma.user.findMany({
+            where,
             include: {
-                messAdminProfile: true
+                messAdminProfile: {
+                    include: {
+                        messes: {
+                            select: {
+                                id: true,
+                                name: true,
+                                address: true,
+                                is_active: true,
+                            },
+                        },
+                    },
+                },
+            },
+            orderBy: { name: 'asc' },
+        });
+
+        return users;
+    }
+
+    async createMessAdminBySuperAdmin(dto: CreateMessAdminBySuperAdminDto) {
+        const existingUser = await this.prisma.user.findFirst({
+            where: {
+                OR: [{ email: dto.email }, { phone: dto.phone }],
+            },
+        });
+
+        if (existingUser) {
+            throw new BadRequestException('User already exists');
+        }
+
+        const messIds = dto.messIds || [];
+
+        if (messIds.length) {
+            const messes = await this.prisma.mess.findMany({
+                where: { id: { in: messIds } },
+                select: { id: true },
+            });
+
+            if (messes.length !== messIds.length) {
+                throw new BadRequestException('One or more messIds are invalid');
             }
-        })
+        }
 
-        return users
+        const hashedPassword = await bcrypt.hash(dto.password, 10);
 
+        const user = await this.prisma.user.create({
+            data: {
+                name: dto.name,
+                email: dto.email,
+                phone: dto.phone,
+                password: hashedPassword,
+                role: Role.MESSADMIN,
+                is_verified: true,
+                is_active: dto.is_active ?? true,
+                messAdminProfile: {
+                    create: messIds.length
+                        ? {
+                            messes: {
+                                connect: messIds.map((id) => ({ id })),
+                            },
+                        }
+                        : {},
+                },
+            },
+            include: {
+                messAdminProfile: {
+                    include: { messes: true },
+                },
+            },
+        });
+
+        return {
+            message: 'Mess admin created successfully',
+            data: user,
+        };
+    }
+
+    async updateMessAdminBySuperAdmin(id: string, dto: UpdateMessAdminBySuperAdminDto) {
+        const user = await this.prisma.user.findUnique({
+            where: { id },
+            include: { messAdminProfile: true },
+        });
+
+        if (!user || user.role !== Role.MESSADMIN) {
+            throw new NotFoundException('Mess admin not found');
+        }
+
+        const existingEmail = dto.email
+            ? await this.prisma.user.findFirst({
+                where: { email: dto.email, NOT: { id } },
+            })
+            : null;
+
+        if (existingEmail) {
+            throw new BadRequestException('Email already in use');
+        }
+
+        const existingPhone = dto.phone
+            ? await this.prisma.user.findFirst({
+                where: { phone: dto.phone, NOT: { id } },
+            })
+            : null;
+
+        if (existingPhone) {
+            throw new BadRequestException('Phone number already in use');
+        }
+
+        const updateData: any = {};
+        if (dto.name !== undefined) updateData.name = dto.name;
+        if (dto.email !== undefined) updateData.email = dto.email;
+        if (dto.phone !== undefined) updateData.phone = dto.phone;
+        if (dto.is_active !== undefined) updateData.is_active = dto.is_active;
+        if (dto.password !== undefined) {
+            updateData.password = await bcrypt.hash(dto.password, 10);
+        }
+
+        await this.prisma.user.update({
+            where: { id },
+            data: updateData,
+        });
+
+        if (dto.messIds !== undefined) {
+            const messes = await this.prisma.mess.findMany({
+                where: { id: { in: dto.messIds } },
+                select: { id: true },
+            });
+
+            if (messes.length !== dto.messIds.length) {
+                throw new BadRequestException('One or more messIds are invalid');
+            }
+
+            if (!user.messAdminProfile) {
+                await this.prisma.messAdminProfile.create({
+                    data: {
+                        userId: id,
+                        messes: {
+                            connect: dto.messIds.map((messId) => ({ id: messId })),
+                        },
+                    },
+                });
+            } else {
+                await this.prisma.messAdminProfile.update({
+                    where: { id: user.messAdminProfile.id },
+                    data: {
+                        messes: {
+                            set: dto.messIds.map((messId) => ({ id: messId })),
+                        },
+                    },
+                });
+            }
+        }
+
+        const updated = await this.prisma.user.findUnique({
+            where: { id },
+            include: {
+                messAdminProfile: {
+                    include: { messes: true },
+                },
+            },
+        });
+
+        return {
+            message: 'Mess admin updated successfully',
+            data: updated,
+        };
     }
 
     // -------------------------------------------------------
