@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Req } from '@nestjs/common';
 import { AnalyticsService } from './analytics.service';
 import { AnalyticsQueryDto } from './dto/analytics-query.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
@@ -33,5 +33,19 @@ export class AnalyticsController {
         const { restaurantId, ...rest } = query as any;
         const payload = { ...rest, messId: rest.messId || restaurantId };
         return this.service.orderStatsGraph(payload);
+    }
+
+    @Get('delivery-agent/graph')
+    @Roles(Role.DELIVERYAGENT, Role.SUPERADMIN, Role.MESSADMIN)
+    async deliveryAgentGraph(@Query(new ValidationPipe({ transform: true })) query: AnalyticsQueryDto, @Req() req) {
+        const { restaurantId, ...rest } = query as any;
+        const payload = { ...rest, messId: rest.messId || restaurantId };
+
+        // If requester is a delivery agent, use their user id to resolve partner profile
+        if (req.user?.role === Role.DELIVERYAGENT) {
+            payload.agentId = req.user.id;
+        }
+
+        return this.service.deliveryAgentGraph(payload);
     }
 }

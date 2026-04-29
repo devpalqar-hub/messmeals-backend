@@ -2,7 +2,7 @@ import { IsDateString, IsOptional, IsString } from 'class-validator';
 
 export class AnalyticsQueryDto {
     @IsDateString()
-    date1: string;
+    date1!: string;
 
     @IsOptional()
     @IsDateString()
@@ -24,4 +24,8 @@ export class AnalyticsQueryDto {
     @IsOptional()
     @IsString()
     restaurantId?: string;
+
+    @IsOptional()
+    @IsString()
+    agentId?: string;
 }

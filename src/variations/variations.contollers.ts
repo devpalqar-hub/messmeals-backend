@@ -15,13 +15,14 @@ import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('SUPERADMIN')
+
+// @Roles('SUPERADMIN')
 @Controller('variation')
 export class VariationController {
     constructor(private readonly variationService: VariationService) { }
 
     // ➕ POST /variation
+    @UseGuards(JwtAuthGuard, RolesGuard)
     @Post()
     create(@Body() dto: CreateVariationDto) {
         return this.variationService.create(dto);
@@ -40,12 +41,14 @@ export class VariationController {
     }
 
     // ✏️ PATCH /variation/:id
+    @UseGuards(JwtAuthGuard, RolesGuard)
     @Patch(':id')
     update(@Param('id') id: string, @Body() dto: UpdateVariationDto) {
         return this.variationService.update(id, dto);
     }
 
     // 🗑️ DELETE /variation/:id
+    @UseGuards(JwtAuthGuard, RolesGuard)
     @Delete(':id')
     delete(@Param('id') id: string) {
         return this.variationService.delete(id);
