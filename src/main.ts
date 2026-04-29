@@ -25,8 +25,8 @@ async function bootstrap() {
   });
 
   const config = new DocumentBuilder()
-    .setTitle('My API')
-    .setDescription('API documentation for my application')
+    .setTitle('Supermeals Backend Admin API')
+    .setDescription('Swagger documentation for the Supermeals backend admin APIs')
     .setVersion('1.0')
     .addBearerAuth() // optional: enables Authorization header
     .build();

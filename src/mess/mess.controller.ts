@@ -28,9 +28,12 @@ import { FoodType, Role } from '@prisma/client';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { S3Service } from 'src/s3/s3.service';
 import { CreateMessImageDto } from './dto/create-mess-image.dto';
+import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 const maxSize = 10 * 1024 * 1024; // 50MB per media
 const maxSizeGallery = 50 * 1024 * 1024; // 50 MB
 
+@ApiTags('Mess')
+@ApiBearerAuth()
 @Controller('mess')
 export class MessController {
     constructor(private readonly messService: MessService,
@@ -39,6 +42,9 @@ export class MessController {
 
     // @UseGuards(JwtAuthGuard, RolesGuard)
     // @Roles(Role.SUPERADMIN)
+    @ApiOperation({ summary: 'Create mess', description: 'Creates a mess with optional gallery images.' })
+    @ApiConsumes('multipart/form-data')
+    @ApiResponse({ status: 201, description: 'Mess created successfully.' })
     @Post()
     @UseInterceptors(
         FilesInterceptor('files', 10),
@@ -73,6 +79,24 @@ export class MessController {
     }
 
     @Get()
+    @ApiOperation({ summary: 'List messes', description: 'Returns messes with filters and pagination.' })
+    @ApiQuery({ name: 'page', required: false })
+    @ApiQuery({ name: 'limit', required: false })
+    @ApiQuery({ name: 'search', required: false })
+    @ApiQuery({ name: 'categoryId', required: false })
+    @ApiQuery({ name: 'ratings', required: false })
+    @ApiQuery({ name: 'is_active', required: false })
+    @ApiQuery({ name: 'is_verified', required: false })
+    @ApiQuery({ name: 'location', required: false })
+    @ApiQuery({ name: 'variationId', required: false })
+    @ApiQuery({ name: 'foodType', required: false })
+    @ApiQuery({ name: 'districtName', required: false })
+    @ApiQuery({ name: 'latitude', required: false })
+    @ApiQuery({ name: 'longitude', required: false })
+    @ApiQuery({ name: 'date1', required: false })
+    @ApiQuery({ name: 'date2', required: false })
+    @ApiQuery({ name: 'minPrice', required: false })
+    @ApiQuery({ name: 'maxPrice', required: false })
     findAll(
         @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
         @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
@@ -116,11 +140,15 @@ export class MessController {
 
 
 
+    @ApiOperation({ summary: 'Get mess by id', description: 'Fetches a mess by UUID.' })
+    @ApiParam({ name: 'id', description: 'Mess UUID' })
     @Get(':id')
     findOne(@Param('id', ParseUUIDPipe) id: string) {
         return this.messService.findOne(id);
     }
 
+    @ApiOperation({ summary: 'Update mess', description: 'Updates a mess by UUID.' })
+    @ApiParam({ name: 'id', description: 'Mess UUID' })
     @Patch(':id')
     update(
         @Param('id', ParseUUIDPipe) id: string,
@@ -131,11 +159,15 @@ export class MessController {
 
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(Role.SUPERADMIN)
+    @ApiOperation({ summary: 'Delete mess', description: 'Deletes a mess by UUID.' })
+    @ApiParam({ name: 'id', description: 'Mess UUID' })
     @Delete(':id')
     remove(@Param('id', ParseUUIDPipe) id: string) {
         return this.messService.remove(id);
     }
 
+    @ApiOperation({ summary: 'Get mess stats', description: 'Returns stats for a mess by UUID.' })
+    @ApiParam({ name: 'id', description: 'Mess UUID' })
     @Get(':id/stats')
     getStats(@Param('id', ParseUUIDPipe) id: string) {
         return this.messService.getMessStats(id);
@@ -145,6 +177,9 @@ export class MessController {
 
     // @UseGuards(JwtAuthGuard, RolesGuard)
     // @Roles(Role.MESS_ADMIN)
+    @ApiOperation({ summary: 'Add mess images', description: 'Uploads and attaches gallery images to a mess.' })
+    @ApiConsumes('multipart/form-data')
+    @ApiParam({ name: 'messId', description: 'Mess UUID' })
     @Post(':messId/gallery/images')
     @UseInterceptors(FilesInterceptor('files', 10))
     async addMessImages(
@@ -188,6 +223,8 @@ export class MessController {
     //     status: 200,
     //     description: 'Mess images fetched successfully',
     // })
+    @ApiOperation({ summary: 'Get mess images', description: 'Returns all gallery images for a mess.' })
+    @ApiParam({ name: 'messId', description: 'Mess UUID' })
     @Get(':messId/gallery/images')
     async getMessImages(@Param('messId') messId: string) {
         return this.messService.getMessImages(messId);
@@ -198,6 +235,9 @@ export class MessController {
     // =========================
     // @UseGuards(JwtAuthGuard, RolesGuard)
     // @Roles(Role.MESS_ADMIN)
+    @ApiOperation({ summary: 'Delete mess image', description: 'Deletes a single image from a mess gallery.' })
+    @ApiParam({ name: 'messId', description: 'Mess UUID' })
+    @ApiParam({ name: 'imageId', description: 'Image UUID' })
     @Delete(':messId/gallery/images/:imageId')
     async deleteMessGalleryImage(
         @Param('messId') messId: string,
@@ -208,6 +248,7 @@ export class MessController {
 
 
     //Only for development/testing:
+    @ApiOperation({ summary: 'Fix coordinates', description: 'Development-only endpoint to populate missing coordinates.' })
     @Post('fix/coordinates')
     addMissingCoordinates() {
         return this.messService.addMissingCoordinates();
@@ -217,6 +258,9 @@ export class MessController {
 
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(Role.SUPERADMIN, Role.MESSADMIN)
+    @ApiOperation({ summary: 'Add cover images', description: 'Uploads and sets cover images for a mess.' })
+    @ApiConsumes('multipart/form-data')
+    @ApiParam({ name: 'messId', description: 'Mess UUID' })
     @Post(':messId/cover/image')
     @UseInterceptors(FilesInterceptor('file', 1))
     async addCoverImages(

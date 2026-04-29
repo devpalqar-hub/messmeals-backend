@@ -13,7 +13,9 @@ import { CreatePaymentDto } from './dto/create-payment.dto';
 import { RazorpayWebhookDto } from './dto/razorpay-webhook.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { Request } from 'express';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Payments')
 @Controller('payments')
 export class PaymentsController {
     constructor(private readonly paymentsService: PaymentsService) { }
@@ -24,6 +26,9 @@ export class PaymentsController {
      */
     @UseGuards(JwtAuthGuard)
     @Post('create-order')
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Create payment order', description: 'Creates a Razorpay order for subscription payment.' })
+    @ApiResponse({ status: 201, description: 'Payment order created successfully.' })
     async createOrder(@Body() dto: CreatePaymentDto) {
         const { subscriptionId, amount, customerEmail, customerPhone, customerName } = dto;
 
@@ -44,6 +49,7 @@ export class PaymentsController {
      * Webhook signature verification is crucial for security
      */
     @Post('webhook')
+    @ApiOperation({ summary: 'Razorpay webhook', description: 'Receives and processes Razorpay webhooks.' })
     async handleWebhook(
         @Req() req: any,
         @Body() payload: RazorpayWebhookDto,
@@ -117,7 +123,7 @@ export class PaymentsController {
                     console.log(`Unhandled webhook event: ${event}`, eventPayload);
                     return { success: true, message: 'Webhook received' };
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error('Webhook processing error:', error);
             // Return 200 OK to Razorpay even on error (to prevent retry)
             // Error details are logged for debugging
@@ -133,6 +139,9 @@ export class PaymentsController {
      * GET /payments/:paymentId
      */
     @UseGuards(JwtAuthGuard)
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Get payment details', description: 'Returns payment details by payment UUID.' })
+    @ApiParam({ name: 'paymentId', description: 'Payment UUID' })
     @Get(':paymentId')
     async getPaymentDetails(@Param('paymentId') paymentId: string) {
         return await this.paymentsService.getPaymentDetails(paymentId);
@@ -143,6 +152,7 @@ export class PaymentsController {
      * GET /payments/health
      */
     @Get('health/check')
+    @ApiOperation({ summary: 'Payment health check', description: 'Returns a health response for payments service.' })
     healthCheck() {
         return {
             status: 'ok',

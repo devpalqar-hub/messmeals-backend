@@ -11,7 +11,9 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { S3Service } from './s3.service';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('S3')
 @Controller('s3')
 export class S3Controller {
     constructor(private readonly s3Service: S3Service) { }
@@ -21,6 +23,7 @@ export class S3Controller {
     // POST /s3/upload
     // ------------------------------------------------
     @Post('upload')
+    @ApiOperation({ summary: 'Upload single file', description: 'Uploads a single file to S3.' })
     @UseInterceptors(FileInterceptor('file'))
     async uploadFile(
         @UploadedFile() file: Express.Multer.File,
@@ -43,6 +46,7 @@ export class S3Controller {
     // POST /s3/upload-multiple
     // ------------------------------------------------
     @Post('upload-multiple')
+    @ApiOperation({ summary: 'Upload multiple files', description: 'Uploads multiple files to S3.' })
     @UseInterceptors(FilesInterceptor('files'))
     async uploadMultipleFiles(
         @UploadedFiles() files: Express.Multer.File[],
@@ -65,6 +69,7 @@ export class S3Controller {
     // DELETE /s3/delete
     // ------------------------------------------------
     @Delete('delete')
+    @ApiOperation({ summary: 'Delete file', description: 'Deletes a file from S3 using its URL.' })
     async deleteFile(@Body('fileUrl') fileUrl: string) {
         if (!fileUrl) {
             throw new BadRequestException('fileUrl is required');
@@ -82,6 +87,7 @@ export class S3Controller {
     // GET /s3/signed-url?key=uploads/a.jpg
     // ------------------------------------------------
     @Post('signed-url')
+    @ApiOperation({ summary: 'Get signed URL', description: 'Returns a signed URL for a given S3 key.' })
     async getSignedUrl(
         @Body('key') key: string,
         @Body('expiresIn') expiresIn?: number,
@@ -102,6 +108,7 @@ export class S3Controller {
     // GET /s3/exists?key=uploads/a.jpg
     // ------------------------------------------------
     @Post('exists')
+    @ApiOperation({ summary: 'Check file exists', description: 'Checks whether a given S3 key exists.' })
     async fileExists(@Body('key') key: string) {
         if (!key) {
             throw new BadRequestException('Key is required');
