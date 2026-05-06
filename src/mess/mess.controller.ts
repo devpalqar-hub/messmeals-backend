@@ -13,9 +13,6 @@ import {
     BadRequestException,
     UseGuards,
     Req,
-    NotFoundException,
-    UseInterceptors,
-    UploadedFiles,
     UsePipes,
     ValidationPipe,
 } from '@nestjs/common';
@@ -25,56 +22,28 @@ import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { FoodType, Role } from '@prisma/client';
-import { FilesInterceptor } from '@nestjs/platform-express';
-import { S3Service } from 'src/s3/s3.service';
-import { CreateMessImageDto } from './dto/create-mess-image.dto';
-import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 const maxSize = 10 * 1024 * 1024; // 50MB per media
-const maxSizeGallery = 50 * 1024 * 1024; // 50 MB
 
 @ApiTags('Mess')
 @ApiBearerAuth()
 @Controller('mess')
 export class MessController {
-    constructor(private readonly messService: MessService,
-        private readonly s3Service: S3Service
-    ) { }
+    constructor(private readonly messService: MessService) { }
 
     // @UseGuards(JwtAuthGuard, RolesGuard)
     // @Roles(Role.SUPERADMIN)
     @ApiOperation({ summary: 'Create mess', description: 'Creates a mess with optional gallery images.' })
-    @ApiConsumes('multipart/form-data')
     @ApiResponse({ status: 201, description: 'Mess created successfully.' })
     @Post()
-    @UseInterceptors(
-        FilesInterceptor('files', 10),
-    )
     @UsePipes(
         new ValidationPipe({
             transform: true,
             whitelist: true,
         }),
     )
-    async create(@Body() dto: CreateMessDto, @UploadedFiles() files: Express.Multer.File[],) {
-        let galleryImages: any[] = [];
-
-        if (files && files.length > 0) {
-            const totalGallerySize = files.reduce(
-                (sum, file) => sum + file.size,
-                0,
-            );
-
-            if (totalGallerySize > maxSizeGallery) {
-                throw new BadRequestException(
-                    'Total gallery image size must not exceed 50MB',
-                );
-            }
-
-            const folder = 'uploads/mess/gallery';
-            galleryImages = await this.s3Service.uploadMultipleFiles(files, folder);
-        }
-
-        const imagePayload = galleryImages.map((url) => ({ url }));
+    async create(@Body() dto: CreateMessDto, @Body('images') images?: { url: string }[]) {
+        const imagePayload = (images || []).map((img) => ({ url: img.url }));
         return this.messService.create(dto, imagePayload);
     }
 
@@ -177,38 +146,17 @@ export class MessController {
 
     // @UseGuards(JwtAuthGuard, RolesGuard)
     // @Roles(Role.MESS_ADMIN)
-    @ApiOperation({ summary: 'Add mess images', description: 'Uploads and attaches gallery images to a mess.' })
-    @ApiConsumes('multipart/form-data')
+    @ApiOperation({ summary: 'Add mess images', description: 'Adds gallery image URLs to a mess.' })
     @ApiParam({ name: 'messId', description: 'Mess UUID' })
     @Post(':messId/gallery/images')
-    @UseInterceptors(FilesInterceptor('files', 10))
     async addMessImages(
         @Param('messId') messId: string,
-        @UploadedFiles() files: Express.Multer.File[],
+        @Body('images') images: { url: string }[],
     ) {
-        if (!files || files.length === 0) {
+        if (!images || images.length === 0) {
             throw new BadRequestException('At least one image is required');
         }
-
-        const totalGallerySize = files.reduce(
-            (sum, file) => sum + file.size,
-            0,
-        );
-
-        if (totalGallerySize > maxSizeGallery) {
-            throw new BadRequestException(
-                'Total gallery image size must not exceed 50MB',
-            );
-        }
-
-        const folder = 'uploads/mess/gallery';
-        const uploadedUrls = await this.s3Service.uploadMultipleFiles(
-            files,
-            folder,
-        );
-
-        const imagePayload = uploadedUrls.map((url) => ({ url }));
-
+        const imagePayload = images.map((img) => ({ url: img.url }));
         return this.messService.addMessImages(messId, imagePayload);
     }
 
@@ -258,29 +206,19 @@ export class MessController {
 
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(Role.SUPERADMIN, Role.MESSADMIN)
-    @ApiOperation({ summary: 'Add cover images', description: 'Uploads and sets cover images for a mess.' })
-    @ApiConsumes('multipart/form-data')
+    @ApiOperation({ summary: 'Add cover images', description: 'Adds cover image URL to a mess.' })
     @ApiParam({ name: 'messId', description: 'Mess UUID' })
     @Post(':messId/cover/image')
-    @UseInterceptors(FilesInterceptor('file', 1))
     async addCoverImages(
         @Param('messId') messId: string,
-        @UploadedFiles() files: Express.Multer.File[],
+        @Body('images') images: { url: string }[],
         @Req() req: any,
     ) {
-        if (!files || files.length === 0) {
+        if (!images || images.length === 0) {
             throw new BadRequestException('At least one image is required');
         }
+        const imagePayload = images.map((img) => ({ url: img.url }));
 
-        const folder = 'uploads/mess/cover';
-        const uploadedUrls = await this.s3Service.uploadMultipleFiles(
-            files,
-            folder,
-        );
-
-        const imagePayload = uploadedUrls.map((url) => ({ url }));
-
-        console.log("helo", messId, imagePayload, req.user.id, req.user.role);
         return this.messService.addCoverImages(
             messId,
             imagePayload,

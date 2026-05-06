@@ -64,10 +64,24 @@ export class PlansService {
                 });
             }
 
-            // ✅ Response structure unchanged
+            const createdImages = await tx.planImages.findMany({
+                where: { planId: plan.id },
+                select: {
+                    id: true,
+                    url: true,
+                    altText: true,
+                    sortOrder: true,
+                    createdAt: true,
+                    updatedAt: true,
+                },
+            });
+
             return {
                 message: 'Plan created successfully',
-                planId: plan,
+                planId: {
+                    ...plan,
+                    images: createdImages,
+                },
             };
         });
     }

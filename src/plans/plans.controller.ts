@@ -6,8 +6,6 @@ import {
     Delete,
     Param,
     Body,
-    UseInterceptors,
-    UploadedFiles,
     Query,
     ParseUUIDPipe,
     BadRequestException,
@@ -18,25 +16,17 @@ import {
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
-import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { FileFieldsInterceptor } from '@nestjs/platform-express'; // ✅ this one
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { PlansService } from './plans.service';
 import { PlansDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
-import { FilesInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
-import { S3Service } from 'src/s3/s3.service';
 const maxSize = 10 * 1024 * 1024; // 50MB per media
-const maxSizeGallery = 50 * 1024 * 1024; // 50 MB
 
 @ApiTags('Plans')
 @ApiBearerAuth()
 @Controller('plans')
 export class PlansController {
-    constructor(private readonly plansService: PlansService,
-        private readonly s3Service: S3Service
-    ) { }
+    constructor(private readonly plansService: PlansService) { }
 
 
     @UseGuards(JwtAuthGuard, RolesGuard)
@@ -45,12 +35,8 @@ export class PlansController {
         summary: 'Create a plan',
         description: 'Creates a new plan with optional gallery images and linked variations.'
     })
-    @ApiConsumes('multipart/form-data')
     @ApiResponse({ status: 201, description: 'Plan created successfully.' })
     @Post()
-    @UseInterceptors(
-        FilesInterceptor('planImages', 10),
-    )
     @UsePipes(
         new ValidationPipe({
             transform: true,
@@ -59,27 +45,11 @@ export class PlansController {
     )
     async createPlan(
         @Body() dto: PlansDto,
-        @UploadedFiles() files: Express.Multer.File[],
     ) {
-        const totalGallerySize = files.reduce(
-            (sum, file) => sum + file.size,
-            0,
-        );
-
-        if (totalGallerySize > maxSizeGallery) {
-            throw new BadRequestException(
-                'Total gallery image size must not exceed 50MB',
-            );
-        }
-        let galleryImages: any[] = [];
-        if (files) {
-            const folder = "uploads/plans/gallery"
-            galleryImages = await this.s3Service.uploadMultipleFiles(files, folder);
-        }
-        const imagePayload = galleryImages.map((url) => ({ url }));
         if (dto.variationIds && typeof dto.variationIds === 'string') {
             dto.variationIds = JSON.parse(dto.variationIds);
         }
+        const imagePayload = (dto.images || []).map((img) => ({ url: img.url }));
 
         return this.plansService.createPlan(dto, imagePayload);
     }
@@ -161,40 +131,19 @@ export class PlansController {
     // @Roles(Role.MESS_ADMIN)
     @ApiOperation({
         summary: 'Add images to a plan',
-        description: 'Uploads gallery images and attaches them to an existing plan.'
+        description: 'Adds gallery image URLs to an existing plan.'
     })
-    @ApiConsumes('multipart/form-data')
     @ApiParam({ name: 'planId', description: 'Plan UUID', example: '8e6f4f4a-3bb7-4c74-9f42-5b3f7e5c7c11' })
     @ApiResponse({ status: 201, description: 'Plan images uploaded successfully.' })
     @Post(':planId/plan/images')
-    @UseInterceptors(FilesInterceptor('files', 10))
     async addPlanImages(
         @Param('planId') planId: string,
-        @UploadedFiles() files: Express.Multer.File[],
+        @Body('images') images: { url: string }[],
     ) {
-        if (!files || files.length === 0) {
+        if (!images || images.length === 0) {
             throw new BadRequestException('At least one image is required');
         }
-
-        const totalGallerySize = files.reduce(
-            (sum, file) => sum + file.size,
-            0,
-        );
-
-        if (totalGallerySize > maxSizeGallery) {
-            throw new BadRequestException(
-                'Total Plan image size must not exceed 50MB',
-            );
-        }
-
-        const folder = "uploads/plans/gallery";
-        const uploadedUrls = await this.s3Service.uploadMultipleFiles(
-            files,
-            folder,
-        );
-
-        const imagePayload = uploadedUrls.map((url) => ({ url }));
-
+        const imagePayload = images.map((img) => ({ url: img.url }));
         return this.plansService.addPlanImages(planId, imagePayload);
     }
 
