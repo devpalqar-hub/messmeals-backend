@@ -26,11 +26,11 @@ import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestj
 export class MessAdminController {
     constructor(private readonly messAdminService: MessAdminService) { }
 
-    @ApiOperation({ summary: 'Create mess admin', description: 'Creates a new mess admin profile.' })
-    @Post()
-    createMessAdmin(@Body() dto: CreateMessAdminDto) {
-        return this.messAdminService.createMessAdmin(dto);
-    }
+    // @ApiOperation({ summary: 'Create mess admin', description: 'Creates a new mess admin profile.' })
+    // @Post()
+    // createMessAdmin(@Body() dto: CreateMessAdminDto) {
+    //     return this.messAdminService.createMessAdmin(dto);
+    // }
 
     @ApiOperation({ summary: 'Assign mess admin', description: 'Assigns a mess admin to a mess.' })
     @Post('assign')

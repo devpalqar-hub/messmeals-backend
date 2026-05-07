@@ -7,57 +7,57 @@ import { Role } from '@prisma/client';
 export class MessAdminService {
     constructor(private prisma: PrismaService) { }
 
-    async createMessAdmin(dto: CreateMessAdminDto) {
-        // Check if user already exists
-        const existing = await this.prisma.user.findFirst({
-            where: {
-                OR: [{ email: dto.email }, { phone: dto.phone }],
-            },
-        });
+    // async createMessAdmin(dto: CreateMessAdminDto) {
+    //     // Check if user already exists
+    //     const existing = await this.prisma.user.findFirst({
+    //         where: {
+    //             OR: [{ email: dto.email }, { phone: dto.phone }],
+    //         },
+    //     });
 
-        if (existing) {
-            throw new BadRequestException('User with this email or phone already exists');
-        }
+    //     if (existing) {
+    //         throw new BadRequestException('User with this email or phone already exists');
+    //     }
 
-        // Validate mess IDs
-        const messes = await this.prisma.mess.findMany({
-            where: { id: { in: dto.messIds } },
-        });
+    //     // Validate mess IDs
+    //     const messes = await this.prisma.mess.findMany({
+    //         where: { id: { in: dto.messIds } },
+    //     });
 
-        if (messes.length !== dto.messIds.length) {
-            throw new BadRequestException('One or more mess IDs are invalid');
-        }
+    //     if (messes.length !== dto.messIds.length) {
+    //         throw new BadRequestException('One or more mess IDs are invalid');
+    //     }
 
-        // Create user and mess admin profile
-        const user = await this.prisma.user.create({
-            data: {
-                name: dto.name,
-                email: dto.email,
-                phone: dto.phone,
-                role: Role.MESSADMIN,
-                is_verified: true,
-                messAdminProfile: {
-                    create: {
-                        messes: {
-                            connect: dto.messIds.map((id) => ({ id })),
-                        },
-                    },
-                },
-            },
-            include: {
-                messAdminProfile: {
-                    include: {
-                        messes: true,
-                    },
-                },
-            },
-        });
+    //     // Create user and mess admin profile
+    //     const user = await this.prisma.user.create({
+    //         data: {
+    //             name: dto.name,
+    //             email: dto.email,
+    //             phone: dto.phone,
+    //             role: Role.MESSADMIN,
+    //             is_verified: true,
+    //             messAdminProfile: {
+    //                 create: {
+    //                     messes: {
+    //                         connect: dto.messIds.map((id) => ({ id })),
+    //                     },
+    //                 },
+    //             },
+    //         },
+    //         include: {
+    //             messAdminProfile: {
+    //                 include: {
+    //                     messes: true,
+    //                 },
+    //             },
+    //         },
+    //     });
 
-        return {
-            message: 'Mess admin created successfully',
-            data: user,
-        };
-    }
+    //     return {
+    //         message: 'Mess admin created successfully',
+    //         data: user,
+    //     };
+    // }
 
     async assignMessAdmin(dto: AssignMessAdminDto) {
         // Check if user exists
@@ -154,9 +154,19 @@ export class MessAdminService {
                 skip,
                 take: limit,
                 where,
-                include: {
+                select: {
+                    id: true,
+                    name: true,
+                    phone: true,
+                    email: true,
+                    is_verified: true,
+                    is_active: true,
+                    role: true,
+                    createdAt: true,
+                    updatedAt: true,
                     messAdminProfile: {
-                        include: {
+                        select: {
+                            id: true,
                             messes: {
                                 select: {
                                     id: true,
@@ -187,9 +197,19 @@ export class MessAdminService {
     async findOne(userId: string) {
         const user = await this.prisma.user.findUnique({
             where: { id: userId },
-            include: {
+            select: {
+                id: true,
+                name: true,
+                phone: true,
+                email: true,
+                is_verified: true,
+                is_active: true,
+                role: true,
+                createdAt: true,
+                updatedAt: true,
                 messAdminProfile: {
-                    include: {
+                    select: {
+                        id: true,
                         messes: {
                             include: {
                                 plans: {

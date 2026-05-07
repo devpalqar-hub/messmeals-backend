@@ -154,10 +154,58 @@ export class DeliveriesService {
         const delivery = await this.prisma.deliveries.findUnique({
             where: { id },
             include: {
-                customer: true,
-                plan: true,
-                partner: true,
-                mess: true,
+                customer: {
+                    include: {
+                        user: {
+                            select: {
+                                id: true,
+                                name: true,
+                                phone: true,
+                                email: true,
+                                is_verified: true,
+                                is_active: true,
+                                role: true,
+                                createdAt: true,
+                                updatedAt: true,
+                            },
+                        },
+                        addresses: true,
+                        Wallet: true,
+                    },
+                },
+                plan: {
+                    include: {
+                        images: true,
+                        Variation: true,
+                    },
+                },
+                partner: {
+                    include: {
+                        user: {
+                            select: {
+                                id: true,
+                                name: true,
+                                phone: true,
+                                email: true,
+                                is_verified: true,
+                                is_active: true,
+                                role: true,
+                                createdAt: true,
+                                updatedAt: true,
+                            },
+                        },
+                    },
+                },
+                mess: {
+                    include: {
+                        images: true,
+                        foodTypes: true,
+                        tags: true,
+                        District: true,
+                        categories: true,
+
+                    },
+                },
             },
         });
         if (!delivery) throw new NotFoundException('Delivery not found');
