@@ -534,7 +534,7 @@ export class AuthService {
 
 
 
-    async getallmessadmin(query?: MessAdminListQueryDto) {
+    async getallmessadmin(query?: MessAdminListQueryDto, page: number = 1, limit: number = 10) {
         const { search, isActive } = query || {};
 
         const where: any = {
@@ -553,26 +553,41 @@ export class AuthService {
             where.is_active = isActive === 'true';
         }
 
-        const users = await this.prisma.user.findMany({
-            where,
-            include: {
-                messAdminProfile: {
-                    include: {
-                        messes: {
-                            select: {
-                                id: true,
-                                name: true,
-                                address: true,
-                                is_active: true,
+        const skip = (page - 1) * limit;
+
+        const [users, total] = await this.prisma.$transaction([
+            this.prisma.user.findMany({
+                where,
+                include: {
+                    messAdminProfile: {
+                        include: {
+                            messes: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    address: true,
+                                    is_active: true,
+                                },
                             },
                         },
                     },
                 },
-            },
-            orderBy: { name: 'asc' },
-        });
+                orderBy: { name: 'asc' },
+                skip,
+                take: limit,
+            }),
+            this.prisma.user.count({ where }),
+        ]);
 
-        return users;
+        return {
+            data: users,
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit),
+            },
+        };
     }
 
     async createMessAdminBySuperAdmin(dto: CreateMessAdminBySuperAdminDto) {

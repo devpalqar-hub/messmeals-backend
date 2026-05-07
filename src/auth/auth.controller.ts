@@ -79,8 +79,12 @@ export class AuthController {
     @Get('mess-admins')
     @ApiBearerAuth()
     @ApiOperation({ summary: 'List mess admins', description: 'Superadmin-only listing of mess admins.' })
+    @ApiQuery({ name: 'page', required: false, example: 1 })
+    @ApiQuery({ name: 'limit', required: false, example: 10 })
     async getAllMessAdmins(@Query() query: MessAdminListQueryDto) {
-        return this.authService.getallmessadmin(query);
+        const page = Number(query.page) || 1;
+        const limit = Number(query.limit) || 10;
+        return this.authService.getallmessadmin(query, page, limit);
     }
 
     @UseGuards(JwtAuthGuard, RolesGuard)

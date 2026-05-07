@@ -60,4 +60,12 @@ export class MessAdminListQueryDto {
     @IsOptional()
     @IsString()
     isActive?: string;
+
+    @IsOptional()
+    @IsString()
+    page?: string;
+
+    @IsOptional()
+    @IsString()
+    limit?: string;
 }
