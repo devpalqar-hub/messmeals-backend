@@ -239,13 +239,10 @@ export class MessController {
             properties: {
                 images: {
                     type: 'array',
-                    example: [{ url: 'https://cdn.example.com/mess/mess-1.jpg' }],
+                    example: ['https://cdn.example.com/mess/mess-1.jpg'],
                     items: {
-                        type: 'object',
-                        properties: {
-                            url: { type: 'string', example: 'https://cdn.example.com/mess/mess-1.jpg' },
-                        },
-                        required: ['url'],
+                        type: 'string',
+                        example: 'https://cdn.example.com/mess/mess-1.jpg',
                     },
                 },
             },
@@ -255,12 +252,12 @@ export class MessController {
     @Post(':messId/gallery/images')
     async addMessImages(
         @Param('messId') messId: string,
-        @Body('images') images: { url: string }[],
+        @Body('images') images: string[],
     ) {
         if (!images || images.length === 0) {
             throw new BadRequestException('At least one image is required');
         }
-        const imagePayload = images.map((img) => ({ url: img.url }));
+        const imagePayload = images.map((url) => ({ url }));
         return this.messService.addMessImages(messId, imagePayload);
     }
 
@@ -318,13 +315,10 @@ export class MessController {
             properties: {
                 images: {
                     type: 'array',
-                    example: [{ url: 'https://cdn.example.com/mess/cover-1.jpg' }],
+                    example: ['https://cdn.example.com/mess/cover-1.jpg'],
                     items: {
-                        type: 'object',
-                        properties: {
-                            url: { type: 'string', example: 'https://cdn.example.com/mess/cover-1.jpg' },
-                        },
-                        required: ['url'],
+                        type: 'string',
+                        example: 'https://cdn.example.com/mess/cover-1.jpg',
                     },
                 },
             },
@@ -334,13 +328,13 @@ export class MessController {
     @Post(':messId/cover/image')
     async addCoverImages(
         @Param('messId') messId: string,
-        @Body('images') images: { url: string }[],
+        @Body('images') images: string[],
         @Req() req: any,
     ) {
         if (!images || images.length === 0) {
             throw new BadRequestException('At least one image is required');
         }
-        const imagePayload = images.map((img) => ({ url: img.url }));
+        const imagePayload = images.map((url) => ({ url }));
 
         return this.messService.addCoverImages(
             messId,
