@@ -7,7 +7,7 @@ import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { PauseSubDto } from './dto/pause-sub.dto';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles("MESSADMIN", "SUPERADMIN")
@@ -84,6 +84,15 @@ export class CustomerController {
     @Patch('update-wallet/:userId')
     @ApiOperation({ summary: 'Update wallet amount', description: 'Adds funds to a customer wallet.' })
     @ApiParam({ name: 'userId', description: 'Customer profile UUID' })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                amount: { type: 'number', example: 250 },
+            },
+            required: ['amount'],
+        },
+    })
     async updateWalletAmount(
         @Param('userId') id: string,
         @Body('amount') amount: number,
@@ -119,6 +128,16 @@ export class CustomerController {
 
     @Post('add/mess')
     @ApiOperation({ summary: 'Add mess to mess admin', description: 'Connects a mess to a mess admin account.' })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                userId: { type: 'string', example: '9b8c7d6e-1234-5678-90ab-cdef12345678' },
+                messId: { type: 'string', example: 'c2b7d4af-7c5f-4d4a-9a08-2f2f7d4e3a11' },
+            },
+            required: ['userId', 'messId'],
+        },
+    })
     async addMessToMessAdmin(
         @Body('userId') userId: string,
         @Body('messId') messId: string,

@@ -16,7 +16,7 @@ import {
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { PlansService } from './plans.service';
 import { PlansDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
@@ -36,6 +36,34 @@ export class PlansController {
         description: 'Creates a new plan with optional gallery images and linked variations.'
     })
     @ApiResponse({ status: 201, description: 'Plan created successfully.' })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                planName: { type: 'string', example: 'Weekly Lunch Plan' },
+                price: { type: 'number', example: 999 },
+                minPrice: { type: 'number', example: 799 },
+                description: { type: 'string', example: 'Balanced weekday meal plan' },
+                messId: { type: 'string', example: 'c2b7d4af-7c5f-4d4a-9a08-2f2f7d4e3a11' },
+                variationIds: { type: 'array', example: ['1f2e3d4c-1111-2222-3333-444455556666'], items: { type: 'string' } },
+                isMonthlyPlan: { type: 'boolean', example: true },
+                isDailyPlan: { type: 'boolean', example: false },
+                images: {
+                    type: 'array',
+                    example: [{ url: 'https://cdn.example.com/plans/plan-1.jpg' }],
+                    items: {
+                        type: 'object',
+                        properties: {
+                            url: { type: 'string', example: 'https://cdn.example.com/plans/plan-1.jpg' },
+                            altText: { type: 'string', example: 'Plan image' },
+                            sortOrder: { type: 'number', example: 1 },
+                        },
+                    },
+                },
+            },
+            required: ['planName', 'price', 'description', 'messId'],
+        },
+    })
     @Post()
     @UsePipes(
         new ValidationPipe({
@@ -135,6 +163,25 @@ export class PlansController {
     })
     @ApiParam({ name: 'planId', description: 'Plan UUID', example: '8e6f4f4a-3bb7-4c74-9f42-5b3f7e5c7c11' })
     @ApiResponse({ status: 201, description: 'Plan images uploaded successfully.' })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                images: {
+                    type: 'array',
+                    example: [{ url: 'https://cdn.example.com/plans/plan-1.jpg' }],
+                    items: {
+                        type: 'object',
+                        properties: {
+                            url: { type: 'string', example: 'https://cdn.example.com/plans/plan-1.jpg' },
+                        },
+                        required: ['url'],
+                    },
+                },
+            },
+            required: ['images'],
+        },
+    })
     @Post(':planId/plan/images')
     async addPlanImages(
         @Param('planId') planId: string,

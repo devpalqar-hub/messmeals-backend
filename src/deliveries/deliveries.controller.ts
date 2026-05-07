@@ -19,7 +19,7 @@ import { DeliveryStatus, Role } from '@prisma/client';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 @ApiTags('Deliveries')
 @ApiBearerAuth()
@@ -100,6 +100,15 @@ export class DeliveriesController {
     }
 
     @ApiOperation({ summary: 'Create deliveries for a date', description: 'Generates deliveries for a provided date.' })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                date: { type: 'string', example: '2026-05-07' },
+            },
+            required: ['date'],
+        },
+    })
     @Post('create-by-date')
     async createDeliveries(@Body('date') date: string) {
         const parsedDate = new Date(date);

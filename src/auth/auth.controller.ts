@@ -10,7 +10,7 @@ import { Role } from '@prisma/client';
 import { SuperAdminRegisterDto } from './dto/superadmin-register.dto';
 import { SuperAdminLoginDto } from './dto/superadmin-login.dto';
 import { CreateMessAdminBySuperAdminDto, MessAdminListQueryDto, UpdateMessAdminBySuperAdminDto } from './dto/messadmin-admin.dto';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 
 @ApiTags('Auth')
@@ -127,6 +127,15 @@ export class AuthController {
     // @UseGuards(JwtAuthGuard, RolesGuard)
     // @Roles(Role.SUPERADMIN)
     @Post('admin/add/number')
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                phone: { type: 'string', example: '+919876543221' },
+            },
+            required: ['phone'],
+        },
+    })
     @ApiOperation({ summary: 'Add OTP bypass phone', description: 'Adds a phone number to the OTP bypass list.' })
     async AddPhoneNumber(@Body('phone') number: string) {
         return this.authService.AddPhoneNumber(number);

@@ -1,10 +1,13 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsNotEmpty, IsObject, IsOptional } from 'class-validator';
 
 export class RazorpayWebhookDto {
+    @ApiProperty({ example: 'payment.captured' })
     @IsString()
     @IsNotEmpty()
     event: string;
 
+    @ApiProperty({ type: 'object', additionalProperties: true })
     @IsObject()
     @IsNotEmpty()
     payload: {

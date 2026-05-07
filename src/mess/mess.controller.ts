@@ -22,7 +22,7 @@ import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { FoodType, Role } from '@prisma/client';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 const maxSize = 10 * 1024 * 1024; // 50MB per media
 
 @ApiTags('Mess')
@@ -35,6 +35,48 @@ export class MessController {
     // @Roles(Role.SUPERADMIN)
     @ApiOperation({ summary: 'Create mess', description: 'Creates a mess with optional gallery images.' })
     @ApiResponse({ status: 201, description: 'Mess created successfully.' })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                name: { type: 'string', example: 'Super Meals' },
+                description: { type: 'string', example: 'Healthy daily meals delivered fresh.' },
+                address: { type: 'string', example: '123 Main Street, Bangalore' },
+                phone: { type: 'string', example: '+919876543210' },
+                email: { type: 'string', example: 'mess@example.com' },
+                is_active: { type: 'boolean', example: true },
+                isPremium: { type: 'boolean', example: false },
+                is_verified: { type: 'boolean', example: true },
+                openingHours: {
+                    type: 'object',
+                    additionalProperties: { type: 'string' },
+                    example: {
+                        Monday: '9:30-4',
+                        Tuesday: '9:30-4',
+                        Wednesday: '9:30-4',
+                    },
+                },
+                location: { type: 'string', example: 'Bangalore' },
+                messAdminIds: { type: 'array', items: { type: 'string' }, example: ['8f6f5a2a-6d3e-4c9d-8ed1-7c1c9e7b1234'] },
+                foodTypes: { type: 'array', items: { type: 'string' }, example: ['VEG', 'NON_VEG'] },
+                tags: { type: 'array', items: { type: 'string' }, example: ['BREAKFAST', 'LUNCH'] },
+                districtId: { type: 'string', example: '5f6a1b2c-3d4e-5f60-7a8b-9c0d1e2f3a4b' },
+                features: { type: 'array', items: { type: 'string' }, example: ['wifi', 'parking', 'home-delivery'] },
+                images: {
+                    type: 'array',
+                    example: [{ url: 'https://cdn.example.com/mess/gallery-1.jpg' }],
+                    items: {
+                        type: 'object',
+                        properties: {
+                            url: { type: 'string', example: 'https://cdn.example.com/mess/gallery-1.jpg' },
+                        },
+                        required: ['url'],
+                    },
+                },
+            },
+            required: ['name'],
+        },
+    })
     @Post()
     @UsePipes(
         new ValidationPipe({
@@ -118,6 +160,49 @@ export class MessController {
 
     @ApiOperation({ summary: 'Update mess', description: 'Updates a mess by UUID.' })
     @ApiParam({ name: 'id', description: 'Mess UUID' })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                name: { type: 'string', example: 'Super Meals' },
+                description: { type: 'string', example: 'Updated description for the mess.' },
+                address: { type: 'string', example: '123 Main Street, Bangalore' },
+                phone: { type: 'string', example: '+919876543210' },
+                email: { type: 'string', example: 'mess@example.com' },
+                is_active: { type: 'boolean', example: true },
+                is_verified: { type: 'boolean', example: true },
+                isPremium: { type: 'boolean', example: false },
+                openingHours: {
+                    type: 'object',
+                    additionalProperties: { type: 'string' },
+                    example: {
+                        Monday: '9:30-4',
+                        Tuesday: '9:30-4',
+                        Wednesday: '9:30-4',
+                    },
+                },
+                location: { type: 'string', example: 'Bangalore' },
+                foodTypes: { type: 'array', items: { type: 'string' }, example: ['VEG', 'NON_VEG'] },
+                tags: { type: 'array', items: { type: 'string' }, example: ['BREAKFAST', 'LUNCH'] },
+                districtId: { type: 'string', example: '5f6a1b2c-3d4e-5f60-7a8b-9c0d1e2f3a4b' },
+                features: { type: 'array', items: { type: 'string' }, example: ['wifi', 'parking', 'home-delivery'] },
+                images: {
+                    type: 'array',
+                    example: [{ id: '7e6d5c4b-3a2f-1e0d-9c8b-7a6f5e4d3c2b', url: 'https://cdn.example.com/mess/gallery-1.jpg' }],
+                    items: {
+                        type: 'object',
+                        properties: {
+                            id: { type: 'string', example: '7e6d5c4b-3a2f-1e0d-9c8b-7a6f5e4d3c2b' },
+                            url: { type: 'string', example: 'https://cdn.example.com/mess/gallery-1.jpg' },
+                            altText: { type: 'string', example: 'Front view' },
+                            isCover: { type: 'boolean', example: true },
+                            sortOrder: { type: 'number', example: 1 },
+                        },
+                    },
+                },
+            },
+        },
+    })
     @Patch(':id')
     update(
         @Param('id', ParseUUIDPipe) id: string,
@@ -148,6 +233,25 @@ export class MessController {
     // @Roles(Role.MESS_ADMIN)
     @ApiOperation({ summary: 'Add mess images', description: 'Adds gallery image URLs to a mess.' })
     @ApiParam({ name: 'messId', description: 'Mess UUID' })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                images: {
+                    type: 'array',
+                    example: [{ url: 'https://cdn.example.com/mess/mess-1.jpg' }],
+                    items: {
+                        type: 'object',
+                        properties: {
+                            url: { type: 'string', example: 'https://cdn.example.com/mess/mess-1.jpg' },
+                        },
+                        required: ['url'],
+                    },
+                },
+            },
+            required: ['images'],
+        },
+    })
     @Post(':messId/gallery/images')
     async addMessImages(
         @Param('messId') messId: string,
@@ -208,6 +312,25 @@ export class MessController {
     @Roles(Role.SUPERADMIN, Role.MESSADMIN)
     @ApiOperation({ summary: 'Add cover images', description: 'Adds cover image URL to a mess.' })
     @ApiParam({ name: 'messId', description: 'Mess UUID' })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                images: {
+                    type: 'array',
+                    example: [{ url: 'https://cdn.example.com/mess/cover-1.jpg' }],
+                    items: {
+                        type: 'object',
+                        properties: {
+                            url: { type: 'string', example: 'https://cdn.example.com/mess/cover-1.jpg' },
+                        },
+                        required: ['url'],
+                    },
+                },
+            },
+            required: ['images'],
+        },
+    })
     @Post(':messId/cover/image')
     async addCoverImages(
         @Param('messId') messId: string,
