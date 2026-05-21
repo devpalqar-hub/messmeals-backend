@@ -9,7 +9,7 @@ import { PlansModule } from './plans/plans.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UserModule } from './user/user.module';
 import { MailerModule } from '@nestjs-modules/mailer';
-import { PugAdapter } from '@nestjs-modules/mailer/dist/adapters/pug.adapter';
+import { PugAdapter } from '@nestjs-modules/mailer/adapters/pug.adapter';
 import { join } from 'path';
 import { VariationModule } from './variations/variations.module';
 import { ContactFormModule } from './contact-form/contact-form.module';
