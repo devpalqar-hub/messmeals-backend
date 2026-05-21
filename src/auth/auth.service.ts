@@ -472,6 +472,13 @@ export class AuthService {
             throw new BadRequestException('District not found');
         }
 
+        const trialEndsAt = await (async () => {
+            const cfg = await this.prisma.billingGlobalConfig.findFirst({ orderBy: { createdAt: 'desc' } });
+            const days = Number(cfg?.defaultTrialDays ?? 30);
+            if (!days || days <= 0) return null;
+            return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+        })();
+
         const created = await this.prisma.$transaction(async (tx) => {
             const user = await tx.user.create({
                 data: {
@@ -491,6 +498,11 @@ export class AuthService {
                                         email,
                                         districtId: district.id,
                                         is_verified: false,
+                                        MessBillingConfig: {
+                                            create: {
+                                                trialEndsAt,
+                                            },
+                                        },
                                     },
                                 ],
                             },

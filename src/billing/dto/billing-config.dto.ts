@@ -8,6 +8,15 @@ export class UpdateBillingGlobalConfigDto {
     @Min(0)
     defaultPerCustomerRate?: number;
 
+    @ApiPropertyOptional({
+        example: 30,
+        description: 'Default free trial duration (days) applied when a new mess is created.',
+    })
+    @IsOptional()
+    @IsInt()
+    @Min(0)
+    defaultTrialDays?: number;
+
     @ApiPropertyOptional({ example: 5, description: 'Due date is (periodEnd - dueDaysBeforePeriodEnd).' })
     @IsOptional()
     @IsInt()

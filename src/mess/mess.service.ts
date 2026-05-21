@@ -4,11 +4,13 @@ import { CreateMessDto, UpdateMessDto } from './dto/create-mess.dto';
 import { S3Service } from 'src/s3/s3.service';
 import { FoodType, Role } from '@prisma/client';
 import { CreateMessImageDto } from './dto/create-mess-image.dto';
+import { BillingService } from 'src/billing/billing.service';
 
 @Injectable()
 export class MessService {
     constructor(private prisma: PrismaService,
-        private readonly s3Service: S3Service
+        private readonly s3Service: S3Service,
+        private readonly billingService: BillingService,
     ) { }
 
 
@@ -126,6 +128,9 @@ export class MessService {
         if (!fullMess) {
             throw new NotFoundException('Mess not found');
         }
+
+        // Apply default trial period (global config) to new mess, if config not present
+        await this.billingService.ensureMessBillingConfig(fullMess.id);
 
         return {
             message: 'Mess created successfully',

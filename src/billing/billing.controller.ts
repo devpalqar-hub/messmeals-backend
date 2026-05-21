@@ -19,6 +19,7 @@ import { Roles } from 'src/common/decorators/roles.decorator';
 import { UpdateBillingGlobalConfigDto, UpdateMessBillingConfigDto } from './dto/billing-config.dto';
 import { UpsertBillingTierDto } from './dto/billing-tier.dto';
 import { InvoiceMonthQueryDto, SettleInvoiceDto } from './dto/invoice.dto';
+import { CreateInvoicePaymentOrderDto, VerifyInvoicePaymentDto } from './dto/invoice-payment.dto';
 
 @ApiTags('Billing')
 @ApiBearerAuth()
@@ -86,6 +87,32 @@ export class BillingController {
     ) {
         await this.billingService.assertUserCanAccessMess(req.user, messId);
         return this.billingService.getOrGenerateInvoice(messId, query.month);
+    }
+
+    @Post('mess/:messId/invoice/pay')
+    @Roles(Role.SUPERADMIN, Role.MESSADMIN)
+    @ApiOperation({ summary: 'Create Razorpay order to pay an invoice (superadmin, messadmin)' })
+    @ApiParam({ name: 'messId', description: 'Mess id (UUID)' })
+    async createInvoicePayOrder(
+        @Req() req: any,
+        @Param('messId', ParseUUIDPipe) messId: string,
+        @Body() dto: CreateInvoicePaymentOrderDto,
+    ) {
+        await this.billingService.assertUserCanAccessMess(req.user, messId);
+        return this.billingService.createInvoicePaymentOrder(messId, dto.month);
+    }
+
+    @Post('mess/:messId/invoice/pay/verify')
+    @Roles(Role.SUPERADMIN, Role.MESSADMIN)
+    @ApiOperation({ summary: 'Verify Razorpay payment + settle invoice (superadmin, messadmin)' })
+    @ApiParam({ name: 'messId', description: 'Mess id (UUID)' })
+    async verifyInvoicePayment(
+        @Req() req: any,
+        @Param('messId', ParseUUIDPipe) messId: string,
+        @Body() dto: VerifyInvoicePaymentDto,
+    ) {
+        await this.billingService.assertUserCanAccessMess(req.user, messId);
+        return this.billingService.verifyAndSettleInvoicePayment(messId, dto);
     }
 
     @Post('mess/:messId/settle')
