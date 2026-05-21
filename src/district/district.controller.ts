@@ -6,15 +6,16 @@ import { UpdateDistrictDto } from './dto/update-district.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
+import { Public } from 'src/common/decorators/public.decorator';
 
-@UseGuards(JwtAuthGuard, RolesGuard)
-// @Roles('SUPERADMIN')
 @ApiTags('Districts')
-@ApiBearerAuth()
 @Controller('districts')
 export class DistrictController {
     constructor(private readonly districtService: DistrictService) { }
 
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    // @Roles('SUPERADMIN')
+    @ApiBearerAuth()
     @ApiOperation({
         summary: 'Create district',
         description: 'Creates a new district record.'
@@ -31,6 +32,7 @@ export class DistrictController {
     })
     @ApiResponse({ status: 200, description: 'Districts fetched successfully.' })
     @Get()
+    @Public()
     findAll() {
         return this.districtService.findAll();
     }
@@ -42,10 +44,14 @@ export class DistrictController {
     @ApiParam({ name: 'id', description: 'District UUID', example: '8e6f4f4a-3bb7-4c74-9f42-5b3f7e5c7c11' })
     @ApiResponse({ status: 200, description: 'District fetched successfully.' })
     @Get(':id')
+    @Public()
     findOne(@Param('id') id: string) {
         return this.districtService.findOne(id);
     }
 
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    // @Roles('SUPERADMIN')
+    @ApiBearerAuth()
     @ApiOperation({
         summary: 'Update district',
         description: 'Updates an existing district by UUID.'
@@ -60,6 +66,9 @@ export class DistrictController {
         return this.districtService.update(id, dto);
     }
 
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    // @Roles('SUPERADMIN')
+    @ApiBearerAuth()
     @ApiOperation({
         summary: 'Delete district',
         description: 'Deletes a district by UUID.'

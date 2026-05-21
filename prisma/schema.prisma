@@ -67,6 +67,12 @@ enum Tags {
   TRUSTED_MESS
 }
 
+enum InvoiceStatus {
+  UNPAID
+  PAID
+  OVERDUE
+}
+
 model User {
   id                     String                  @id @default(uuid())
   name                   String
@@ -262,6 +268,67 @@ model Mess {
   District               District?                @relation(fields: [districtId], references: [id])
   districtId             String?
   Enquiry                Enquiry[]
+
+  // Billing control
+  billingDisabled      Boolean            @default(false)
+  billingDisabledAt    DateTime?
+  billingReactivatesAt DateTime?
+  MessBillingConfig    MessBillingConfig?
+  MessInvoice          MessInvoice[]
+}
+
+model BillingGlobalConfig {
+  id                     String   @id @default(uuid())
+  defaultPerCustomerRate Decimal  @default(4.00)
+  dueDaysBeforePeriodEnd Int      @default(5)
+  graceDaysAfterDue      Int      @default(5)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+model BillingTier {
+  id              String   @id @default(uuid())
+  minCustomers    Int
+  maxCustomers    Int?
+  perCustomerRate Decimal  @default(0.00)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([minCustomers, maxCustomers])
+}
+
+model MessBillingConfig {
+  id                      String    @id @default(uuid())
+  messId                  String    @unique
+  trialEndsAt             DateTime?
+  perCustomerRateOverride Decimal?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  mess Mess @relation(fields: [messId], references: [id], onDelete: Cascade)
+}
+
+model MessInvoice {
+  id            String        @id @default(uuid())
+  messId        String
+  periodStart   DateTime
+  periodEnd     DateTime
+  dueDate       DateTime
+  customerCount Int
+  rate          Decimal       @default(0.00)
+  amount        Decimal       @default(0.00)
+  status        InvoiceStatus @default(UNPAID)
+  paidAt        DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  mess Mess @relation(fields: [messId], references: [id], onDelete: Cascade)
+
+  @@unique([messId, periodStart, periodEnd])
+  @@index([messId, status])
+  @@index([dueDate])
 }
 
 model MessImages {
