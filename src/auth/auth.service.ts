@@ -10,7 +10,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { RegisterDeliveryAgentDto, RegisterDto, UserRegisterDto } from './dto/Registration.dto';
 import { LoginDto } from './dto/login.dto';
 import { UserService } from 'src/user/user.service';
-import { DeliveryStatus, Role } from '@prisma/client';
+import { DeliveryStatus, EnquiryType, Role } from '@prisma/client';
 import { generate6DigitOtp } from 'src/common/utility/utils';
 import { MailerService } from '@nestjs-modules/mailer';
 import { subDays, startOfDay, endOfDay } from 'date-fns';
@@ -19,6 +19,7 @@ import { TwoFactorService } from 'src/twofactor/twofactor.service';
 import { SuperAdminLoginDto } from './dto/superadmin-login.dto';
 import { SuperAdminRegisterDto } from './dto/superadmin-register.dto';
 import { CreateMessAdminBySuperAdminDto, UpdateMessAdminBySuperAdminDto, MessAdminListQueryDto } from './dto/messadmin-admin.dto';
+import { MessOwnerSendOtpDto, MessOwnerSignupDto } from './dto/mess-owner-signup.dto';
 import * as bcrypt from 'bcrypt';
 
 
@@ -290,6 +291,264 @@ export class AuthService {
             status: 200,
         };
 
+    }
+
+    async sendOtpForMessOwnerSignup(dto: MessOwnerSendOtpDto) {
+        const ownerName = (dto.ownerName ?? dto.name).trim();
+        const messName = dto.messName.trim();
+        const phone = dto.phone.trim();
+        const email = dto.email.trim().toLowerCase();
+        const districtName = dto.district.trim();
+
+        const existingUser = await this.prisma.user.findFirst({
+            where: {
+                OR: [{ phone }, { email }],
+            },
+            select: { id: true },
+        });
+
+        if (existingUser) {
+            throw new BadRequestException('User already exists with this phone or email');
+        }
+
+        const district = await this.prisma.district.findFirst({
+            where: {
+                name: {
+                    equals: districtName,
+                },
+            },
+            select: { id: true, name: true },
+        });
+
+        if (!district) {
+            throw new BadRequestException('District not found');
+        }
+
+        // Mirror existing OTP behavior, but keep a safe dev fallback.
+        if (process.env.NODE_ENV === 'PRODUCTION') {
+            const numbers = await this.prisma.phoneNumbers.findUnique({
+                where: { phone },
+            });
+
+            if (numbers) {
+                // Store a lightweight internal OTP session marker so signup can resolve without a sessionId.
+                await this.prisma.enquiry.create({
+                    data: {
+                        name: ownerName,
+                        email,
+                        phone,
+                        message: 'OTP_SESSION:bypass',
+                        enquiryType: EnquiryType.MESS_OWNER,
+                        messname: messName,
+                        district: district.name,
+                    },
+                });
+                return {
+                    message: 'OTP sent successfully',
+                    otp: '123456',
+                    status: 200,
+                };
+            }
+
+            const otpResponse = await this.otpservice.sendOtp(phone);
+
+            // Store sessionId internally (keyed by phone) so client does not need to manage it.
+            await this.prisma.enquiry.create({
+                data: {
+                    name: ownerName,
+                    email,
+                    phone,
+                    message: `OTP_SESSION:${otpResponse.Details}`,
+                    enquiryType: EnquiryType.MESS_OWNER,
+                    messname: messName,
+                    district: district.name,
+                },
+            });
+
+            return {
+                message: 'OTP sent successfully',
+                status: 200,
+            };
+        }
+
+        // Non-production (local/dev) fallback
+
+        await this.prisma.enquiry.create({
+            data: {
+                name: ownerName,
+                email,
+                phone,
+                message: 'OTP_SESSION:local-dev',
+                enquiryType: EnquiryType.MESS_OWNER,
+                messname: messName,
+                district: district.name,
+            },
+        });
+
+        return {
+            message: 'OTP sent successfully',
+            otp: '123456',
+            status: 200,
+        };
+    }
+
+    async signupMessOwner(dto: MessOwnerSignupDto) {
+        const ownerName = (dto.ownerName ?? dto.name).trim();
+        const messName = dto.messName.trim();
+        const phone = dto.phone.trim();
+        const email = dto.email.trim().toLowerCase();
+        const address = dto.address.trim();
+        const districtName = dto.district.trim();
+
+        // 1) Resolve OTP sessionId internally by phone (last 10 minutes)
+        const sessionRow = await this.prisma.enquiry.findFirst({
+            where: {
+                enquiryType: EnquiryType.MESS_OWNER,
+                phone,
+                message: {
+                    startsWith: 'OTP_SESSION:',
+                },
+                createdAt: {
+                    gte: new Date(Date.now() - 10 * 60 * 1000),
+                },
+            },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true, message: true },
+        });
+
+        if (!sessionRow) {
+            throw new BadRequestException('OTP session not found or expired. Please request OTP again.');
+        }
+
+        const sessionId = sessionRow.message.replace('OTP_SESSION:', '').trim();
+
+        // 2) OTP verification first
+        if (process.env.NODE_ENV === 'PRODUCTION') {
+            const numbers = await this.prisma.phoneNumbers.findUnique({
+                where: { phone },
+            });
+
+            if (!numbers) {
+                const verify = await this.otpservice.verifyOtp(sessionId, dto.otp);
+                if (verify.Status !== 'Success') {
+                    throw new UnauthorizedException('Invalid OTP');
+                }
+            } else {
+                if (dto.otp !== '123456') {
+                    throw new BadRequestException('Otp not correct');
+                }
+            }
+        } else {
+            // dev fallback: accept only 123456
+            if (dto.otp !== '123456') {
+                throw new BadRequestException('Otp not correct');
+            }
+        }
+
+        // cleanup: remove the OTP session marker record
+        await this.prisma.enquiry.delete({ where: { id: sessionRow.id } }).catch(() => undefined);
+
+        const existingUser = await this.prisma.user.findFirst({
+            where: {
+                OR: [{ phone }, { email }],
+            },
+            select: { id: true },
+        });
+
+        if (existingUser) {
+            throw new BadRequestException('User already exists with this phone or email');
+        }
+
+        const district = await this.prisma.district.findFirst({
+            where: {
+                name: {
+                    equals: districtName,
+                },
+            },
+            select: { id: true, name: true },
+        });
+
+        if (!district) {
+            throw new BadRequestException('District not found');
+        }
+
+        const created = await this.prisma.$transaction(async (tx) => {
+            const user = await tx.user.create({
+                data: {
+                    name: ownerName,
+                    phone,
+                    email,
+                    role: Role.MESSADMIN,
+                    is_verified: true,
+                    messAdminProfile: {
+                        create: {
+                            messes: {
+                                create: [
+                                    {
+                                        name: messName,
+                                        address,
+                                        phone,
+                                        email,
+                                        districtId: district.id,
+                                        is_verified: false,
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                },
+                include: {
+                    messAdminProfile: {
+                        include: {
+                            messes: {
+                                include: {
+                                    District: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            const createdMess = user.messAdminProfile?.messes?.[0];
+
+            await tx.enquiry.create({
+                data: {
+                    name: ownerName,
+                    email,
+                    phone,
+                    message: `New mess owner signup request for ${messName}`,
+                    enquiryType: EnquiryType.MESS_OWNER,
+                    messId: createdMess?.id,
+                    messname: messName,
+                    district: district.name,
+                },
+            });
+
+            return { user };
+        });
+
+        const accessToken = await this.jwtService.signAsync({
+            sub: created.user.id,
+            phone: created.user.phone,
+            email: created.user.email,
+            role: created.user.role,
+        });
+
+        return {
+            message: 'Mess owner signed up successfully',
+            accessToken,
+            user: {
+                id: created.user.id,
+                name: created.user.name,
+                phone: created.user.phone,
+                email: created.user.email,
+                role: created.user.role,
+                profile: created.user.messAdminProfile,
+                messes: created.user.messAdminProfile?.messes ?? [],
+            },
+            status: 201,
+        };
     }
 
 

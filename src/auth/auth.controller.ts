@@ -11,6 +11,7 @@ import { SuperAdminRegisterDto } from './dto/superadmin-register.dto';
 import { SuperAdminLoginDto } from './dto/superadmin-login.dto';
 import { CreateMessAdminBySuperAdminDto, MessAdminListQueryDto, UpdateMessAdminBySuperAdminDto } from './dto/messadmin-admin.dto';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { MessOwnerSendOtpDto, MessOwnerSignupDto } from './dto/mess-owner-signup.dto';
 
 
 @ApiTags('Auth')
@@ -37,6 +38,26 @@ export class AuthController {
     @ApiResponse({ status: 200, description: 'OTP verified successfully.' })
     async verifyOtp(@Body() otpVerifyDto: OtpVerifyDto) {
         return this.authService.verifyOtp(otpVerifyDto);
+    }
+
+    @Post('mess-owner/send-otp')
+    @ApiOperation({
+        summary: 'Send OTP for mess owner signup',
+        description: 'Sends an OTP to a new mess owner. Fails if phone/email already exists.',
+    })
+    @ApiResponse({ status: 200, description: 'OTP sent successfully.' })
+    sendOtpForMessOwnerSignup(@Body() dto: MessOwnerSendOtpDto) {
+        return this.authService.sendOtpForMessOwnerSignup(dto);
+    }
+
+    @Post('mess-owner/signup')
+    @ApiOperation({
+        summary: 'Mess owner signup',
+        description: 'Verifies OTP, then creates a mess owner (MESSADMIN) account + mess + enquiry, and returns access token + owner profile.',
+    })
+    @ApiResponse({ status: 201, description: 'Mess owner signed up successfully.' })
+    signupMessOwner(@Body() dto: MessOwnerSignupDto) {
+        return this.authService.signupMessOwner(dto);
     }
 
 
