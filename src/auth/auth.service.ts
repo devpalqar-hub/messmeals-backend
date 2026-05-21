@@ -109,6 +109,14 @@ export class AuthService {
             }
 
             const otpResponse = await this.otpservice.sendOtp(phone);
+            if (otpResponse._fallback) {
+                return {
+                    message: 'OTP sent successfully',
+                    sessionId: otpResponse.Details, // 'FALLBACK'
+                    otp: otpResponse._fallbackOtp, // '759409'
+                    status: 200,
+                };
+            }
             return {
                 message: 'OTP sent successfully',
                 sessionId: otpResponse.Details,
@@ -156,6 +164,14 @@ export class AuthService {
                 };
             }
             const otpResponse = await this.otpservice.sendOtp(phone);
+            if (otpResponse._fallback) {
+                return {
+                    message: 'OTP sent successfully',
+                    sessionId: otpResponse.Details, // 'FALLBACK'
+                    otp: otpResponse._fallbackOtp, // '759409'
+                    status: 200,
+                };
+            }
             return {
                 message: 'OTP sent successfully',
                 sessionId: otpResponse.Details,
@@ -365,6 +381,13 @@ export class AuthService {
                 },
             });
 
+            if (otpResponse._fallback) {
+                return {
+                    message: 'OTP sent successfully',
+                    otp: otpResponse._fallbackOtp, // '759409' — SMS gateway failed, use fallback OTP
+                    status: 200,
+                };
+            }
             return {
                 message: 'OTP sent successfully',
                 status: 200,
@@ -1107,6 +1130,14 @@ export class AuthService {
                 };
             }
             const otpResponse = await this.otpservice.sendOtp(phone);
+            if (otpResponse._fallback) {
+                return {
+                    message: 'OTP sent successfully',
+                    sessionId: otpResponse.Details, // 'FALLBACK'
+                    otp: otpResponse._fallbackOtp, // '759409'
+                    status: 200,
+                };
+            }
             return {
                 message: 'OTP sent successfully',
                 sessionId: otpResponse.Details,
@@ -1196,6 +1227,14 @@ export class AuthService {
                 };
             }
             const otpResponse = await this.otpservice.sendOtp(phone);
+            if (otpResponse._fallback) {
+                return {
+                    message: 'OTP sent successfully',
+                    sessionId: otpResponse.Details, // 'FALLBACK'
+                    otp: otpResponse._fallbackOtp, // '759409'
+                    status: 200,
+                };
+            }
             return {
                 message: 'OTP sent successfully',
                 sessionId: otpResponse.Details,

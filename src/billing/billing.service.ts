@@ -388,9 +388,17 @@ export class BillingService {
             return { message: 'Invoice already paid', invoice };
         }
 
-        const ok = this.verifyRazorpayPaymentSignature(dto.razorpayOrderId, dto.razorpayPaymentId, dto.razorpaySignature);
-        if (!ok) {
-            throw new BadRequestException('Invalid Razorpay signature');
+        // For simulated orders (created when Razorpay keys are not configured), skip real signature verification.
+        const isSimulatedOrder =
+            invoice.razorpayPaymentMeta &&
+            typeof invoice.razorpayPaymentMeta === 'object' &&
+            (invoice.razorpayPaymentMeta as any)._simulated === true;
+
+        if (!isSimulatedOrder) {
+            const ok = this.verifyRazorpayPaymentSignature(dto.razorpayOrderId, dto.razorpayPaymentId, dto.razorpaySignature);
+            if (!ok) {
+                throw new BadRequestException('Invalid Razorpay signature');
+            }
         }
 
         const updated = await this.prisma.messInvoice.update({
