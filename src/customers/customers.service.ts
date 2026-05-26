@@ -188,21 +188,67 @@ export class CustomerService {
 
         // 4️⃣ Calculate duration and price
         const startDate = new Date(start_date);
-        const endDate = new Date(end_date);
-        const numericDiscount = Number(discount);
+        if (isNaN(startDate.getTime())) {
+            throw new BadRequestException('Invalid start_date');
+        }
+
+        const deriveDefaultEndDate = () => {
+            // Default to a 1-month billing period for monthly plans.
+            // For non-monthly plans, default to a single-day subscription.
+            if (plan.isMonthlyPlan) {
+                const endExclusive = new Date(Date.UTC(
+                    startDate.getUTCFullYear(),
+                    startDate.getUTCMonth() + 1,
+                    startDate.getUTCDate(),
+                    0,
+                    0,
+                    0,
+                ));
+                const endInclusive = new Date(endExclusive);
+                endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
+                return endInclusive;
+            }
+            return new Date(startDate);
+        };
+
+        const endDate = end_date ? new Date(end_date) : deriveDefaultEndDate();
+        if (isNaN(endDate.getTime())) {
+            throw new BadRequestException('Invalid end_date');
+        }
+        if (endDate < startDate) {
+            throw new BadRequestException('end_date must be >= start_date');
+        }
+
+        const parsedDiscount = Number(discount);
+        const numericDiscount = Number.isFinite(parsedDiscount) ? parsedDiscount : 0;
+
+        const normalizedScheduleType =
+            scheduleType === ScheduleType.CUSTOM || (Array.isArray(selectedDays) && selectedDays.length > 0)
+                ? ScheduleType.CUSTOM
+                : ScheduleType.EVERYDAY;
+
+        const normalizedSelectedDays =
+            normalizedScheduleType === ScheduleType.CUSTOM
+                ? (Array.isArray(selectedDays) ? selectedDays : [])
+                : undefined;
+
+        if (normalizedScheduleType === ScheduleType.CUSTOM && (!normalizedSelectedDays || normalizedSelectedDays.length === 0)) {
+            throw new BadRequestException('Selected days are required for CUSTOM schedule type');
+        }
+
         let chargeableDays = 0;
 
         const tempDate = new Date(startDate);
 
-        if (scheduleType === ScheduleType.EVERYDAY) {
+        if (normalizedScheduleType === ScheduleType.EVERYDAY) {
             while (tempDate <= endDate) {
                 chargeableDays++;
                 tempDate.setDate(tempDate.getDate() + 1);
             }
         }
 
-        if (scheduleType === ScheduleType.CUSTOM) {
-            const selectedDaysUpper = selectedDays.map(d => d.toUpperCase());
+        if (normalizedScheduleType === ScheduleType.CUSTOM) {
+            const selectedDaysUpper = (normalizedSelectedDays ?? []).map(d => d.toUpperCase());
             const weekdayMap = [
                 'SUNDAY',
                 'MONDAY',
@@ -223,7 +269,8 @@ export class CustomerService {
         }
 
         const totalPrice = chargeableDays * Number(plan.price);
-        const discountedPrice = totalPrice - numericDiscount;
+        const appliedDiscount = Math.max(0, Math.min(numericDiscount, totalPrice));
+        const discountedPrice = totalPrice - appliedDiscount;
 
 
         // 5️⃣ Create subscription
@@ -232,14 +279,14 @@ export class CustomerService {
                 customerProfileId: customerProfile.id,
                 start_date: startDate,
                 end_date: endDate,
-                discount: numericDiscount,
+                discount: appliedDiscount,
                 totalPrice,
                 discountedPrice,
                 messId: plan.messId,
                 deliveryPartnerProfileId: deliveryPartnerId,
                 planId,
-                scheduleType,
-                selectedDays: scheduleType === 'CUSTOM' ? selectedDays : undefined,
+                scheduleType: normalizedScheduleType,
+                selectedDays: normalizedScheduleType === ScheduleType.CUSTOM ? normalizedSelectedDays : undefined,
             },
         });
 
@@ -253,7 +300,7 @@ export class CustomerService {
             comparison: currentDate <= endDate,
         });
 
-        if (scheduleType === ScheduleType.EVERYDAY) {
+        if (normalizedScheduleType === ScheduleType.EVERYDAY) {
             // ➤ Create deliveries for each day in range
             while (currentDate <= endDate) {
                 deliveriesToCreate.push({
@@ -267,9 +314,9 @@ export class CustomerService {
                 });
                 currentDate.setDate(currentDate.getDate() + 1);
             }
-        } else if (scheduleType === ScheduleType.CUSTOM && Array.isArray(selectedDays)) {
+        } else if (normalizedScheduleType === ScheduleType.CUSTOM && Array.isArray(normalizedSelectedDays)) {
             // ➤ Create deliveries only on selected weekdays
-            const selectedDaysUpper = selectedDays.map((d) => d.toUpperCase());
+            const selectedDaysUpper = normalizedSelectedDays.map((d) => d.toUpperCase());
             const weekdayMap = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 
             while (currentDate <= endDate) {
@@ -701,9 +748,40 @@ export class CustomerService {
             where: { id: customerProfileId }
         })
         const startDate = new Date(start_date);
-        const endDate = new Date(end_date);
-        const actualPrice = plan.price
-        const discountedPrice = Number(actualPrice) - Number(discount)
+        if (isNaN(startDate.getTime())) {
+            throw new BadRequestException('Invalid start_date');
+        }
+
+        const deriveDefaultEndDate = () => {
+            if (plan.isMonthlyPlan) {
+                const endExclusive = new Date(Date.UTC(
+                    startDate.getUTCFullYear(),
+                    startDate.getUTCMonth() + 1,
+                    startDate.getUTCDate(),
+                    0,
+                    0,
+                    0,
+                ));
+                const endInclusive = new Date(endExclusive);
+                endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
+                return endInclusive;
+            }
+            return new Date(startDate);
+        };
+
+        const endDate = end_date ? new Date(end_date) : deriveDefaultEndDate();
+        if (isNaN(endDate.getTime())) {
+            throw new BadRequestException('Invalid end_date');
+        }
+        if (endDate < startDate) {
+            throw new BadRequestException('end_date must be >= start_date');
+        }
+
+        const actualPrice = Number(plan.price);
+        const parsedDiscount = Number(discount);
+        const numericDiscount = Number.isFinite(parsedDiscount) ? parsedDiscount : 0;
+        const appliedDiscount = Math.max(0, Math.min(numericDiscount, actualPrice));
+        const discountedPrice = actualPrice - appliedDiscount;
         const userSubscription = await this.prisma.userSubscriptions.create({
             data: {
                 start_date: startDate,
@@ -711,7 +789,7 @@ export class CustomerService {
                 totalPrice: actualPrice,
                 deliveryPartnerProfileId: deliveryPartnerId,
                 planId: planId,
-                discount: discount,
+                discount: appliedDiscount,
                 messId: plan.messId,
                 discountedPrice: discountedPrice,
                 customerProfileId: customerProfileId
@@ -1225,7 +1303,17 @@ export class CustomerService {
             cancelUrl,
         } = dto;
 
-        if (ScheduleType.CUSTOM === scheduleType && (!selectedDays || selectedDays.length === 0)) {
+        const normalizedScheduleType =
+            scheduleType === ScheduleType.CUSTOM || (Array.isArray(selectedDays) && selectedDays.length > 0)
+                ? ScheduleType.CUSTOM
+                : ScheduleType.EVERYDAY;
+
+        const normalizedSelectedDays =
+            normalizedScheduleType === ScheduleType.CUSTOM
+                ? (Array.isArray(selectedDays) ? selectedDays : [])
+                : undefined;
+
+        if (normalizedScheduleType === ScheduleType.CUSTOM && (!normalizedSelectedDays || normalizedSelectedDays.length === 0)) {
             throw new BadRequestException('Selected days are required for CUSTOM schedule type');
         }
         let address = await this.prisma.userAddress.findUnique({ where: { id: addressId } });
@@ -1243,7 +1331,34 @@ export class CustomerService {
 
         // Calculate duration and price
         const startDate = new Date(start_date);
-        const endDate = new Date(end_date);
+        if (isNaN(startDate.getTime())) {
+            throw new BadRequestException('Invalid start_date');
+        }
+
+        const deriveDefaultEndDate = () => {
+            if (plan.isMonthlyPlan) {
+                const endExclusive = new Date(Date.UTC(
+                    startDate.getUTCFullYear(),
+                    startDate.getUTCMonth() + 1,
+                    startDate.getUTCDate(),
+                    0,
+                    0,
+                    0,
+                ));
+                const endInclusive = new Date(endExclusive);
+                endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
+                return endInclusive;
+            }
+            return new Date(startDate);
+        };
+
+        const endDate = end_date ? new Date(end_date) : deriveDefaultEndDate();
+        if (isNaN(endDate.getTime())) {
+            throw new BadRequestException('Invalid end_date');
+        }
+        if (endDate < startDate) {
+            throw new BadRequestException('end_date must be >= start_date');
+        }
         const diffInMs = endDate.getTime() - startDate.getTime();
         const diffInDays = Math.ceil(diffInMs / (1000 * 60 * 60 * 24));
         const totalPrice = diffInDays * Number(plan.price);
@@ -1269,8 +1384,8 @@ export class CustomerService {
                 discountedPrice: totalPrice,
                 messId: plan.messId,
                 planId,
-                scheduleType,
-                selectedDays: scheduleType === 'CUSTOM' ? selectedDays : undefined,
+                scheduleType: normalizedScheduleType,
+                selectedDays: normalizedScheduleType === ScheduleType.CUSTOM ? normalizedSelectedDays : undefined,
                 userAddressId: addressId,
                 is_active: false, // mark inactive until payment success
             },
