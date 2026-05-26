@@ -1,16 +1,5 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, Matches } from 'class-validator';
-
-export class CreateInvoicePaymentOrderDto {
-    @ApiPropertyOptional({
-        example: '2026-05',
-        description: 'Invoice month in YYYY-MM. Defaults to current month.',
-    })
-    @IsOptional()
-    @IsString()
-    @Matches(/^\d{4}-\d{2}$/)
-    month?: string;
-}
+import { ApiProperty } from '@nestjs/swagger';
+import { IsString } from 'class-validator';
 
 export class VerifyInvoicePaymentDto {
     @ApiProperty({ example: 'order_9A33XWu170gUtm', description: 'Razorpay order id.' })

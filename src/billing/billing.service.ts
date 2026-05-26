@@ -17,6 +17,30 @@ function monthToRange(month?: string) {
     return { start, end };
 }
 
+function parseYearMonthToUtcDate(month: string) {
+    const [yearStr, monthStr] = month.split('-');
+    const year = Number(yearStr);
+    const m = Number(monthStr);
+    if (!year || !m || m < 1 || m > 12) {
+        throw new BadRequestException('Invalid month. Expected YYYY-MM');
+    }
+    return new Date(Date.UTC(year, m - 1, 1, 0, 0, 0));
+}
+
+function addMonthsUtc(date: Date, months: number) {
+    const y = date.getUTCFullYear();
+    const m = date.getUTCMonth();
+    const d = date.getUTCDate();
+
+    const targetMonthIndex = m + months;
+    const targetYear = y + Math.floor(targetMonthIndex / 12);
+    const targetMonth = ((targetMonthIndex % 12) + 12) % 12;
+
+    const lastDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+    const day = Math.min(d, lastDay);
+    return new Date(Date.UTC(targetYear, targetMonth, day, 0, 0, 0));
+}
+
 @Injectable()
 export class BillingService {
     constructor(private readonly prisma: PrismaService) { }
@@ -155,8 +179,9 @@ export class BillingService {
         });
     }
 
-    async listTiers() {
+    async listTiers(role?: Role) {
         return this.prisma.billingTier.findMany({
+            where: role === Role.USER ? { isActive: true } : undefined,
             orderBy: [{ minCustomers: 'asc' }, { maxCustomers: 'asc' }],
         });
     }
@@ -220,6 +245,48 @@ export class BillingService {
         return distinct.size;
     }
 
+    private async getPendingInvoice(messId: string) {
+        return this.prisma.messInvoice.findFirst({
+            where: {
+                messId,
+                status: InvoiceStatus.UNPAID,
+            },
+            orderBy: [
+                { dueDate: 'asc' },
+                { createdAt: 'asc' },
+            ],
+        });
+    }
+
+    private async resolveInvoicePeriodRange(messId: string, month?: string, now: Date = new Date()) {
+        const referenceDate = month ? parseYearMonthToUtcDate(month) : now;
+
+        // Anchor billing cycle to the first-ever customer subscription for this mess.
+        // If no subscriptions exist yet, fall back to calendar-month periods.
+        const firstSubscription = await this.prisma.userSubscriptions.findFirst({
+            where: { messId },
+            orderBy: { createdAt: 'asc' },
+            select: { createdAt: true },
+        });
+
+        if (!firstSubscription?.createdAt) {
+            const legacy = monthToRange(month);
+            return { periodStart: legacy.start, periodEnd: legacy.end, referenceDate };
+        }
+
+        const anchor = firstSubscription.createdAt;
+        let periodStart = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), anchor.getUTCDate(), 0, 0, 0));
+        if (referenceDate < periodStart) {
+            return { periodStart, periodEnd: addMonthsUtc(periodStart, 1), referenceDate };
+        }
+
+        while (addMonthsUtc(periodStart, 1) <= referenceDate) {
+            periodStart = addMonthsUtc(periodStart, 1);
+        }
+        const periodEnd = addMonthsUtc(periodStart, 1);
+        return { periodStart, periodEnd, referenceDate };
+    }
+
     async getOrGenerateInvoice(messId: string, month?: string) {
         const mess = await this.prisma.mess.findUnique({
             where: { id: messId },
@@ -227,15 +294,27 @@ export class BillingService {
         });
         if (!mess) throw new NotFoundException('Mess not found');
 
-        const { start: periodStart, end: periodEnd } = monthToRange(month);
+        const { periodStart, periodEnd, referenceDate } = await this.resolveInvoicePeriodRange(messId, month);
 
         // Enforce overdue rules for the current mess before returning invoice.
         await this.enforceBillingStatus(messId);
 
-        const existing = await this.prisma.messInvoice.findFirst({
+        const existingExact = await this.prisma.messInvoice.findFirst({
             where: { messId, periodStart, periodEnd },
         });
-        if (existing) return existing;
+        if (existingExact) return existingExact;
+
+        // Safety net: during transitions (or data fixes), prevent creating multiple invoices
+        // that cover the same reference date.
+        const existingCovering = await this.prisma.messInvoice.findFirst({
+            where: {
+                messId,
+                periodStart: { lte: referenceDate },
+                periodEnd: { gt: referenceDate },
+            },
+            orderBy: { periodStart: 'desc' },
+        });
+        if (existingCovering) return existingCovering;
 
         const globalConfig = await this.getOrCreateGlobalConfig();
         const messConfig = await this.prisma.messBillingConfig.findUnique({ where: { messId } });
@@ -324,8 +403,9 @@ export class BillingService {
         return expected === signature;
     }
 
-    async createInvoicePaymentOrder(messId: string, month?: string) {
-        const invoice = await this.getOrGenerateInvoice(messId, month);
+    async createInvoicePaymentOrder(messId: string) {
+        const pendingInvoice = await this.getPendingInvoice(messId);
+        const invoice = pendingInvoice ?? await this.getOrGenerateInvoice(messId);
         if (invoice.status === InvoiceStatus.PAID) {
             return {
                 message: 'Invoice already paid',
@@ -438,9 +518,16 @@ export class BillingService {
     }
 
     async settleInvoice(messId: string, month: string) {
-        const { start: periodStart, end: periodEnd } = monthToRange(month);
+        const { periodStart, periodEnd, referenceDate } = await this.resolveInvoicePeriodRange(messId, month);
         const invoice = await this.prisma.messInvoice.findFirst({
-            where: { messId, periodStart, periodEnd },
+            where: {
+                messId,
+                OR: [
+                    { periodStart, periodEnd },
+                    { periodStart: { lte: referenceDate }, periodEnd: { gt: referenceDate } },
+                ],
+            },
+            orderBy: { periodStart: 'desc' },
         });
         if (!invoice) {
             throw new NotFoundException('Invoice not found. Generate it first.');

@@ -19,7 +19,7 @@ import { Roles } from 'src/common/decorators/roles.decorator';
 import { UpdateBillingGlobalConfigDto, UpdateMessBillingConfigDto } from './dto/billing-config.dto';
 import { UpsertBillingTierDto } from './dto/billing-tier.dto';
 import { InvoiceMonthQueryDto, SettleInvoiceDto } from './dto/invoice.dto';
-import { CreateInvoicePaymentOrderDto, VerifyInvoicePaymentDto } from './dto/invoice-payment.dto';
+import { VerifyInvoicePaymentDto } from './dto/invoice-payment.dto';
 
 @ApiTags('Billing')
 @ApiBearerAuth()
@@ -43,10 +43,10 @@ export class BillingController {
     }
 
     @Get('tiers')
-    @Roles(Role.SUPERADMIN)
-    @ApiOperation({ summary: 'List billing tiers (superadmin)' })
-    listTiers() {
-        return this.billingService.listTiers();
+    @Roles(Role.SUPERADMIN, Role.USER)
+    @ApiOperation({ summary: 'List billing tiers (superadmin, customer)' })
+    listTiers(@Req() req: any) {
+        return this.billingService.listTiers(req.user?.role);
     }
 
     @Post('tiers')
@@ -91,15 +91,14 @@ export class BillingController {
 
     @Post('mess/:messId/invoice/pay')
     @Roles(Role.SUPERADMIN, Role.MESSADMIN)
-    @ApiOperation({ summary: 'Create Razorpay order to pay an invoice (superadmin, messadmin)' })
+    @ApiOperation({ summary: 'Create Razorpay order for the pending invoice (superadmin, messadmin)' })
     @ApiParam({ name: 'messId', description: 'Mess id (UUID)' })
     async createInvoicePayOrder(
         @Req() req: any,
         @Param('messId', ParseUUIDPipe) messId: string,
-        @Body() dto: CreateInvoicePaymentOrderDto,
     ) {
         await this.billingService.assertUserCanAccessMess(req.user, messId);
-        return this.billingService.createInvoicePaymentOrder(messId, dto.month);
+        return this.billingService.createInvoicePaymentOrder(messId);
     }
 
     @Post('mess/:messId/invoice/pay/verify')
