@@ -12,21 +12,74 @@ import {
     UsePipes,
     ValidationPipe,
     UseGuards,
+    UploadedFiles,
+    UseInterceptors,
 } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
-import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { PlansService } from './plans.service';
 import { PlansDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { S3Service } from 'src/s3/s3.service';
 const maxSize = 10 * 1024 * 1024; // 50MB per media
 
 @ApiTags('Plans')
 @ApiBearerAuth()
 @Controller('plans')
 export class PlansController {
-    constructor(private readonly plansService: PlansService) { }
+    constructor(
+        private readonly plansService: PlansService,
+        private readonly s3Service: S3Service,
+    ) { }
+
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    // @Roles('SUPERADMIN')
+    @Post('images/upload')
+    @ApiOperation({
+        summary: 'Upload plan images',
+        description: 'Uploads one or more image files to S3 and returns their public URLs. Use these URLs in create/update plan APIs.'
+    })
+    @ApiConsumes('multipart/form-data')
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                files: {
+                    type: 'array',
+                    items: { type: 'string', format: 'binary' },
+                },
+            },
+            required: ['files'],
+        },
+    })
+    @ApiResponse({ status: 201, description: 'Plan images uploaded successfully.' })
+    @UseInterceptors(
+        FilesInterceptor('files', 10, {
+            limits: { fileSize: maxSize },
+            fileFilter: (_req, file, cb) => {
+                const isImage = typeof file?.mimetype === 'string' && file.mimetype.startsWith('image/');
+                if (!isImage) {
+                    return cb(new BadRequestException('Only image files are allowed') as any, false);
+                }
+                cb(null, true);
+            },
+        }),
+    )
+    async uploadPlanImages(@UploadedFiles() files: any[]) {
+        if (!files || files.length === 0) {
+            throw new BadRequestException('Files are required');
+        }
+
+        const urls = await this.s3Service.uploadMultipleFiles(files, 'plans');
+
+        return {
+            message: 'Plan images uploaded successfully',
+            urls,
+        };
+    }
 
 
     @UseGuards(JwtAuthGuard, RolesGuard)
@@ -48,6 +101,14 @@ export class PlansController {
                 variationIds: { type: 'array', example: ['1f2e3d4c-1111-2222-3333-444455556666'], items: { type: 'string' } },
                 isMonthlyPlan: { type: 'boolean', example: true },
                 isDailyPlan: { type: 'boolean', example: false },
+                planImages: {
+                    type: 'array',
+                    example: [
+                        'https://cdn.example.com/plans/plan-1.jpg',
+                        'https://cdn.example.com/plans/plan-2.jpg',
+                    ],
+                    items: { type: 'string' },
+                },
                 images: {
                     type: 'array',
                     example: [{ url: 'https://cdn.example.com/plans/plan-1.jpg' }],
@@ -77,7 +138,12 @@ export class PlansController {
         if (dto.variationIds && typeof dto.variationIds === 'string') {
             dto.variationIds = JSON.parse(dto.variationIds);
         }
-        const imagePayload = (dto.images || []).map((img) => ({ url: img.url }));
+        const urls = [
+            ...(Array.isArray(dto.planImages) ? dto.planImages : []),
+            ...((dto.images || []).map((img) => img?.url).filter(Boolean) as string[]),
+        ];
+        const uniqueUrls = [...new Set(urls)];
+        const imagePayload = uniqueUrls.map((url) => ({ url }));
 
         return this.plansService.createPlan(dto, imagePayload);
     }
@@ -135,6 +201,14 @@ export class PlansController {
                 dto.variationIds = JSON.parse(dto.variationIds);
             } catch {
                 dto.variationIds = [];
+            }
+        }
+
+        if (dto.planImages && typeof dto.planImages === 'string') {
+            try {
+                dto.planImages = JSON.parse(dto.planImages);
+            } catch {
+                dto.planImages = [];
             }
         }
 
