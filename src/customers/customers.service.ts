@@ -739,14 +739,39 @@ export class CustomerService {
 
 
     async RenewSubscription(dto: RenewSubscriptionDto) {
-        const { deliveryPartnerId, planId, start_date, end_date, discount, customerProfileId } = dto;
+        const {
+            deliveryPartnerId,
+            planId,
+            start_date,
+            end_date,
+            discount,
+            customerProfileId: providedCustomerProfileId,
+        } = dto;
+
+        const customerProfile = await this.prisma.customerProfile.findFirst({
+            where: {
+                OR: [{ id: providedCustomerProfileId }, { userId: providedCustomerProfileId }],
+            },
+        });
+        if (!customerProfile) {
+            throw new BadRequestException(
+                'Customer profile not found (customerProfileId can be CustomerProfile.id or User.id)'
+            );
+        }
+
+        const customerProfileId = customerProfile.id;
+
+        // validate delivery partner early to avoid foreign key errors
+        const deliveryPartner = await this.prisma.deliveryPartnerProfile.findUnique({
+            where: { id: deliveryPartnerId },
+        });
+        if (!deliveryPartner) throw new BadRequestException('Delivery Partner not found');
+
         const plan = await this.prisma.plans.findUnique({
             where: { id: planId },
         });
         if (!plan) throw new BadRequestException('Plan not found');
-        const customerProfile = await this.prisma.customerProfile.findUnique({
-            where: { id: customerProfileId }
-        })
+
         const startDate = new Date(start_date);
         if (isNaN(startDate.getTime())) {
             throw new BadRequestException('Invalid start_date');
@@ -798,7 +823,7 @@ export class CustomerService {
         const updatedProfile = await this.prisma.customerProfile.update({
             where: { id: customerProfileId },
             data: {
-                walletAmount: Number(customerProfile?.walletAmount) - discountedPrice
+                walletAmount: Number(customerProfile.walletAmount ?? 0) - discountedPrice
             }
         })
 

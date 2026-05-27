@@ -15,7 +15,10 @@ export class RenewSubscriptionDto {
     @IsString()
     deliveryPartnerId: string
 
-    @ApiProperty({ example: '9b8c7d6e-1234-5678-90ab-cdef12345678' })
+    @ApiProperty({
+        example: '9b8c7d6e-1234-5678-90ab-cdef12345678',
+        description: 'CustomerProfile.id (preferred) or User.id',
+    })
     @IsString()
     customerProfileId: string
 
