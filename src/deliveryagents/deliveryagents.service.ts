@@ -197,17 +197,25 @@ export class DeliveryAgentService {
         if (!user || user.role !== Role.DELIVERYAGENT) {
             throw new NotFoundException('Delivery agent not found');
         }
-        // 2️⃣ Prepare update objects
+
+        // 2️⃣ If phone is being updated, check it's not already taken
+        if (dto.phone && dto.phone !== user.phone) {
+            const phoneInUse = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
+            if (phoneInUse) throw new BadRequestException('Phone number already registered');
+        }
+
+        // 3️⃣ Prepare update objects
         const userUpdateData: any = {};
         const profileUpdateData: any = {};
         if (dto.name !== undefined) userUpdateData.name = dto.name;
+        if (dto.phone !== undefined) userUpdateData.phone = dto.phone;
         if (dto.is_active !== undefined) userUpdateData.is_active = dto.is_active;
         if (dto.address !== undefined) profileUpdateData.address = dto.address;
         if (dto.deliverAgentRegion !== undefined)
             profileUpdateData.deliverAgentRegion = dto.deliverAgentRegion;
         if (dto.messId !== undefined) profileUpdateData.messId = dto.messId;
 
-        // 3️⃣ Execute updates in a transaction (atomic)
+        // 4️⃣ Execute updates in a transaction (atomic)
         await this.prisma.$transaction(async (tx) => {
             if (Object.keys(userUpdateData).length > 0) {
                 await tx.user.update({
@@ -225,7 +233,7 @@ export class DeliveryAgentService {
                 });
             }
         });
-        // 4️⃣ Return updated agent with details
+        // 5️⃣ Return updated agent with details
         const updatedAgent = await this.prisma.user.findUnique({
             where: { id },
             include: {

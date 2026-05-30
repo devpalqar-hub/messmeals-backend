@@ -42,23 +42,28 @@ export class DeliveryAgentUpdateDto {
     @IsString()
     name?: string;
 
+    @ApiPropertyOptional({ example: '+919876543210' })
+    @IsOptional()
+    @IsString()
+    phone?: string;
+
     @ApiPropertyOptional({ example: 'Flat 42, Blue Towers' })
     @IsString()
     @IsOptional()
-    address: string;
+    address?: string;
 
     @ApiPropertyOptional({ example: 'South Zone' })
     @IsString()
     @IsOptional()
-    deliverAgentRegion: string
+    deliverAgentRegion?: string
 
     @ApiPropertyOptional({ example: 'c2b7d4af-7c5f-4d4a-9a08-2f2f7d4e3a11' })
     @IsOptional()
     @IsString()
-    messId: string
+    messId?: string
 
     @ApiPropertyOptional({ example: false })
     @IsBoolean()
     @IsOptional()
-    is_active: boolean
+    is_active?: boolean
 }
