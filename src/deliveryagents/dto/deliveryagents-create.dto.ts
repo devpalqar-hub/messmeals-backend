@@ -14,15 +14,16 @@ export class DeliveryAgentCreateDto {
     @ApiPropertyOptional({ example: 'Flat 12, Green Apartments' })
     @IsString()
     @IsOptional()
-    address: string;
+    address?: string;
 
     @ApiProperty({ example: 'c2b7d4af-7c5f-4d4a-9a08-2f2f7d4e3a11' })
     @IsString()
     messId: string
 
-    @ApiProperty({ example: 'delivery.agent@example.com' })
+    @ApiPropertyOptional({ example: 'delivery.agent@example.com' })
     @IsEmail()
-    email: string;
+    @IsOptional()
+    email?: string;
 
     @ApiProperty({ example: 'North Zone' })
     @IsString()

@@ -13,8 +13,11 @@ export class DeliveryAgentService {
 
     // Create Delivery Agent + Profile
     async create(dto: DeliveryAgentCreateDto) {
-        const existingEmail = await this.prisma.user.findUnique({ where: { email: dto.email } });
-        if (existingEmail) throw new BadRequestException('Email already registered');
+        // ✅ Check email uniqueness only when email is provided
+        if (dto.email) {
+            const existingEmail = await this.prisma.user.findUnique({ where: { email: dto.email } });
+            if (existingEmail) throw new BadRequestException('Email already registered');
+        }
 
         const existingPhone = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
         if (existingPhone) throw new BadRequestException('Phone number already registered');
@@ -30,14 +33,14 @@ export class DeliveryAgentService {
             data: {
                 name: dto.name,
                 phone: dto.phone,
-                email: dto.email,
+                ...(dto.email && { email: dto.email }),
                 role: Role.DELIVERYAGENT,
                 is_active: dto.is_active,
                 deliveryPartnerProfile: {
                     create: {
-                        address: dto.address,
+                        address: dto.address ?? null,
                         deliveryRegion: dto.deliverAgentRegion,
-                        messId: dto.messId, // 👈 added
+                        messId: dto.messId,
                     },
                 },
             },

@@ -92,6 +92,16 @@ export class DeliveriesService {
             };
         }
 
+        // Filter by delivery partner (allowed for SUPERADMIN and MESSADMIN)
+        if (query.partnerId && (user.role === Role.SUPERADMIN || user.role === Role.MESSADMIN)) {
+            where.partnerId = query.partnerId;
+        }
+
+        // Filter by mess (allowed for SUPERADMIN only)
+        if (query.messId && user.role === Role.SUPERADMIN) {
+            where.messId = query.messId;
+        }
+
         /* ================= QUERY ================= */
 
         const [deliveries, totalCount] = await this.prisma.$transaction([
