@@ -28,22 +28,27 @@ export class DeliveryAgentService {
         });
         if (!messExists) throw new BadRequestException('Mess not found');
 
-        // ✅ Create User + Partner Profile with messId
-        return this.prisma.user.create({
-            data: {
-                name: dto.name,
-                phone: dto.phone,
-                ...(dto.email && { email: dto.email }),
-                role: Role.DELIVERYAGENT,
-                is_active: dto.is_active,
-                deliveryPartnerProfile: {
-                    create: {
-                        address: dto.address ?? null,
-                        deliveryRegion: dto.deliverAgentRegion,
-                        messId: dto.messId,
-                    },
+        // ✅ Build user data — email is only added when provided (avoids Prisma type error)
+        const userData: any = {
+            name: dto.name,
+            phone: dto.phone,
+            role: Role.DELIVERYAGENT,
+            is_active: dto.is_active,
+            deliveryPartnerProfile: {
+                create: {
+                    address: dto.address ?? null,
+                    deliveryRegion: dto.deliverAgentRegion,
+                    messId: dto.messId,
                 },
             },
+        };
+
+        if (dto.email) {
+            userData.email = dto.email;
+        }
+
+        return this.prisma.user.create({
+            data: userData,
             include: { deliveryPartnerProfile: true },
         });
     }
