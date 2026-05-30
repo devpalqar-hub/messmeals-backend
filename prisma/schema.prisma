@@ -77,7 +77,7 @@ model User {
   id                     String                  @id @default(uuid())
   name                   String
   phone                  String                  @unique
-  email                  String                  @unique
+  email                  String?                 @unique
   otp                    String?
   expiresAt              DateTime?
   is_verified            Boolean                 @default(false)
