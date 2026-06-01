@@ -1,6 +1,6 @@
 import { Body, Controller, Post, Get, Query, Patch, Param, DefaultValuePipe, ParseIntPipe, Delete, UseGuards, Req, NotFoundException, BadRequestException } from '@nestjs/common';
 import { CustomerService } from './customers.service';
-import { choosePlanDto, CreateCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
+import { choosePlanDto, CreateCustomerDto, CreateSubscriptionForCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
 import { RenewSubscriptionDto } from './dto/renew-Subscription.dto';
 import { CancelSubDto } from './dto/cancel-sub.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
@@ -200,4 +200,25 @@ export class CustomerController {
     ) {
         return this.cusomerservice.PauseUserSubscription(dto, req.user.id);
     }
-} 
+
+
+    /**
+     * POST /customer/subscription/create
+     * Admin endpoint to create a new subscription for an existing customer.
+     * Pricing:
+     *   - Monthly plan  → numMonths × plan.price
+     *   - Daily plan    → chargeableDays × plan.price
+     * Deliveries are auto-generated based on the delivery schedule.
+     */
+    @Post('subscription/create')
+    @ApiOperation({
+        summary: 'Create subscription for existing customer',
+        description:
+            'Creates a new subscription for an existing customer. ' +
+            'Monthly plans are priced per calendar month; daily plans are priced per delivery day. ' +
+            'Deliveries are auto-created based on the schedule. No wallet deduction (admin operation).',
+    })
+    async createSubscription(@Body() dto: CreateSubscriptionForCustomerDto) {
+        return this.cusomerservice.createSubscriptionForCustomer(dto);
+    }
+}

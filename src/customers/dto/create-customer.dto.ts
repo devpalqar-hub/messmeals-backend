@@ -157,3 +157,66 @@ export class choosePlanDto {
     cancelUrl: string;
 
 }
+
+export class CreateSubscriptionForCustomerDto {
+    @ApiProperty({
+        example: '9b8c7d6e-1234-5678-90ab-cdef12345678',
+        description: 'CustomerProfile.id (preferred) or User.id of the existing customer',
+    })
+    @IsString()
+    customerProfileId: string;
+
+    @ApiProperty({ example: '7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111' })
+    @IsString()
+    planId: string;
+
+    @ApiProperty({ example: 'b3f4fb3e-0e61-43c3-8b3b-b833f18b2f55' })
+    @IsString()
+    deliveryPartnerId: string;
+
+    @ApiProperty({ example: '2026-06-01' })
+    @IsString()
+    start_date: string;
+
+    @ApiPropertyOptional({
+        example: '2026-08-31',
+        description:
+            'Optional. For monthly plans defaults to startDate + 1 month - 1 day. For daily plans defaults to startDate.',
+    })
+    @IsOptional()
+    @IsString()
+    end_date?: string;
+
+    @ApiProperty({
+        enum: ScheduleType,
+        example: 'EVERYDAY',
+        description: 'EVERYDAY or CUSTOM',
+    })
+    @IsEnum(ScheduleType)
+    scheduleType: ScheduleType;
+
+    @ApiPropertyOptional({
+        example: ['MONDAY', 'WEDNESDAY', 'FRIDAY'],
+        description: 'Required when scheduleType is CUSTOM',
+    })
+    @IsOptional()
+    @IsArray()
+    @IsEnum(DayOfWeek, { each: true })
+    selectedDays?: string[];
+
+    @ApiPropertyOptional({
+        example: 100,
+        description: 'Flat discount amount to deduct from totalPrice (default 0)',
+    })
+    @IsOptional()
+    @IsNumber()
+    discount?: number;
+
+    @ApiPropertyOptional({
+        example: 'a1c2e3f4-1111-2222-3333-444455556666',
+        description: 'Optional delivery address (UserAddress.id)',
+    })
+    @IsOptional()
+    @IsString()
+    userAddressId?: string;
+}

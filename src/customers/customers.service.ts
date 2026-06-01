@@ -8,7 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UserService } from 'src/user/user.service';
 import { PaymentsService } from 'src/payments/payments.service';
-import { choosePlanDto, CreateCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
+import { choosePlanDto, CreateCustomerDto, CreateSubscriptionForCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
 import { RenewSubscriptionDto } from './dto/renew-Subscription.dto';
 import { ScheduleType, Prisma, DeliveryStatus, Role } from '@prisma/client';
 import { CancelSubDto } from './dto/cancel-sub.dto';
@@ -1696,6 +1696,231 @@ export class CustomerService {
             pauseDurationDays,
             shiftedDeliveries: remainingDeliveries.length,
             newSubscriptionEndDate: newEndDate,
+        };
+    }
+
+
+    /**
+     * Admin API: Create a new subscription for an existing customer.
+     *
+     * Pricing rules:
+     *  - Monthly plan  → totalPrice = numMonths × plan.price
+     *    (numMonths = ceil of calendar-month difference between startDate and endDate)
+     *  - Daily plan    → totalPrice = chargeableDays × plan.price
+     *    (chargeableDays = days matching the delivery schedule within the date range)
+     *
+     * No wallet deduction – this is an admin record-keeping operation.
+     */
+    async createSubscriptionForCustomer(dto: CreateSubscriptionForCustomerDto) {
+        const {
+            customerProfileId: rawCustomerProfileId,
+            planId,
+            deliveryPartnerId,
+            start_date,
+            end_date,
+            scheduleType,
+            selectedDays,
+            discount,
+            userAddressId,
+        } = dto;
+
+        // ─── 1. Resolve customer profile (accept CustomerProfile.id OR User.id) ───
+        const customerProfile = await this.prisma.customerProfile.findFirst({
+            where: {
+                OR: [
+                    { id: rawCustomerProfileId },
+                    { userId: rawCustomerProfileId },
+                ],
+            },
+        });
+        if (!customerProfile) {
+            throw new BadRequestException(
+                'Customer profile not found. Provide a valid CustomerProfile.id or User.id.',
+            );
+        }
+
+        // ─── 2. Validate plan ───────────────────────────────────────────────────
+        const plan = await this.prisma.plans.findUnique({ where: { id: planId } });
+        if (!plan) throw new BadRequestException('Plan not found');
+        if (!plan.isActive) throw new BadRequestException('Plan is not active');
+
+        // ─── 3. Validate delivery partner & mess alignment ──────────────────────
+        const deliveryPartner = await this.prisma.deliveryPartnerProfile.findUnique({
+            where: { id: deliveryPartnerId },
+        });
+        if (!deliveryPartner) throw new BadRequestException('Delivery partner not found');
+        if (plan.messId !== deliveryPartner.messId) {
+            throw new BadRequestException('Plan does not belong to the delivery partner\'s mess');
+        }
+
+        // ─── 4. Validate optional address ───────────────────────────────────────
+        if (userAddressId) {
+            const addr = await this.prisma.userAddress.findUnique({ where: { id: userAddressId } });
+            if (!addr) throw new BadRequestException('User address not found');
+        }
+
+        // ─── 5. Parse & validate dates ──────────────────────────────────────────
+        const startDate = new Date(start_date);
+        if (isNaN(startDate.getTime())) throw new BadRequestException('Invalid start_date');
+
+        const deriveDefaultEndDate = () => {
+            if (plan.isMonthlyPlan) {
+                // Default: 1 calendar month, last day inclusive
+                const endExclusive = new Date(Date.UTC(
+                    startDate.getUTCFullYear(),
+                    startDate.getUTCMonth() + 1,
+                    startDate.getUTCDate(),
+                ));
+                const endInclusive = new Date(endExclusive);
+                endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
+                return endInclusive;
+            }
+            return new Date(startDate); // daily plan defaults to single day
+        };
+
+        const endDate = end_date ? new Date(end_date) : deriveDefaultEndDate();
+        if (isNaN(endDate.getTime())) throw new BadRequestException('Invalid end_date');
+        if (endDate < startDate) throw new BadRequestException('end_date must be >= start_date');
+
+        // ─── 6. Normalize schedule ──────────────────────────────────────────────
+        const normalizedScheduleType =
+            scheduleType === ScheduleType.CUSTOM ||
+            (Array.isArray(selectedDays) && selectedDays.length > 0)
+                ? ScheduleType.CUSTOM
+                : ScheduleType.EVERYDAY;
+
+        const normalizedSelectedDays =
+            normalizedScheduleType === ScheduleType.CUSTOM
+                ? (Array.isArray(selectedDays) ? selectedDays : [])
+                : undefined;
+
+        if (
+            normalizedScheduleType === ScheduleType.CUSTOM &&
+            (!normalizedSelectedDays || normalizedSelectedDays.length === 0)
+        ) {
+            throw new BadRequestException('selectedDays are required for CUSTOM schedule type');
+        }
+
+        // ─── 7. Calculate total price ────────────────────────────────────────────
+        let totalPrice = 0;
+
+        if (plan.isMonthlyPlan) {
+            // Count the number of calendar months spanned (ceiling)
+            const startYear = startDate.getUTCFullYear();
+            const startMonth = startDate.getUTCMonth();
+            const endYear = endDate.getUTCFullYear();
+            const endMonth = endDate.getUTCMonth();
+
+            // Full months between the first day of startMonth and first day of endMonth
+            const monthDiff = (endYear - startYear) * 12 + (endMonth - startMonth);
+
+            // If end date is not exactly the last day of the last full month, count one extra month
+            // Simpler: number of months = monthDiff + 1 (because we include both start and end months)
+            const numMonths = monthDiff + 1;
+
+            totalPrice = numMonths * Number(plan.price);
+        } else {
+            // Daily plan: count chargeable delivery days
+            const weekdayMap = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+            const selectedDaysUpper =
+                normalizedScheduleType === ScheduleType.CUSTOM
+                    ? (normalizedSelectedDays ?? []).map((d) => d.toUpperCase())
+                    : [];
+
+            let chargeableDays = 0;
+            const tempDate = new Date(startDate);
+            while (tempDate <= endDate) {
+                if (normalizedScheduleType === ScheduleType.EVERYDAY) {
+                    chargeableDays++;
+                } else {
+                    const dayName = weekdayMap[tempDate.getUTCDay()];
+                    if (selectedDaysUpper.includes(dayName)) chargeableDays++;
+                }
+                tempDate.setUTCDate(tempDate.getUTCDate() + 1);
+            }
+
+            totalPrice = chargeableDays * Number(plan.price);
+        }
+
+        // ─── 8. Apply discount ──────────────────────────────────────────────────
+        const numericDiscount = Number.isFinite(Number(discount)) ? Number(discount) : 0;
+        const appliedDiscount = Math.max(0, Math.min(numericDiscount, totalPrice));
+        const discountedPrice = totalPrice - appliedDiscount;
+
+        // ─── 9. Create subscription record ─────────────────────────────────────
+        const userSubscription = await this.prisma.userSubscriptions.create({
+            data: {
+                customerProfileId: customerProfile.id,
+                planId,
+                messId: plan.messId,
+                deliveryPartnerProfileId: deliveryPartnerId,
+                start_date: startDate,
+                end_date: endDate,
+                scheduleType: normalizedScheduleType,
+                selectedDays:
+                    normalizedScheduleType === ScheduleType.CUSTOM ? normalizedSelectedDays : undefined,
+                totalPrice,
+                discount: appliedDiscount,
+                discountedPrice,
+                is_active: true,
+                ...(userAddressId ? { userAddressId } : {}),
+            },
+        });
+
+        // ─── 10. Auto-create deliveries ─────────────────────────────────────────
+        const deliveriesToCreate: any[] = [];
+        const weekdayMapDelivery = [
+            'SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY',
+        ];
+        const selectedDaysUpperDelivery =
+            normalizedScheduleType === ScheduleType.CUSTOM
+                ? (normalizedSelectedDays ?? []).map((d) => d.toUpperCase())
+                : [];
+
+        const currentDate = new Date(startDate);
+        while (currentDate <= endDate) {
+            const shouldCreate =
+                normalizedScheduleType === ScheduleType.EVERYDAY ||
+                selectedDaysUpperDelivery.includes(weekdayMapDelivery[currentDate.getUTCDay()]);
+
+            if (shouldCreate) {
+                deliveriesToCreate.push({
+                    date: new Date(currentDate),
+                    customerId: customerProfile.id,
+                    planId,
+                    subscriptionId: userSubscription.id,
+                    status: DeliveryStatus.PENDING,
+                    partnerId: deliveryPartnerId,
+                    messId: plan.messId,
+                });
+            }
+            currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+        }
+
+        if (deliveriesToCreate.length > 0) {
+            await this.prisma.deliveries.createMany({ data: deliveriesToCreate });
+        }
+
+        // ─── 11. Return result ──────────────────────────────────────────────────
+        return {
+            message: 'Subscription created successfully',
+            data: {
+                subscription: {
+                    id: userSubscription.id,
+                    customerProfileId: customerProfile.id,
+                    planId,
+                    messId: plan.messId,
+                    start_date: startDate,
+                    end_date: endDate,
+                    scheduleType: normalizedScheduleType,
+                    selectedDays: normalizedSelectedDays ?? null,
+                    totalPrice,
+                    discount: appliedDiscount,
+                    discountedPrice,
+                    pricingMode: plan.isMonthlyPlan ? 'monthly' : 'daily',
+                },
+                deliveriesCreated: deliveriesToCreate.length,
+            },
         };
     }
 
