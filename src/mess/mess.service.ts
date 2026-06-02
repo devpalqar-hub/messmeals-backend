@@ -48,6 +48,7 @@ export class MessService {
                 location: dto.location,
                 openingHours: dto.openingHours,
                 features: dto.features,
+                zipcode: dto.zipcode,
 
 
                 ...(dto.districtId && {
@@ -588,6 +589,7 @@ export class MessService {
                 ...(dto.is_verified !== undefined && { is_verified: dto.is_verified }),
                 ...(dto.isPremium !== undefined && { isPremium: dto.isPremium }),
                 ...(dto.features !== undefined && { features: dto.features }),
+                ...(dto.zipcode !== undefined && { zipcode: dto.zipcode }),
 
                 ...(dto.districtId !== undefined && {
                     District: dto.districtId

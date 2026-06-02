@@ -247,6 +247,7 @@ model Mess {
   is_active   Boolean @default(true)
   latitude    String?
   logitude    String?
+  zipcode     String?
 
   foodTypes MessFoodType[] // ✅ relation
   tags      MessTag[] // ✅ relation

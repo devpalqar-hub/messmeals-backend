@@ -1,8 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString } from "class-validator";
+import { IsOptional, IsString } from 'class-validator';
+
+export class CancelDeliveryDto {
+    @ApiProperty({
+        example: '2026-06-10',
+        description: 'ISO date of the specific delivery to cancel (YYYY-MM-DD).',
+    })
+    @IsString()
+    date: string;
+}
 
 export class CancelSubDto {
-
     @ApiPropertyOptional({ example: '2026-05-20' })
     @IsString()
     @IsOptional()

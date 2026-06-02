@@ -1,16 +1,23 @@
-import { Body, Controller, Post, Get, Query, Patch, Param, DefaultValuePipe, ParseIntPipe, Delete, UseGuards, Req, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+    Body, Controller, Post, Get, Query, Patch, Param,
+    DefaultValuePipe, ParseIntPipe, Delete, UseGuards, Req,
+    NotFoundException, BadRequestException,
+} from '@nestjs/common';
 import { CustomerService } from './customers.service';
 import { choosePlanDto, CreateCustomerDto, CreateSubscriptionForCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
 import { RenewSubscriptionDto } from './dto/renew-Subscription.dto';
-import { CancelSubDto } from './dto/cancel-sub.dto';
+import { CancelDeliveryDto, CancelSubDto } from './dto/cancel-sub.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { PauseSubDto } from './dto/pause-sub.dto';
-import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+    ApiBearerAuth, ApiBody, ApiOperation, ApiParam,
+    ApiQuery, ApiTags,
+} from '@nestjs/swagger';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles("MESSADMIN", "SUPERADMIN")
+@Roles('MESSADMIN', 'SUPERADMIN')
 @ApiTags('Customers')
 @ApiBearerAuth()
 @Controller('customer')
@@ -18,7 +25,13 @@ export class CustomerController {
     constructor(private readonly cusomerservice: CustomerService) { }
 
     @Post('register-user')
-    @ApiOperation({ summary: 'Register customer', description: 'Creates a new customer and subscription flow record.' })
+    @ApiOperation({
+        summary: 'Register customer',
+        description:
+            'Creates a new customer and subscription. ' +
+            'Monthly plans: totalPrice = numMonths × plan.price (default 1 month). ' +
+            'Daily plans: totalPrice = chargeable delivery days × plan.price.',
+    })
     async register(@Body() dto: CreateCustomerDto) {
         return this.cusomerservice.CreateUser(dto);
     }
@@ -58,9 +71,9 @@ export class CustomerController {
     }
 
 
-    // 🔍 GET /customers/:id
+    // 🔍 GET /customer/:id
     @Get(':id')
-    @ApiOperation({ summary: 'Get customer by id', description: 'Fetches a customer profile by UUID.' })
+    @ApiOperation({ summary: 'Get customer by id', description: 'Fetches a customer profile by UUID. Active subscriptions include a computed status field (ACTIVE | PAUSED | CANCELLED | INACTIVE).' })
     @ApiParam({ name: 'id', description: 'Customer/user UUID' })
     async findOne(@Param('id') id: string) {
         return this.cusomerservice.findOne(id);
@@ -100,11 +113,73 @@ export class CustomerController {
         return this.cusomerservice.UpdateWalletAmount(id, amount);
     }
 
+    /**
+     * PATCH /customer/cancel-subscription/:subscriptionId
+     * Cancels delivery for a single selected date only.
+     * - Daily plan: refund 1 × plan.price to wallet.
+     * - Monthly plan: no wallet refund.
+     */
     @Patch('cancel-subscription/:subscriptionId')
-    @ApiOperation({ summary: 'Cancel subscription', description: 'Cancels a subscription with refund options.' })
+    @ApiOperation({
+        summary: 'Cancel delivery for a specific date',
+        description:
+            'Cancels the delivery of the selected date only (not the full subscription). ' +
+            'For daily plans, the day\'s price is refunded to the wallet. ' +
+            'For monthly plans, no wallet deduction/refund is applied.',
+    })
     @ApiParam({ name: 'subscriptionId', description: 'Subscription UUID' })
-    async cancelSubscription(@Param('subscriptionId') id: string, @Body() dto: CancelSubDto) {
-        return this.cusomerservice.CancelSubscription(id, dto);
+    async cancelDeliveryForDate(
+        @Param('subscriptionId') id: string,
+        @Body() dto: CancelDeliveryDto,
+    ) {
+        return this.cusomerservice.CancelDeliveryForDate(id, dto.date);
+    }
+
+    /**
+     * PATCH /customer/cancel-full-subscription/:subscriptionId
+     * Fully cancels a subscription.
+     * - Daily plan: refund remaining days × plan.price.
+     * - Monthly plan: no wallet refund.
+     */
+    @Patch('cancel-full-subscription/:subscriptionId')
+    @ApiOperation({
+        summary: 'Cancel full subscription',
+        description:
+            'Fully cancels a subscription and deactivates all future deliveries. ' +
+            'For daily plans, remaining days are refunded to the wallet. ' +
+            'For monthly plans, no refund is applied.',
+    })
+    @ApiParam({ name: 'subscriptionId', description: 'Subscription UUID' })
+    async cancelFullSubscription(@Param('subscriptionId') id: string) {
+        return this.cusomerservice.CancelFullSubscription(id);
+    }
+
+    /**
+     * GET /customer/subscription/:subscriptionId/deliveries
+     * List all deliveries for a subscription with optional filters.
+     */
+    @Get('subscription/:subscriptionId/deliveries')
+    @ApiOperation({
+        summary: 'List deliveries for a subscription',
+        description: 'Returns all deliveries for a subscription. Supports optional filters by status, date range, and pagination.',
+    })
+    @ApiParam({ name: 'subscriptionId', description: 'Subscription UUID' })
+    @ApiQuery({ name: 'status', required: false, description: 'Filter by delivery status: PENDING | PROGRESS | DELIVERED' })
+    @ApiQuery({ name: 'startDate', required: false, description: 'Filter deliveries from this date (YYYY-MM-DD)' })
+    @ApiQuery({ name: 'endDate', required: false, description: 'Filter deliveries up to this date (YYYY-MM-DD)' })
+    @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
+    @ApiQuery({ name: 'limit', required: false, description: 'Items per page (default 20)' })
+    async getDeliveriesForSubscription(
+        @Param('subscriptionId') subscriptionId: string,
+        @Query('status') status?: string,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
+        @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number = 20,
+    ) {
+        return this.cusomerservice.getDeliveriesForSubscription(
+            subscriptionId, status, startDate, endDate, page, limit,
+        );
     }
 
     @Get('variation/count')
@@ -114,7 +189,7 @@ export class CustomerController {
         return this.cusomerservice.getVariationCountByDate(date);
     }
 
-    @Get("owners/messes")
+    @Get('owners/messes')
     @ApiOperation({ summary: 'List owner messes', description: 'Returns messes available to the authenticated user.' })
     async getAllMesses(@Req() req) {
         const userId = req.user?.id;

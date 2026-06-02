@@ -138,6 +138,11 @@ export class CreateMessDto {
     @ArrayNotEmpty()
     @IsString({ each: true })
     features?: string[];
+
+    @ApiPropertyOptional({ example: '560001', description: 'Optional zipcode/pincode of the mess location' })
+    @IsOptional()
+    @IsString()
+    zipcode?: string;
 }
 
 export class UpdateMessImageDto {
@@ -254,6 +259,11 @@ export class UpdateMessDto {
     @ArrayNotEmpty()
     @IsString({ each: true })
     features?: string[];
+
+    @ApiPropertyOptional({ example: '560001', description: 'Optional zipcode/pincode of the mess location' })
+    @IsOptional()
+    @IsString()
+    zipcode?: string;
 
     @ApiPropertyOptional({
         example: [

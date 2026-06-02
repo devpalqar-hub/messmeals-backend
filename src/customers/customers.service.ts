@@ -92,6 +92,7 @@ export class CustomerService {
             deliveryPartnerId,
             start_date,
             end_date,
+            numMonths,
 
             // phase 2
             scheduleType,
@@ -192,26 +193,29 @@ export class CustomerService {
             throw new BadRequestException('Invalid start_date');
         }
 
-        const deriveDefaultEndDate = () => {
-            // Default to a 1-month billing period for monthly plans.
-            // For non-monthly plans, default to a single-day subscription.
-            if (plan.isMonthlyPlan) {
+        // ─── Derive end date ──────────────────────────────────────────────────
+        let endDate: Date;
+
+        if (plan.isMonthlyPlan) {
+            // Monthly plan: end_date is derived from numMonths
+            const months = (numMonths && numMonths > 0) ? Math.floor(numMonths) : 1;
+            if (end_date) {
+                endDate = new Date(end_date);
+            } else {
+                // startDate + numMonths months, last day inclusive
                 const endExclusive = new Date(Date.UTC(
                     startDate.getUTCFullYear(),
-                    startDate.getUTCMonth() + 1,
+                    startDate.getUTCMonth() + months,
                     startDate.getUTCDate(),
-                    0,
-                    0,
-                    0,
                 ));
-                const endInclusive = new Date(endExclusive);
-                endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
-                return endInclusive;
+                endDate = new Date(endExclusive);
+                endDate.setUTCDate(endDate.getUTCDate() - 1);
             }
-            return new Date(startDate);
-        };
+        } else {
+            // Daily plan: use provided end_date or default to startDate (single day)
+            endDate = end_date ? new Date(end_date) : new Date(startDate);
+        }
 
-        const endDate = end_date ? new Date(end_date) : deriveDefaultEndDate();
         if (isNaN(endDate.getTime())) {
             throw new BadRequestException('Invalid end_date');
         }
@@ -236,39 +240,40 @@ export class CustomerService {
             throw new BadRequestException('Selected days are required for CUSTOM schedule type');
         }
 
-        let chargeableDays = 0;
+        // ─── Pricing ──────────────────────────────────────────────────────────
+        let totalPrice = 0;
 
-        const tempDate = new Date(startDate);
+        if (plan.isMonthlyPlan) {
+            // Monthly: count calendar months (ceiling) × plan.price (= one-month price)
+            const months = (numMonths && numMonths > 0) ? Math.floor(numMonths) : 1;
+            totalPrice = months * Number(plan.price);
+        } else {
+            // Daily: count chargeable delivery days in [startDate, endDate]
+            let chargeableDays = 0;
+            const tempDate = new Date(startDate);
 
-        if (normalizedScheduleType === ScheduleType.EVERYDAY) {
-            while (tempDate <= endDate) {
-                chargeableDays++;
-                tempDate.setDate(tempDate.getDate() + 1);
-            }
-        }
-
-        if (normalizedScheduleType === ScheduleType.CUSTOM) {
-            const selectedDaysUpper = (normalizedSelectedDays ?? []).map(d => d.toUpperCase());
-            const weekdayMap = [
-                'SUNDAY',
-                'MONDAY',
-                'TUESDAY',
-                'WEDNESDAY',
-                'THURSDAY',
-                'FRIDAY',
-                'SATURDAY',
-            ];
-
-            while (tempDate <= endDate) {
-                const dayName = weekdayMap[tempDate.getDay()];
-                if (selectedDaysUpper.includes(dayName)) {
+            if (normalizedScheduleType === ScheduleType.EVERYDAY) {
+                while (tempDate <= endDate) {
                     chargeableDays++;
+                    tempDate.setDate(tempDate.getDate() + 1);
                 }
-                tempDate.setDate(tempDate.getDate() + 1);
+            } else {
+                const selectedDaysUpper = (normalizedSelectedDays ?? []).map(d => d.toUpperCase());
+                const weekdayMap = [
+                    'SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY',
+                ];
+                while (tempDate <= endDate) {
+                    const dayName = weekdayMap[tempDate.getDay()];
+                    if (selectedDaysUpper.includes(dayName)) {
+                        chargeableDays++;
+                    }
+                    tempDate.setDate(tempDate.getDate() + 1);
+                }
             }
+
+            totalPrice = chargeableDays * Number(plan.price);
         }
 
-        const totalPrice = chargeableDays * Number(plan.price);
         const appliedDiscount = Math.max(0, Math.min(numericDiscount, totalPrice));
         const discountedPrice = totalPrice - appliedDiscount;
 
@@ -690,28 +695,50 @@ export class CustomerService {
             noOfDaysToEnd: daysLeft,
             totalOrders,
             totalSpent,
-            activeSubscriptions: activeSubs.map((sub) => ({
-                id: sub.id,
-                start_date: sub.start_date,
-                end_date: sub.end_date,
-                seletedDays: sub.selectedDays,
-                scheduletype: sub.scheduleType,
-                totalPrice: Number(sub.totalPrice),
-                discountedPrice: Number(sub.discountedPrice),
-                deliveryPartnerProfileId: sub.deliveryPartnerProfileId,
-                plan: sub.plan
-                    ? {
-                        id: sub.plan.id,
-                        name: sub.plan.planName,
-                        price: Number(sub.plan.price),
-                        description: sub.plan.description,
-                        images: sub.plan.images.map((img) => ({
-                            url: img.url,
-                            altText: img.altText,
-                        })),
-                    }
-                    : null,
-            })),
+            activeSubscriptions: activeSubs.map((sub) => {
+                const today = new Date();
+                let status: string;
+                if (sub.cancelled_on) {
+                    status = 'CANCELLED';
+                } else if (
+                    sub.pause_start_date &&
+                    sub.pause_end_date &&
+                    today >= new Date(sub.pause_start_date) &&
+                    today <= new Date(sub.pause_end_date)
+                ) {
+                    status = 'PAUSED';
+                } else if (sub.is_active) {
+                    status = 'ACTIVE';
+                } else {
+                    status = 'INACTIVE';
+                }
+
+                return {
+                    id: sub.id,
+                    start_date: sub.start_date,
+                    end_date: sub.end_date,
+                    seletedDays: sub.selectedDays,
+                    scheduletype: sub.scheduleType,
+                    totalPrice: Number(sub.totalPrice),
+                    discountedPrice: Number(sub.discountedPrice),
+                    deliveryPartnerProfileId: sub.deliveryPartnerProfileId,
+                    status,
+                    plan: sub.plan
+                        ? {
+                            id: sub.plan.id,
+                            name: sub.plan.planName,
+                            price: Number(sub.plan.price),
+                            description: sub.plan.description,
+                            isMonthlyPlan: sub.plan.isMonthlyPlan,
+                            isDailyPlan: sub.plan.isDailyPlan,
+                            images: sub.plan.images.map((img) => ({
+                                url: img.url,
+                                altText: img.altText,
+                            })),
+                        }
+                        : null,
+                };
+            }),
         };
     }
 
@@ -1924,5 +1951,260 @@ export class CustomerService {
         };
     }
 
+
+    /**
+     * Cancel delivery for a single specific date.
+     * - Marks that delivery as inactive (isActive = false).
+     * - Daily plan: refund 1 × plan.price to wallet.
+     * - Monthly plan: no wallet refund.
+     */
+    async CancelDeliveryForDate(subscriptionId: string, dateStr: string) {
+        const targetDate = new Date(dateStr);
+        if (isNaN(targetDate.getTime())) {
+            throw new BadRequestException('Invalid date format. Use YYYY-MM-DD.');
+        }
+
+        const subscription = await this.prisma.userSubscriptions.findUnique({
+            where: { id: subscriptionId },
+            include: { CustomerProfile: true, plan: true },
+        });
+
+        if (!subscription) throw new NotFoundException('Subscription not found');
+        if (!subscription.is_active) throw new BadRequestException('Subscription is not active');
+        if (!subscription.CustomerProfile) throw new BadRequestException('Customer profile not found');
+
+        const startOfDay = new Date(Date.UTC(
+            targetDate.getUTCFullYear(),
+            targetDate.getUTCMonth(),
+            targetDate.getUTCDate(),
+            0, 0, 0, 0,
+        ));
+        const endOfDay = new Date(Date.UTC(
+            targetDate.getUTCFullYear(),
+            targetDate.getUTCMonth(),
+            targetDate.getUTCDate(),
+            23, 59, 59, 999,
+        ));
+
+        const delivery = await this.prisma.deliveries.findFirst({
+            where: {
+                subscriptionId,
+                date: { gte: startOfDay, lte: endOfDay },
+                isActive: true,
+            },
+        });
+
+        if (!delivery) {
+            throw new NotFoundException(`No active delivery found for subscription on ${dateStr}`);
+        }
+
+        if (delivery.status === 'DELIVERED') {
+            throw new BadRequestException('Cannot cancel a delivery that is already delivered');
+        }
+
+        // Soft-delete the delivery
+        await this.prisma.deliveries.update({
+            where: { id: delivery.id },
+            data: { isActive: false },
+        });
+
+        // Refund only for daily plans
+        let refundAmount = 0;
+        if (!subscription.plan.isMonthlyPlan) {
+            refundAmount = Number(subscription.plan.price);
+            const currentWallet = Number(subscription.CustomerProfile.walletAmount);
+            await this.prisma.customerProfile.update({
+                where: { id: subscription.CustomerProfile.id },
+                data: { walletAmount: currentWallet + refundAmount },
+            });
+            try {
+                await this.createWalletTransaction(
+                    subscription.CustomerProfile.id,
+                    refundAmount,
+                    { note: `Delivery cancelled for ${dateStr}`, subscriptionId, deliveryId: delivery.id },
+                );
+            } catch (err) {
+                console.error('Failed to create wallet transaction on delivery cancel:', err);
+            }
+        }
+
+        return {
+            message: `Delivery on ${dateStr} cancelled successfully`,
+            deliveryId: delivery.id,
+            refundAmount,
+            planType: subscription.plan.isMonthlyPlan ? 'monthly' : 'daily',
+            note: subscription.plan.isMonthlyPlan
+                ? 'No wallet refund for monthly plans'
+                : `Refunded ₹${refundAmount} to wallet`,
+        };
+    }
+
+    /**
+     * Fully cancel a subscription.
+     * - Marks subscription inactive.
+     * - Soft-deletes all future pending deliveries.
+     * - Daily plan: refund remaining delivery days × plan.price.
+     * - Monthly plan: no wallet refund.
+     */
+    async CancelFullSubscription(subscriptionId: string) {
+        const subscription = await this.prisma.userSubscriptions.findUnique({
+            where: { id: subscriptionId },
+            include: { CustomerProfile: true, plan: true },
+        });
+
+        if (!subscription) throw new NotFoundException('Subscription not found');
+        if (!subscription.is_active) throw new BadRequestException('Subscription is already cancelled');
+        if (!subscription.CustomerProfile) throw new BadRequestException('Customer profile not found');
+
+        const currentDate = new Date();
+
+        const futureDeliveries = await this.prisma.deliveries.findMany({
+            where: {
+                subscriptionId,
+                date: { gte: currentDate },
+                isActive: true,
+            },
+        });
+
+        const remainingDays = futureDeliveries.length;
+
+        if (remainingDays > 0) {
+            await this.prisma.deliveries.updateMany({
+                where: {
+                    subscriptionId,
+                    date: { gte: currentDate },
+                    isActive: true,
+                },
+                data: { isActive: false },
+            });
+        }
+
+        // Wallet refund — only for daily plans
+        let refundAmount = 0;
+        if (!subscription.plan.isMonthlyPlan) {
+            refundAmount = remainingDays * Number(subscription.plan.price);
+            if (refundAmount > 0) {
+                const currentWallet = Number(subscription.CustomerProfile.walletAmount);
+                await this.prisma.customerProfile.update({
+                    where: { id: subscription.CustomerProfile.id },
+                    data: { walletAmount: currentWallet + refundAmount },
+                });
+                try {
+                    await this.createWalletTransaction(
+                        subscription.CustomerProfile.id,
+                        refundAmount,
+                        { note: 'Full subscription cancellation refund', subscriptionId },
+                    );
+                } catch (err) {
+                    console.error('Failed to create wallet transaction on full cancellation:', err);
+                }
+            }
+        }
+
+        await this.prisma.userSubscriptions.update({
+            where: { id: subscriptionId },
+            data: {
+                is_active: false,
+                cancelled_on: new Date(),
+                cancellation_start_date: null,
+                cancellation_end_date: null,
+            },
+        });
+
+        return {
+            message: 'Subscription fully cancelled',
+            subscriptionId,
+            remainingDeliveriesDeactivated: remainingDays,
+            refundAmount,
+            planType: subscription.plan.isMonthlyPlan ? 'monthly' : 'daily',
+            note: subscription.plan.isMonthlyPlan
+                ? 'No wallet refund for monthly plans'
+                : `Refunded ₹${refundAmount} to wallet`,
+        };
+    }
+
+    /**
+     * List all deliveries for a subscription with optional filters.
+     */
+    async getDeliveriesForSubscription(
+        subscriptionId: string,
+        status?: string,
+        startDate?: string,
+        endDate?: string,
+        page: number = 1,
+        limit: number = 20,
+    ) {
+        const subscription = await this.prisma.userSubscriptions.findUnique({
+            where: { id: subscriptionId },
+            select: { id: true, planId: true, messId: true },
+        });
+        if (!subscription) throw new NotFoundException('Subscription not found');
+
+        const where: any = { subscriptionId };
+
+        if (status) {
+            const validStatuses = ['PENDING', 'PROGRESS', 'DELIVERED'];
+            if (!validStatuses.includes(status.toUpperCase())) {
+                throw new BadRequestException(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
+            }
+            where.status = status.toUpperCase();
+        }
+
+        if (startDate) {
+            const parsedStart = new Date(startDate);
+            if (isNaN(parsedStart.getTime())) throw new BadRequestException('Invalid startDate');
+            where.date = { ...where.date, gte: parsedStart };
+        }
+
+        if (endDate) {
+            const parsedEnd = new Date(endDate);
+            if (isNaN(parsedEnd.getTime())) throw new BadRequestException('Invalid endDate');
+            where.date = { ...where.date, lte: parsedEnd };
+        }
+
+        const skip = (page - 1) * limit;
+
+        const [deliveries, total] = await this.prisma.$transaction([
+            this.prisma.deliveries.findMany({
+                where,
+                orderBy: { date: 'asc' },
+                skip,
+                take: limit,
+                include: {
+                    partner: {
+                        include: {
+                            user: {
+                                select: { id: true, name: true, phone: true },
+                            },
+                        },
+                    },
+                },
+            }),
+            this.prisma.deliveries.count({ where }),
+        ]);
+
+        return {
+            data: deliveries.map((d) => ({
+                id: d.id,
+                date: d.date,
+                status: d.status,
+                isActive: d.isActive,
+                partnerId: d.partnerId,
+                partner: d.partner
+                    ? {
+                        id: d.partner.id,
+                        name: d.partner.user.name,
+                        phone: d.partner.user.phone,
+                    }
+                    : null,
+            })),
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit),
+            },
+        };
+    }
 
 }

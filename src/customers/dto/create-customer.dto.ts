@@ -70,6 +70,13 @@ export class CreateCustomerDto {
     @IsEnum(DayOfWeek, { each: true }) // optional if you have enum
     selectedDays: string[];
 
+    @ApiPropertyOptional({
+        example: 2,
+        description: 'Number of months for monthly plans. Ignored for daily plans. Defaults to 1 if not provided.',
+    })
+    @IsOptional()
+    @IsNumber()
+    numMonths?: number;
 
 }
 
