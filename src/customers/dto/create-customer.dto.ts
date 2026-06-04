@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsNumber, IsOptional, IsPhoneNumber, IsString, IsBoolean, IsEnum, IsJSON, IsArray } from 'class-validator';
+import { IsEmail, IsNumber, IsOptional, IsPhoneNumber, IsString, IsBoolean, IsEnum, IsJSON, IsArray, IsUUID } from 'class-validator';
 import { ScheduleType, DayOfWeek } from '@prisma/client';
 
 export class CreateCustomerDto {
@@ -71,12 +71,12 @@ export class CreateCustomerDto {
     selectedDays: string[];
 
     @ApiPropertyOptional({
-        example: 2,
-        description: 'Number of months for monthly plans. Ignored for daily plans. Defaults to 1 if not provided.',
+        example: '5f6a1b2c-3d4e-5f60-7a8b-9c0d1e2f3a4b',
+        description: 'Optional district the customer belongs to',
     })
     @IsOptional()
-    @IsNumber()
-    numMonths?: number;
+    @IsUUID()
+    districtId?: string;
 
 }
 

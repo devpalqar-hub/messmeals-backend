@@ -10,7 +10,7 @@ import { UserService } from 'src/user/user.service';
 import { PaymentsService } from 'src/payments/payments.service';
 import { choosePlanDto, CreateCustomerDto, CreateSubscriptionForCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
 import { RenewSubscriptionDto } from './dto/renew-Subscription.dto';
-import { ScheduleType, Prisma, DeliveryStatus, Role } from '@prisma/client';
+import { ScheduleType, Prisma, DeliveryStatus, VariationStatus, Role } from '@prisma/client';
 import { CancelSubDto } from './dto/cancel-sub.dto';
 import { PauseSubDto } from './dto/pause-sub.dto';
 import { Subscription } from 'rxjs';
@@ -92,7 +92,6 @@ export class CustomerService {
             deliveryPartnerId,
             start_date,
             end_date,
-            numMonths,
 
             // phase 2
             scheduleType,
@@ -196,24 +195,20 @@ export class CustomerService {
         // ─── Derive end date ──────────────────────────────────────────────────
         let endDate: Date;
 
-        if (plan.isMonthlyPlan) {
-            // Monthly plan: end_date is derived from numMonths
-            const months = (numMonths && numMonths > 0) ? Math.floor(numMonths) : 1;
-            if (end_date) {
-                endDate = new Date(end_date);
-            } else {
-                // startDate + numMonths months, last day inclusive
-                const endExclusive = new Date(Date.UTC(
-                    startDate.getUTCFullYear(),
-                    startDate.getUTCMonth() + months,
-                    startDate.getUTCDate(),
-                ));
-                endDate = new Date(endExclusive);
-                endDate.setUTCDate(endDate.getUTCDate() - 1);
-            }
+        if (end_date) {
+            endDate = new Date(end_date);
+        } else if (plan.isMonthlyPlan) {
+            // Default: 1 calendar month, last day inclusive
+            const endExclusive = new Date(Date.UTC(
+                startDate.getUTCFullYear(),
+                startDate.getUTCMonth() + 1,
+                startDate.getUTCDate(),
+            ));
+            endDate = new Date(endExclusive);
+            endDate.setUTCDate(endDate.getUTCDate() - 1);
         } else {
-            // Daily plan: use provided end_date or default to startDate (single day)
-            endDate = end_date ? new Date(end_date) : new Date(startDate);
+            // Daily plan: default to startDate (single day)
+            endDate = new Date(startDate);
         }
 
         if (isNaN(endDate.getTime())) {
@@ -244,9 +239,14 @@ export class CustomerService {
         let totalPrice = 0;
 
         if (plan.isMonthlyPlan) {
-            // Monthly: count calendar months (ceiling) × plan.price (= one-month price)
-            const months = (numMonths && numMonths > 0) ? Math.floor(numMonths) : 1;
-            totalPrice = months * Number(plan.price);
+            // Monthly: derive month count from date range (same as createSubscriptionForCustomer)
+            const startYear = startDate.getUTCFullYear();
+            const startMonth = startDate.getUTCMonth();
+            const endYear = endDate.getUTCFullYear();
+            const endMonth = endDate.getUTCMonth();
+            const monthDiff = (endYear - startYear) * 12 + (endMonth - startMonth);
+            const numMonths = monthDiff + 1;
+            totalPrice = numMonths * Number(plan.price);
         } else {
             // Daily: count chargeable delivery days in [startDate, endDate]
             let chargeableDays = 0;
@@ -342,9 +342,8 @@ export class CustomerService {
         }
 
         if (deliveriesToCreate.length > 0) {
-            await this.prisma.deliveries.createMany({
-                data: deliveriesToCreate,
-            });
+            await this.prisma.deliveries.createMany({ data: deliveriesToCreate });
+            await this.createDeliveryVariationsForPlan(planId, userSubscription.id, deliveriesToCreate.map(d => d.date));
         }
 
         // 7️⃣ Update wallet (debit for subscription)
@@ -767,14 +766,18 @@ export class CustomerService {
 
     async RenewSubscription(dto: RenewSubscriptionDto) {
         const {
+            subscriptionId,
             deliveryPartnerId,
             planId,
             start_date,
             end_date,
             discount,
             customerProfileId: providedCustomerProfileId,
+            scheduleType,
+            selectedDays,
         } = dto;
 
+        // ─── 1. Resolve customer profile ─────────────────────────────────────
         const customerProfile = await this.prisma.customerProfile.findFirst({
             where: {
                 OR: [{ id: providedCustomerProfileId }, { userId: providedCustomerProfileId }],
@@ -785,86 +788,161 @@ export class CustomerService {
                 'Customer profile not found (customerProfileId can be CustomerProfile.id or User.id)'
             );
         }
-
         const customerProfileId = customerProfile.id;
 
-        // validate delivery partner early to avoid foreign key errors
+        // ─── 2. Verify the subscription belongs to this customer ─────────────
+        const existingSubscription = await this.prisma.userSubscriptions.findUnique({
+            where: { id: subscriptionId },
+        });
+        if (!existingSubscription) throw new BadRequestException('Subscription not found');
+        if (existingSubscription.customerProfileId !== customerProfileId) {
+            throw new BadRequestException('Subscription does not belong to this customer');
+        }
+
+        // ─── 3. Validate delivery partner ────────────────────────────────────
         const deliveryPartner = await this.prisma.deliveryPartnerProfile.findUnique({
             where: { id: deliveryPartnerId },
         });
         if (!deliveryPartner) throw new BadRequestException('Delivery Partner not found');
 
-        const plan = await this.prisma.plans.findUnique({
-            where: { id: planId },
-        });
+        // ─── 4. Validate plan ─────────────────────────────────────────────────
+        const plan = await this.prisma.plans.findUnique({ where: { id: planId } });
         if (!plan) throw new BadRequestException('Plan not found');
 
+        // ─── 5. Parse & validate dates ────────────────────────────────────────
         const startDate = new Date(start_date);
-        if (isNaN(startDate.getTime())) {
-            throw new BadRequestException('Invalid start_date');
+        if (isNaN(startDate.getTime())) throw new BadRequestException('Invalid start_date');
+
+        const endDate = new Date(end_date);
+        if (isNaN(endDate.getTime())) throw new BadRequestException('Invalid end_date');
+        if (endDate < startDate) throw new BadRequestException('end_date must be >= start_date');
+
+        // ─── 6. Normalize schedule (same as CreateUser) ──────────────────────
+        const normalizedScheduleType =
+            scheduleType === ScheduleType.CUSTOM || (Array.isArray(selectedDays) && selectedDays.length > 0)
+                ? ScheduleType.CUSTOM
+                : ScheduleType.EVERYDAY;
+
+        const normalizedSelectedDays =
+            normalizedScheduleType === ScheduleType.CUSTOM
+                ? (Array.isArray(selectedDays) ? selectedDays : [])
+                : undefined;
+
+        if (normalizedScheduleType === ScheduleType.CUSTOM && (!normalizedSelectedDays || normalizedSelectedDays.length === 0)) {
+            throw new BadRequestException('Selected days are required for CUSTOM schedule type');
         }
 
-        const deriveDefaultEndDate = () => {
-            if (plan.isMonthlyPlan) {
-                const endExclusive = new Date(Date.UTC(
-                    startDate.getUTCFullYear(),
-                    startDate.getUTCMonth() + 1,
-                    startDate.getUTCDate(),
-                    0,
-                    0,
-                    0,
-                ));
-                const endInclusive = new Date(endExclusive);
-                endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
-                return endInclusive;
+        // ─── 7. Calculate total price from date range ─────────────────────────
+        let totalPrice = 0;
+        const weekdayMap = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+        if (plan.isMonthlyPlan) {
+            // Derive month count from date range (same as createSubscriptionForCustomer)
+            const monthDiff = (endDate.getUTCFullYear() - startDate.getUTCFullYear()) * 12
+                + (endDate.getUTCMonth() - startDate.getUTCMonth());
+            const numMonths = monthDiff + 1;
+            totalPrice = numMonths * Number(plan.price);
+        } else {
+            let chargeableDays = 0;
+            const tempDate = new Date(startDate);
+            if (normalizedScheduleType === ScheduleType.EVERYDAY) {
+                while (tempDate <= endDate) {
+                    chargeableDays++;
+                    tempDate.setDate(tempDate.getDate() + 1);
+                }
+            } else {
+                const selectedDaysUpper = (normalizedSelectedDays ?? []).map(d => d.toUpperCase());
+                while (tempDate <= endDate) {
+                    if (selectedDaysUpper.includes(weekdayMap[tempDate.getDay()])) chargeableDays++;
+                    tempDate.setDate(tempDate.getDate() + 1);
+                }
             }
-            return new Date(startDate);
-        };
-
-        const endDate = end_date ? new Date(end_date) : deriveDefaultEndDate();
-        if (isNaN(endDate.getTime())) {
-            throw new BadRequestException('Invalid end_date');
-        }
-        if (endDate < startDate) {
-            throw new BadRequestException('end_date must be >= start_date');
+            totalPrice = chargeableDays * Number(plan.price);
         }
 
-        const actualPrice = Number(plan.price);
         const parsedDiscount = Number(discount);
         const numericDiscount = Number.isFinite(parsedDiscount) ? parsedDiscount : 0;
-        const appliedDiscount = Math.max(0, Math.min(numericDiscount, actualPrice));
-        const discountedPrice = actualPrice - appliedDiscount;
-        const userSubscription = await this.prisma.userSubscriptions.create({
+        const appliedDiscount = Math.max(0, Math.min(numericDiscount, totalPrice));
+        const discountedPrice = totalPrice - appliedDiscount;
+
+        // ─── 8. Update existing subscription (not create a new one) ─────────
+        const updatedSubscription = await this.prisma.userSubscriptions.update({
+            where: { id: subscriptionId },
             data: {
                 start_date: startDate,
                 end_date: endDate,
-                totalPrice: actualPrice,
+                totalPrice,
                 deliveryPartnerProfileId: deliveryPartnerId,
-                planId: planId,
+                planId,
                 discount: appliedDiscount,
                 messId: plan.messId,
-                discountedPrice: discountedPrice,
-                customerProfileId: customerProfileId
+                discountedPrice,
+                scheduleType: normalizedScheduleType,
+                selectedDays: normalizedScheduleType === ScheduleType.CUSTOM ? normalizedSelectedDays : undefined,
+                is_active: true,
+                cancelled_on: null,
+            },
+        });
+
+        // ─── 9. Create deliveries for the new period (same as CreateUser) ────
+        const deliveriesToCreate: any[] = [];
+        const currentDate = new Date(startDate);
+
+        if (normalizedScheduleType === ScheduleType.EVERYDAY) {
+            while (currentDate <= endDate) {
+                deliveriesToCreate.push({
+                    date: new Date(currentDate),
+                    customerId: customerProfileId,
+                    planId,
+                    subscriptionId,
+                    status: DeliveryStatus.PENDING,
+                    partnerId: deliveryPartnerId,
+                    messId: plan.messId,
+                });
+                currentDate.setDate(currentDate.getDate() + 1);
             }
-        })
-        const updatedProfile = await this.prisma.customerProfile.update({
+        } else if (normalizedScheduleType === ScheduleType.CUSTOM && Array.isArray(normalizedSelectedDays)) {
+            const selectedDaysUpper = normalizedSelectedDays.map(d => d.toUpperCase());
+            while (currentDate <= endDate) {
+                if (selectedDaysUpper.includes(weekdayMap[currentDate.getDay()])) {
+                    deliveriesToCreate.push({
+                        date: new Date(currentDate),
+                        customerId: customerProfileId,
+                        planId,
+                        subscriptionId,
+                        status: DeliveryStatus.PENDING,
+                        partnerId: deliveryPartnerId,
+                        messId: plan.messId,
+                    });
+                }
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+        }
+
+        if (deliveriesToCreate.length > 0) {
+            await this.prisma.deliveries.createMany({ data: deliveriesToCreate });
+            await this.createDeliveryVariationsForPlan(planId, subscriptionId, deliveriesToCreate.map(d => d.date));
+        }
+
+        // ─── 10. Debit wallet ─────────────────────────────────────────────────
+        await this.prisma.customerProfile.update({
             where: { id: customerProfileId },
-            data: {
-                walletAmount: Number(customerProfile.walletAmount ?? 0) - discountedPrice
-            }
-        })
+            data: { walletAmount: Number(customerProfile.walletAmount ?? 0) - discountedPrice },
+        });
 
         // create wallet debit transaction for renewal
         try {
-            await this.createWalletTransaction(customerProfileId, -Number(discountedPrice), { note: 'Subscription renewal', subscriptionId: userSubscription.id });
+            await this.createWalletTransaction(customerProfileId, -Number(discountedPrice), { note: 'Subscription renewal', subscriptionId });
         } catch (err) {
             console.error('Failed to create wallet transaction on renewal:', err);
         }
-        return {
-            message: 'Subscription Renewed successfully',
-            data: { userSubscription }
-        };
 
+        return {
+            message: 'Subscription renewed successfully',
+            data: {
+                subscription: updatedSubscription,
+                deliveriesCreated: deliveriesToCreate.length,
+            },
+        };
     }
 
 
@@ -1926,9 +2004,25 @@ export class CustomerService {
 
         if (deliveriesToCreate.length > 0) {
             await this.prisma.deliveries.createMany({ data: deliveriesToCreate });
+            await this.createDeliveryVariationsForPlan(planId, userSubscription.id, deliveriesToCreate.map(d => d.date));
         }
 
-        // ─── 11. Return result ──────────────────────────────────────────────────
+        // ─── 11. Deduct from wallet (same as register-user) ─────────────────
+        const updatedProfile = await this.prisma.customerProfile.update({
+            where: { id: customerProfile.id },
+            data: {
+                walletAmount: Number(customerProfile.walletAmount) - discountedPrice,
+            },
+        });
+
+        // create transaction record (negative amount) — same as CreateUser
+        try {
+            await this.createWalletTransaction(customerProfile.id, -Number(discountedPrice), { note: 'Subscription purchase', subscriptionId: userSubscription.id });
+        } catch (err) {
+            console.error('Failed to create wallet transaction:', err);
+        }
+
+        // ─── 12. Return result ──────────────────────────────────────────────────
         return {
             message: 'Subscription created successfully',
             data: {
@@ -1947,6 +2041,7 @@ export class CustomerService {
                     pricingMode: plan.isMonthlyPlan ? 'monthly' : 'daily',
                 },
                 deliveriesCreated: deliveriesToCreate.length,
+                walletBalance: Number(updatedProfile.walletAmount),
             },
         };
     }
@@ -2143,7 +2238,7 @@ export class CustomerService {
         const where: any = { subscriptionId };
 
         if (status) {
-            const validStatuses = ['PENDING', 'PROGRESS', 'DELIVERED'];
+            const validStatuses = ['PENDING', 'PROGRESS', 'DELIVERED', 'COMPLETED', 'UNDELIVERED'];
             if (!validStatuses.includes(status.toUpperCase())) {
                 throw new BadRequestException(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
             }
@@ -2171,10 +2266,20 @@ export class CustomerService {
                 skip,
                 take: limit,
                 include: {
+                    plan: {
+                        select: {
+                            id: true,
+                            planName: true,
+                            price: true,
+                            Variation: {
+                                select: { id: true, title: true, description: true, isActive: true },
+                            },
+                        },
+                    },
                     partner: {
                         include: {
                             user: {
-                                select: { id: true, name: true, phone: true },
+                                select: { id: true, name: true, phone: true, email: true },
                             },
                         },
                     },
@@ -2195,8 +2300,10 @@ export class CustomerService {
                         id: d.partner.id,
                         name: d.partner.user.name,
                         phone: d.partner.user.phone,
+                        email: d.partner.user.email,
                     }
                     : null,
+                variations: (d.plan as any)?.Variation ?? [],
             })),
             meta: {
                 total,
@@ -2205,6 +2312,52 @@ export class CustomerService {
                 totalPages: Math.ceil(total / limit),
             },
         };
+    }
+    /**
+     * Private helper: after deliveries are created via createMany,
+     * fetch their IDs by subscriptionId + dates, then create one
+     * DeliveryVariation row per delivery x plan variation.
+     */
+    private async createDeliveryVariationsForPlan(
+        planId: string,
+        subscriptionId: string,
+        dates: Date[],
+    ): Promise<void> {
+        if (dates.length === 0) return;
+
+        // Fetch active variations for this plan
+        const plan = await this.prisma.plans.findUnique({
+            where: { id: planId },
+            select: {
+                Variation: {
+                    where: { isActive: true },
+                    select: { id: true },
+                },
+            },
+        });
+        const variationIds = plan?.Variation?.map(v => v.id) ?? [];
+        if (variationIds.length === 0) return;
+
+        // Fetch the delivery IDs we just created
+        const deliveries = await this.prisma.deliveries.findMany({
+            where: { subscriptionId, date: { in: dates } },
+            select: { id: true },
+        });
+        if (deliveries.length === 0) return;
+
+        // Create one DeliveryVariation per delivery x variation
+        const records = deliveries.flatMap(d =>
+            variationIds.map(vid => ({
+                deliveryId: d.id,
+                variationId: vid,
+                status: VariationStatus.PENDING,
+            }))
+        );
+
+        await this.prisma.deliveryVariation.createMany({
+            data: records,
+            skipDuplicates: true,
+        });
     }
 
 }

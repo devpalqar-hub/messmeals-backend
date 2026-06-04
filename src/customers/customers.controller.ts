@@ -29,7 +29,7 @@ export class CustomerController {
         summary: 'Register customer',
         description:
             'Creates a new customer and subscription. ' +
-            'Monthly plans: totalPrice = numMonths × plan.price (default 1 month). ' +
+            'Monthly plans: totalPrice = number of months (derived from start/end date) × plan.price. ' +
             'Daily plans: totalPrice = chargeable delivery days × plan.price.',
     })
     async register(@Body() dto: CreateCustomerDto) {
@@ -290,8 +290,9 @@ export class CustomerController {
         summary: 'Create subscription for existing customer',
         description:
             'Creates a new subscription for an existing customer. ' +
-            'Monthly plans are priced per calendar month; daily plans are priced per delivery day. ' +
-            'Deliveries are auto-created based on the schedule. No wallet deduction (admin operation).',
+            'Monthly plans: totalPrice = number of months (derived from start/end date) × plan.price. ' +
+            'Daily plans: totalPrice = chargeable delivery days × plan.price. ' +
+            'Wallet is debited by discountedPrice. Deliveries are auto-created based on the schedule.',
     })
     async createSubscription(@Body() dto: CreateSubscriptionForCustomerDto) {
         return this.cusomerservice.createSubscriptionForCustomer(dto);

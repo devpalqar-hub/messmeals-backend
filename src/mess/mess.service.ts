@@ -528,7 +528,7 @@ export class MessService {
             this.prisma.deliveries.count({ where: { messId: id } }),
             this.prisma.deliveries.count({ where: { messId: id, status: 'DELIVERED' } }),
             this.prisma.deliveries.count({ where: { messId: id, status: 'PENDING' } }),
-            this.prisma.deliveries.count({ where: { messId: id, status: 'PROGRESS' } }),
+            this.prisma.deliveries.count({ where: { messId: id, status: 'DELIVERED' } }),
         ]);
 
         // Revenue summary from payments linked to subscriptions/plans of this mess

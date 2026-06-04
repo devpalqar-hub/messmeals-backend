@@ -13,7 +13,8 @@ import {
 import { DeliveriesService } from './deliveries.service';
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { UpdateDeliveryDto } from './dto/update-delivery.dto';
-import { UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
+import { UpdateDeliveryStatusDto, UpdateDeliveryOwnerStatusDto } from './dto/update-delivery-status.dto';
+import { UpdateVariationStatusDto } from './dto/update-variation-status.dto';
 import { AssignDeliveryPartnerDto, AssignDeliveryPartnerPhs2Dto, AssignDeliveryPartnerToDeliveriesDto } from './dto/assign-partner.dto';
 import { DeliveryStatus, Role } from '@prisma/client';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
@@ -37,13 +38,14 @@ export class DeliveriesController {
 
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(Role.DELIVERYAGENT, Role.MESSADMIN, Role.SUPERADMIN, Role.USER)
-    @ApiOperation({ summary: 'List deliveries', description: 'Returns deliveries with filters based on the authenticated user.' })
+    @ApiOperation({ summary: 'List deliveries', description: 'Returns deliveries with filters. Each delivery includes its variation statuses (e.g. Breakfast, Lunch, Dinner).' })
     @ApiQuery({ name: 'page', required: false })
     @ApiQuery({ name: 'limit', required: false })
     @ApiQuery({ name: 'status', required: false })
-    @ApiQuery({ name: 'date', required: false })
+    @ApiQuery({ name: 'date', required: false, description: 'Filter by exact date (YYYY-MM-DD)' })
     @ApiQuery({ name: 'messId', required: false })
     @ApiQuery({ name: 'partnerId', required: false })
+    @ApiQuery({ name: 'variationId', required: false, description: 'Filter deliveries that include this variation (e.g. Breakfast variation ID)' })
     @Get()
     findAll(
         @Req() req: any,
@@ -53,9 +55,10 @@ export class DeliveriesController {
         @Query('date') date?: string,
         @Query('messId') messId?: string,
         @Query('partnerId') partnerId?: string,
+        @Query('variationId') variationId?: string,
     ) {
         return this.deliveriesService.findAll(
-            { page, limit, status, date, messId, partnerId },
+            { page, limit, status, date, messId, partnerId, variationId },
             req.user,
         );
     }
@@ -87,16 +90,61 @@ export class DeliveriesController {
         return this.deliveriesService.remove(id);
     }
 
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.MESSADMIN, Role.SUPERADMIN, Role.DELIVERYAGENT)
     @ApiOperation({ summary: 'Update delivery status', description: 'Updates the status of a delivery by UUID.' })
-    @Patch(":id/status")
+    @Patch(':id/status')
     updateStatus(@Param('id') id: string, @Body() updatestatusdto: UpdateDeliveryStatusDto) {
-        return this.deliveriesService.updateStatus(id, updatestatusdto)
+        return this.deliveriesService.updateStatus(id, updatestatusdto);
+    }
+
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.MESSADMIN, Role.SUPERADMIN)
+    @ApiOperation({
+        summary: 'Owner: mark delivery COMPLETED or UNDELIVERED',
+        description:
+            'Allows mess admin or superadmin to set the final outcome of a delivery. ' +
+            'Status must be COMPLETED or UNDELIVERED. ' +
+            'Mess admins can only update deliveries belonging to their mess.',
+    })
+    @Patch(':id/owner-status')
+    updateOwnerStatus(
+        @Param('id') id: string,
+        @Body() dto: UpdateDeliveryOwnerStatusDto,
+        @Req() req,
+    ) {
+        // SUPERADMIN bypasses the mess-admin check by passing a flag
+        if (req.user?.role === Role.SUPERADMIN) {
+            return this.deliveriesService.updateStatus(id, { status: dto.status });
+        }
+        return this.deliveriesService.updateOwnerStatus(id, dto, req.user.id);
+    }
+
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.MESSADMIN, Role.SUPERADMIN, Role.DELIVERYAGENT)
+    @ApiOperation({
+        summary: 'Update a single variation status within a delivery',
+        description:
+            'Allows mess admin or the assigned delivery partner to update the status of one variation ' +
+            '(e.g. Breakfast, Lunch, Dinner) within a delivery. ' +
+            'Valid statuses: PENDING, DELIVERED, COMPLETED, UNDELIVERED.',
+    })
+    @ApiParam({ name: 'id', description: 'Delivery UUID' })
+    @ApiParam({ name: 'variationId', description: 'Variation UUID (e.g. Breakfast variation ID)' })
+    @Patch(':id/variations/:variationId/status')
+    updateVariationStatus(
+        @Param('id') id: string,
+        @Param('variationId') variationId: string,
+        @Body() dto: UpdateVariationStatusDto,
+        @Req() req,
+    ) {
+        return this.deliveriesService.updateVariationStatus(id, variationId, dto, req.user.id);
     }
 
     @ApiOperation({ summary: 'Update delivery partner', description: 'Updates the assigned delivery partner for a delivery.' })
-    @Patch(":id/partner")
+    @Patch(':id/partner')
     updatePartner(@Param('id') id: string, @Body() updatestatusdto: AssignDeliveryPartnerDto) {
-        return this.deliveriesService.updatePartner(id, updatestatusdto)
+        return this.deliveriesService.updatePartner(id, updatestatusdto);
     }
 
     @ApiOperation({ summary: 'Create deliveries for a date', description: 'Generates deliveries for a provided date.' })

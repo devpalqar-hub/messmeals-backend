@@ -12,8 +12,17 @@ datasource db {
 
 enum DeliveryStatus {
   PENDING
-  PROGRESS
   DELIVERED
+  COMPLETED
+  UNDELIVERED
+}
+
+/// Status for a single variation within a delivery (e.g. Breakfast DELIVERED, Dinner UNDELIVERED)
+enum VariationStatus {
+  PENDING
+  DELIVERED
+  COMPLETED
+  UNDELIVERED
 }
 
 enum Role {
@@ -210,7 +219,25 @@ model Variation {
   updatedAt   DateTime @updatedAt
   plans       Plans[]
 
-  isActive Boolean @default(true)
+  isActive           Boolean            @default(true)
+  deliveryVariations DeliveryVariation[]
+}
+
+/// Tracks the status of each variation (Breakfast/Lunch/Dinner) within a single delivery.
+model DeliveryVariation {
+  id          String         @id @default(uuid())
+  deliveryId  String
+  variationId String
+  status      VariationStatus @default(PENDING)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  delivery  Deliveries @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  variation Variation  @relation(fields: [variationId], references: [id], onDelete: Cascade)
+
+  @@unique([deliveryId, variationId])
+  @@index([deliveryId])
+  @@index([variationId])
 }
 
 model Deliveries {
@@ -228,11 +255,12 @@ model Deliveries {
 
   isActive Boolean @default(true)
 
-  customer          CustomerProfile         @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  plan              Plans                   @relation(fields: [planId], references: [id], onDelete: Cascade)
-  partner           DeliveryPartnerProfile? @relation(fields: [partnerId], references: [id])
-  mess              Mess                    @relation(fields: [messId], references: [id], onDelete: Cascade)
-  UserSubscriptions UserSubscriptions?      @relation(fields: [subscriptionId], references: [id])
+  customer           CustomerProfile         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  plan               Plans                   @relation(fields: [planId], references: [id], onDelete: Cascade)
+  partner            DeliveryPartnerProfile? @relation(fields: [partnerId], references: [id])
+  mess               Mess                    @relation(fields: [messId], references: [id], onDelete: Cascade)
+  UserSubscriptions  UserSubscriptions?      @relation(fields: [subscriptionId], references: [id])
+  deliveryVariations DeliveryVariation[]
 }
 
 model Mess {
