@@ -29,12 +29,18 @@ export class MessOwnerSignupDto {
     @IsString()
     address!: string;
 
-    @ApiProperty({
+    @ApiPropertyOptional({
         example: 'Ernakulam',
         description: 'District name (must exist in Districts table).',
     })
+    @IsOptional()
     @IsString()
-    district!: string;
+    district?: string;
+
+    @ApiPropertyOptional({ example: '682024', description: 'Postal / ZIP code.' })
+    @IsOptional()
+    @IsString()
+    zipcode?: string;
 
     @ApiProperty({ example: 'Annapoorna Mess' })
     @IsString()
@@ -73,12 +79,18 @@ export class MessOwnerSendOtpDto {
     @IsString()
     address!: string;
 
-    @ApiProperty({
+    @ApiPropertyOptional({
         example: 'Ernakulam',
         description: 'District name (must exist in Districts table).',
     })
+    @IsOptional()
     @IsString()
-    district!: string;
+    district?: string;
+
+    @ApiPropertyOptional({ example: '682024', description: 'Postal / ZIP code.' })
+    @IsOptional()
+    @IsString()
+    zipcode?: string;
 
     @ApiProperty({ example: 'Annapoorna Mess' })
     @IsString()
