@@ -363,10 +363,12 @@ export class BillingService {
         notes?: Record<string, any>;
     }) {
         const amount = Math.round(params.amountInRupees * 100);
+        // Razorpay enforces a 40-character max on the receipt field.
+        const receipt = params.receipt.slice(0, 40);
         const payload = {
             amount,
             currency: 'INR',
-            receipt: params.receipt,
+            receipt,
             notes: params.notes ?? {},
         };
 
@@ -430,7 +432,9 @@ export class BillingService {
 
         const order = await this.createRazorpayOrder({
             amountInRupees,
-            receipt: `mess_invoice_${invoice.id}`,
+            // Razorpay receipt max = 40 chars. UUID is 36 chars, so prefix must be ≤ 4 chars.
+            // Using first 8 hex chars of the invoice id keeps it unique and well within limit.
+            receipt: `inv_${invoice.id.replace(/-/g, '').slice(0, 12)}`,
             notes: {
                 messId,
                 invoiceId: invoice.id,
