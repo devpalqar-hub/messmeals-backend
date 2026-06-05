@@ -363,12 +363,10 @@ export class BillingService {
         notes?: Record<string, any>;
     }) {
         const amount = Math.round(params.amountInRupees * 100);
-        // Razorpay enforces a 40-character max on the receipt field.
-        const receipt = params.receipt.slice(0, 40);
         const payload = {
             amount,
             currency: 'INR',
-            receipt,
+            receipt: params.receipt,
             notes: params.notes ?? {},
         };
 
@@ -432,9 +430,7 @@ export class BillingService {
 
         const order = await this.createRazorpayOrder({
             amountInRupees,
-            // Razorpay receipt max = 40 chars. UUID is 36 chars, so prefix must be ≤ 4 chars.
-            // Using first 8 hex chars of the invoice id keeps it unique and well within limit.
-            receipt: `inv_${invoice.id.replace(/-/g, '').slice(0, 12)}`,
+            receipt: `mess_invoice_${invoice.id}`,
             notes: {
                 messId,
                 invoiceId: invoice.id,
@@ -574,66 +570,66 @@ export class BillingService {
 
     async enforceBillingStatus(messId: string) {
         try {
-        const mess = await this.prisma.mess.findUnique({
-            where: { id: messId },
-            select: { id: true, billingDisabled: true, billingReactivatesAt: true },
-        });
-        if (!mess) throw new NotFoundException('Mess not found');
-
-        // If already disabled but not yet reactivatable, keep disabled
-        if (mess.billingDisabled && mess.billingReactivatesAt && new Date() < mess.billingReactivatesAt) {
-            return { billingDisabled: true };
-        }
-
-        const globalConfig = await this.getOrCreateGlobalConfig();
-        const messConfig = await this.prisma.messBillingConfig.findUnique({ where: { messId } });
-        if (messConfig?.trialEndsAt && new Date() < messConfig.trialEndsAt) {
-            return { billingDisabled: false, trial: true };
-        }
-
-        // If the latest UNPAID invoice is past dueDate + graceDays => disable
-        const unpaid = await this.prisma.messInvoice.findFirst({
-            where: { messId, status: InvoiceStatus.UNPAID },
-            orderBy: { dueDate: 'desc' },
-        });
-
-        if (!unpaid) {
-            return { billingDisabled: false };
-        }
-
-        const disableAt = new Date(unpaid.dueDate.getTime() + globalConfig.graceDaysAfterDue * 24 * 60 * 60 * 1000);
-        if (new Date() <= disableAt) {
-            // still in grace
-            return { billingDisabled: false, dueDate: unpaid.dueDate, disableAt };
-        }
-
-        const reactivatesAt = new Date(disableAt.getTime() + globalConfig.graceDaysAfterDue * 24 * 60 * 60 * 1000);
-
-        await this.prisma.$transaction(async (tx) => {
-            await tx.mess.update({
+            const mess = await this.prisma.mess.findUnique({
                 where: { id: messId },
-                data: {
-                    billingDisabled: true,
-                    billingDisabledAt: new Date(),
-                    billingReactivatesAt: reactivatesAt,
-                    is_active: false,
-                },
+                select: { id: true, billingDisabled: true, billingReactivatesAt: true },
             });
+            if (!mess) throw new NotFoundException('Mess not found');
 
-            // Disable delivery agents for that mess
-            const agents = await tx.deliveryPartnerProfile.findMany({
-                where: { messId },
-                select: { userId: true },
-            });
-            if (agents.length) {
-                await tx.user.updateMany({
-                    where: { id: { in: agents.map((a) => a.userId) }, role: Role.DELIVERYAGENT },
-                    data: { is_active: false },
-                });
+            // If already disabled but not yet reactivatable, keep disabled
+            if (mess.billingDisabled && mess.billingReactivatesAt && new Date() < mess.billingReactivatesAt) {
+                return { billingDisabled: true };
             }
-        });
 
-        return { billingDisabled: true, disabledAt: new Date(), reactivatesAt };
+            const globalConfig = await this.getOrCreateGlobalConfig();
+            const messConfig = await this.prisma.messBillingConfig.findUnique({ where: { messId } });
+            if (messConfig?.trialEndsAt && new Date() < messConfig.trialEndsAt) {
+                return { billingDisabled: false, trial: true };
+            }
+
+            // If the latest UNPAID invoice is past dueDate + graceDays => disable
+            const unpaid = await this.prisma.messInvoice.findFirst({
+                where: { messId, status: InvoiceStatus.UNPAID },
+                orderBy: { dueDate: 'desc' },
+            });
+
+            if (!unpaid) {
+                return { billingDisabled: false };
+            }
+
+            const disableAt = new Date(unpaid.dueDate.getTime() + globalConfig.graceDaysAfterDue * 24 * 60 * 60 * 1000);
+            if (new Date() <= disableAt) {
+                // still in grace
+                return { billingDisabled: false, dueDate: unpaid.dueDate, disableAt };
+            }
+
+            const reactivatesAt = new Date(disableAt.getTime() + globalConfig.graceDaysAfterDue * 24 * 60 * 60 * 1000);
+
+            await this.prisma.$transaction(async (tx) => {
+                await tx.mess.update({
+                    where: { id: messId },
+                    data: {
+                        billingDisabled: true,
+                        billingDisabledAt: new Date(),
+                        billingReactivatesAt: reactivatesAt,
+                        is_active: false,
+                    },
+                });
+
+                // Disable delivery agents for that mess
+                const agents = await tx.deliveryPartnerProfile.findMany({
+                    where: { messId },
+                    select: { userId: true },
+                });
+                if (agents.length) {
+                    await tx.user.updateMany({
+                        where: { id: { in: agents.map((a) => a.userId) }, role: Role.DELIVERYAGENT },
+                        data: { is_active: false },
+                    });
+                }
+            });
+
+            return { billingDisabled: true, disabledAt: new Date(), reactivatesAt };
         } catch (e) {
             if (this.isMissingTableError(e)) {
                 // If billing tables are missing, do not block operations.
@@ -773,7 +769,7 @@ export class BillingService {
             // Overrides applied
             perCustomerRateOverride:
                 messConfig?.perCustomerRateOverride !== null &&
-                messConfig?.perCustomerRateOverride !== undefined
+                    messConfig?.perCustomerRateOverride !== undefined
                     ? Number(messConfig.perCustomerRateOverride)
                     : null,
             trialEndsAt: messConfig?.trialEndsAt?.toISOString() ?? null,
@@ -789,13 +785,13 @@ export class BillingService {
             // Whether an invoice already exists for this period
             existingInvoice: existingInvoice
                 ? {
-                      id: existingInvoice.id,
-                      status: existingInvoice.status,
-                      amount: Number(existingInvoice.amount),
-                      dueDate: existingInvoice.dueDate.toISOString(),
-                      paidAt: existingInvoice.paidAt?.toISOString() ?? null,
-                      createdAt: existingInvoice.createdAt.toISOString(),
-                  }
+                    id: existingInvoice.id,
+                    status: existingInvoice.status,
+                    amount: Number(existingInvoice.amount),
+                    dueDate: existingInvoice.dueDate.toISOString(),
+                    paidAt: existingInvoice.paidAt?.toISOString() ?? null,
+                    createdAt: existingInvoice.createdAt.toISOString(),
+                }
                 : null,
         };
     }
