@@ -517,6 +517,41 @@ export class BillingService {
 
         return { message: 'Payment verified and invoice settled', invoice: updated };
     }
+    async overrideInvoiceDates(messId: string, invoiceId: string, dto: { periodStart?: string, periodEnd?: string, dueDate?: string }) {
+        const invoice = await this.prisma.messInvoice.findFirst({
+            where: { id: invoiceId, messId },
+        });
+
+        if (!invoice) {
+            throw new NotFoundException('Invoice not found');
+        }
+
+        const data: any = {};
+        if (dto.periodStart) {
+            const start = new Date(dto.periodStart);
+            if (!isNaN(start.getTime())) data.periodStart = start;
+        }
+        if (dto.periodEnd) {
+            const end = new Date(dto.periodEnd);
+            if (!isNaN(end.getTime())) data.periodEnd = end;
+        }
+        if (dto.dueDate) {
+            const due = new Date(dto.dueDate);
+            if (!isNaN(due.getTime())) data.dueDate = due;
+        }
+
+        if (Object.keys(data).length === 0) {
+            throw new BadRequestException('No valid dates provided for override');
+        }
+
+        const updated = await this.prisma.messInvoice.update({
+            where: { id: invoiceId },
+            data,
+        });
+
+        return { message: 'Invoice dates overridden successfully', invoice: updated };
+    }
+
 
     async settleInvoice(messId: string, month: string) {
         const { periodStart, periodEnd, referenceDate } = await this.resolveInvoicePeriodRange(messId, month);

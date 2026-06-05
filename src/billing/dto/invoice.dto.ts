@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, Matches } from 'class-validator';
+import { IsDateString, IsOptional, IsString, Matches } from 'class-validator';
 
 export class InvoiceMonthQueryDto {
     @ApiPropertyOptional({
@@ -17,4 +17,21 @@ export class SettleInvoiceDto {
     @IsString()
     @Matches(/^\d{4}-\d{2}$/)
     month!: string;
+}
+
+export class OverrideInvoiceDatesDto {
+    @ApiPropertyOptional({ description: 'Override period start date' })
+    @IsOptional()
+    @IsDateString()
+    periodStart?: string;
+
+    @ApiPropertyOptional({ description: 'Override period end date (billing date)' })
+    @IsOptional()
+    @IsDateString()
+    periodEnd?: string;
+
+    @ApiPropertyOptional({ description: 'Override due date' })
+    @IsOptional()
+    @IsDateString()
+    dueDate?: string;
 }

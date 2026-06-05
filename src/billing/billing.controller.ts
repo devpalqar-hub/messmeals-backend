@@ -18,7 +18,7 @@ import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { UpdateBillingGlobalConfigDto, UpdateMessBillingConfigDto } from './dto/billing-config.dto';
 import { UpsertBillingTierDto } from './dto/billing-tier.dto';
-import { InvoiceMonthQueryDto, SettleInvoiceDto } from './dto/invoice.dto';
+import { InvoiceMonthQueryDto, SettleInvoiceDto, OverrideInvoiceDatesDto } from './dto/invoice.dto';
 import { VerifyInvoicePaymentDto } from './dto/invoice-payment.dto';
 import { MockBillingQueryDto } from './dto/mock-billing.dto';
 
@@ -124,6 +124,19 @@ export class BillingController {
         @Body() dto: SettleInvoiceDto,
     ) {
         return this.billingService.settleInvoice(messId, dto.month);
+    }
+
+    @Patch('mess/:messId/invoice/:invoiceId/override-dates')
+    @Roles(Role.SUPERADMIN)
+    @ApiOperation({ summary: 'Override invoice dates for testing (superadmin)' })
+    @ApiParam({ name: 'messId', description: 'Mess id (UUID)' })
+    @ApiParam({ name: 'invoiceId', description: 'Invoice id (UUID)' })
+    async overrideInvoiceDates(
+        @Param('messId', ParseUUIDPipe) messId: string,
+        @Param('invoiceId', ParseUUIDPipe) invoiceId: string,
+        @Body() dto: OverrideInvoiceDatesDto,
+    ) {
+        return this.billingService.overrideInvoiceDates(messId, invoiceId, dto);
     }
 
     @Get('mess/:messId/status')
