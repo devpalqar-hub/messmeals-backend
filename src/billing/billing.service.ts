@@ -180,8 +180,9 @@ export class BillingService {
     }
 
     async listTiers(role?: Role) {
+        const isPublicRole = role === Role.USER || role === Role.MESSADMIN;
         return this.prisma.billingTier.findMany({
-            where: role === Role.USER ? { isActive: true } : undefined,
+            where: isPublicRole ? { isActive: true } : undefined,
             orderBy: [{ minCustomers: 'asc' }, { maxCustomers: 'asc' }],
         });
     }

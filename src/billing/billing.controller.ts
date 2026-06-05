@@ -43,8 +43,8 @@ export class BillingController {
     }
 
     @Get('tiers')
-    @Roles(Role.SUPERADMIN, Role.USER)
-    @ApiOperation({ summary: 'List billing tiers (superadmin, customer)' })
+    @Roles(Role.SUPERADMIN, Role.USER, Role.MESSADMIN)
+    @ApiOperation({ summary: 'List billing tiers (superadmin, customer, messadmin)' })
     listTiers(@Req() req: any) {
         return this.billingService.listTiers(req.user?.role);
     }
