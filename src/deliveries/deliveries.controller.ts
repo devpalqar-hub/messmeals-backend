@@ -16,7 +16,8 @@ import { UpdateDeliveryDto } from './dto/update-delivery.dto';
 import { UpdateDeliveryStatusDto, UpdateDeliveryOwnerStatusDto } from './dto/update-delivery-status.dto';
 import { UpdateVariationStatusDto } from './dto/update-variation-status.dto';
 import { AssignDeliveryPartnerDto, AssignDeliveryPartnerPhs2Dto, AssignDeliveryPartnerToDeliveriesDto } from './dto/assign-partner.dto';
-import { DeliveryStatus, Role } from '@prisma/client';
+import { DeliveryStatus, Role, VariationStatus } from '@prisma/client';
+import { VariationCountQueryDto } from './dto/variation-count-query.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
@@ -207,5 +208,33 @@ export class DeliveriesController {
         @Req() req,
     ) {
         return this.deliveriesService.assignPartnerToDeliveries(dto, req.user.id);
+    }
+
+    // ─── Analytics ─────────────────────────────────────────────────────────────
+
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.SUPERADMIN, Role.MESSADMIN)
+    @ApiOperation({
+        summary: 'Variation delivery count analytics',
+        description:
+            'Returns delivery counts per variation (e.g. Breakfast / Lunch / Dinner) ' +
+            'for a given mess and date range, grouped three ways:\n' +
+            '• **byVariation** — total count per variation, with per-plan and per-date breakdowns\n' +
+            '• **byPlan** — total deliveries per plan with per-variation breakdown\n' +
+            '• **byDate** — daily totals with per-variation breakdown\n\n' +
+            'Each group includes a **byStatus** breakdown (PENDING / DELIVERED / COMPLETED / UNDELIVERED).\n\n' +
+            'MESSADMIN can only query their own mess. SUPERADMIN can query any mess.',
+    })
+    @ApiQuery({ name: 'messId', required: true, description: 'Mess UUID to scope analytics' })
+    @ApiQuery({ name: 'fromDate', required: true, description: 'Start date inclusive (YYYY-MM-DD)' })
+    @ApiQuery({ name: 'toDate', required: true, description: 'End date inclusive (YYYY-MM-DD)' })
+    @ApiQuery({ name: 'planId', required: false, description: 'Optional: narrow to a specific plan UUID' })
+    @ApiQuery({ name: 'status', required: false, enum: VariationStatus, description: 'Optional: filter by variation delivery status' })
+    @Get('analytics/variation-counts')
+    getVariationDeliveryCounts(
+        @Req() req: any,
+        @Query() query: VariationCountQueryDto,
+    ) {
+        return this.deliveriesService.getVariationDeliveryCounts(query, req.user);
     }
 }

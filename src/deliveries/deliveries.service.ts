@@ -762,4 +762,220 @@ export class DeliveriesService {
         });
     }
 
+    /**
+     * Analytics: variation delivery counts grouped by variation, plan, and date.
+     * Access: SUPERADMIN (any mess) | MESSADMIN (own mess only).
+     */
+    async getVariationDeliveryCounts(
+        query: {
+            messId: string;
+            fromDate: string;
+            toDate: string;
+            planId?: string;
+            status?: VariationStatus;
+        },
+        user: { id: string; role: Role; messId?: string },
+    ) {
+        const { messId, fromDate, toDate, planId, status } = query;
+
+        // ── Access control ─────────────────────────────────────────────────────
+        if (user.role === Role.MESSADMIN && user.messId !== messId) {
+            throw new BadRequestException('You do not have access to this mess');
+        }
+
+        // ── Normalise date range ───────────────────────────────────────────────
+        const from = new Date(fromDate);
+        from.setHours(0, 0, 0, 0);
+
+        const to = new Date(toDate);
+        to.setHours(23, 59, 59, 999);
+
+        if (isNaN(from.getTime()) || isNaN(to.getTime())) {
+            throw new BadRequestException('Invalid fromDate or toDate. Expected YYYY-MM-DD');
+        }
+        if (from > to) {
+            throw new BadRequestException('fromDate must be before or equal to toDate');
+        }
+
+        // ── Fetch DeliveryVariation rows with all needed joins ─────────────────
+        const rows = await this.prisma.deliveryVariation.findMany({
+            where: {
+                ...(status && { status }),
+                delivery: {
+                    messId,
+                    date: { gte: from, lte: to },
+                    ...(planId && { planId }),
+                },
+            },
+            select: {
+                id: true,
+                status: true,
+                variationId: true,
+                variation: { select: { id: true, title: true } },
+                delivery: {
+                    select: {
+                        id: true,
+                        date: true,
+                        planId: true,
+                        plan: { select: { id: true, planName: true } },
+                    },
+                },
+            },
+            orderBy: { delivery: { date: 'asc' } },
+        });
+
+        // ── Helper: blank status bucket ────────────────────────────────────────
+        const blankStatus = (): Record<VariationStatus, number> => ({
+            PENDING: 0,
+            DELIVERED: 0,
+            COMPLETED: 0,
+            UNDELIVERED: 0,
+        });
+
+        const dateStr = (d: Date) => d.toISOString().split('T')[0];
+
+        // ── Build byVariation ─────────────────────────────────────────────────
+        const varMap = new Map<
+            string,
+            {
+                variationId: string;
+                variationTitle: string;
+                totalCount: number;
+                byStatus: Record<VariationStatus, number>;
+                planMap: Map<string, { planId: string; planName: string; count: number; byStatus: Record<VariationStatus, number> }>;
+                dateMap: Map<string, { date: string; count: number; byStatus: Record<VariationStatus, number> }>;
+            }
+        >();
+
+        // ── Build byPlan ──────────────────────────────────────────────────────
+        const planMap = new Map<
+            string,
+            {
+                planId: string;
+                planName: string;
+                totalDeliveries: number;
+                varMap: Map<string, { variationId: string; variationTitle: string; count: number }>;
+            }
+        >();
+
+        // ── Build byDate ──────────────────────────────────────────────────────
+        const dateMap = new Map<
+            string,
+            {
+                date: string;
+                totalDeliveries: number;
+                varMap: Map<string, { variationId: string; variationTitle: string; count: number }>;
+            }
+        >();
+
+        // Track distinct delivery IDs for summary totals
+        const allDeliveryIds = new Set<string>();
+
+        for (const row of rows) {
+            const vid = row.variationId;
+            const vtitle = row.variation.title;
+            const pid = row.delivery.planId;
+            const pname = row.delivery.plan.planName;
+            const dkey = dateStr(row.delivery.date);
+            const st = row.status as VariationStatus;
+
+            allDeliveryIds.add(row.delivery.id);
+
+            // ── byVariation ────────────────────────────────────────────────────
+            if (!varMap.has(vid)) {
+                varMap.set(vid, {
+                    variationId: vid,
+                    variationTitle: vtitle,
+                    totalCount: 0,
+                    byStatus: blankStatus(),
+                    planMap: new Map(),
+                    dateMap: new Map(),
+                });
+            }
+            const ve = varMap.get(vid)!;
+            ve.totalCount++;
+            ve.byStatus[st]++;
+
+            // variation → plan breakdown
+            if (!ve.planMap.has(pid)) {
+                ve.planMap.set(pid, { planId: pid, planName: pname, count: 0, byStatus: blankStatus() });
+            }
+            const vpe = ve.planMap.get(pid)!;
+            vpe.count++;
+            vpe.byStatus[st]++;
+
+            // variation → date breakdown
+            if (!ve.dateMap.has(dkey)) {
+                ve.dateMap.set(dkey, { date: dkey, count: 0, byStatus: blankStatus() });
+            }
+            const vde = ve.dateMap.get(dkey)!;
+            vde.count++;
+            vde.byStatus[st]++;
+
+            // ── byPlan ─────────────────────────────────────────────────────────
+            if (!planMap.has(pid)) {
+                planMap.set(pid, { planId: pid, planName: pname, totalDeliveries: 0, varMap: new Map() });
+            }
+            const pe = planMap.get(pid)!;
+            pe.totalDeliveries++;
+            if (!pe.varMap.has(vid)) {
+                pe.varMap.set(vid, { variationId: vid, variationTitle: vtitle, count: 0 });
+            }
+            pe.varMap.get(vid)!.count++;
+
+            // ── byDate ─────────────────────────────────────────────────────────
+            if (!dateMap.has(dkey)) {
+                dateMap.set(dkey, { date: dkey, totalDeliveries: 0, varMap: new Map() });
+            }
+            const de = dateMap.get(dkey)!;
+            de.totalDeliveries++;
+            if (!de.varMap.has(vid)) {
+                de.varMap.set(vid, { variationId: vid, variationTitle: vtitle, count: 0 });
+            }
+            de.varMap.get(vid)!.count++;
+        }
+
+        // ── Serialise ─────────────────────────────────────────────────────────
+        const byVariation = [...varMap.values()].map((v) => ({
+            variationId: v.variationId,
+            variationTitle: v.variationTitle,
+            totalCount: v.totalCount,
+            byStatus: v.byStatus,
+            byPlan: [...v.planMap.values()],
+            byDate: [...v.dateMap.values()].sort((a, b) => a.date.localeCompare(b.date)),
+        }));
+
+        const byPlan = [...planMap.values()].map((p) => ({
+            planId: p.planId,
+            planName: p.planName,
+            totalDeliveries: p.totalDeliveries,
+            variations: [...p.varMap.values()],
+        }));
+
+        const byDate = [...dateMap.entries()]
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([, d]) => ({
+                date: d.date,
+                totalDeliveries: d.totalDeliveries,
+                variations: [...d.varMap.values()],
+            }));
+
+        return {
+            messId,
+            fromDate,
+            toDate,
+            filters: {
+                planId: planId ?? null,
+                status: status ?? null,
+            },
+            summary: {
+                totalDeliveries: allDeliveryIds.size,
+                totalVariationDeliveries: rows.length,
+            },
+            byVariation,
+            byPlan,
+            byDate,
+        };
+    }
+
 }

@@ -239,13 +239,12 @@ export class CustomerService {
         let totalPrice = 0;
 
         if (plan.isMonthlyPlan) {
-            // Monthly: derive month count from date range (same as createSubscriptionForCustomer)
-            const startYear = startDate.getUTCFullYear();
-            const startMonth = startDate.getUTCMonth();
-            const endYear = endDate.getUTCFullYear();
-            const endMonth = endDate.getUTCMonth();
-            const monthDiff = (endYear - startYear) * 12 + (endMonth - startMonth);
-            const numMonths = monthDiff + 1;
+            // Monthly: derive month count by dividing actual day span by 30 and rounding.
+            // This treats 25-35 days as 1 month, 55-65 days as 2 months, etc.
+            // Avoids the calendar-month boundary bug (e.g. Jun5 → Jul5 = 31 days ≈ 1 month).
+            const msPerDay = 1000 * 60 * 60 * 24;
+            const totalDays = Math.round((endDate.getTime() - startDate.getTime()) / msPerDay) + 1;
+            const numMonths = Math.max(1, Math.round(totalDays / 30));
             totalPrice = numMonths * Number(plan.price);
         } else {
             // Daily: count chargeable delivery days in [startDate, endDate]
@@ -836,10 +835,11 @@ export class CustomerService {
         let totalPrice = 0;
         const weekdayMap = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
         if (plan.isMonthlyPlan) {
-            // Derive month count from date range (same as createSubscriptionForCustomer)
-            const monthDiff = (endDate.getUTCFullYear() - startDate.getUTCFullYear()) * 12
-                + (endDate.getUTCMonth() - startDate.getUTCMonth());
-            const numMonths = monthDiff + 1;
+            // Monthly: round actual day span to nearest 30-day month.
+            // 25-35 days = 1 month, 55-65 days = 2 months, etc.
+            const msPerDay = 1000 * 60 * 60 * 24;
+            const totalDays = Math.round((endDate.getTime() - startDate.getTime()) / msPerDay) + 1;
+            const numMonths = Math.max(1, Math.round(totalDays / 30));
             totalPrice = numMonths * Number(plan.price);
         } else {
             let chargeableDays = 0;
@@ -1910,18 +1910,13 @@ export class CustomerService {
         let totalPrice = 0;
 
         if (plan.isMonthlyPlan) {
-            // Count the number of calendar months spanned (ceiling)
-            const startYear = startDate.getUTCFullYear();
-            const startMonth = startDate.getUTCMonth();
-            const endYear = endDate.getUTCFullYear();
-            const endMonth = endDate.getUTCMonth();
-
-            // Full months between the first day of startMonth and first day of endMonth
-            const monthDiff = (endYear - startYear) * 12 + (endMonth - startMonth);
-
-            // If end date is not exactly the last day of the last full month, count one extra month
-            // Simpler: number of months = monthDiff + 1 (because we include both start and end months)
-            const numMonths = monthDiff + 1;
+            // Monthly: round actual day span to nearest 30-day month.
+            // This avoids the calendar-month boundary bug where Jun5 → Jul5
+            // (31 days, 1 real month) was being counted as 2 months.
+            // Rules: 25–35 days = 1 month | 55–65 days = 2 months | etc.
+            const msPerDay = 1000 * 60 * 60 * 24;
+            const totalDays = Math.round((endDate.getTime() - startDate.getTime()) / msPerDay) + 1;
+            const numMonths = Math.max(1, Math.round(totalDays / 30));
 
             totalPrice = numMonths * Number(plan.price);
         } else {
