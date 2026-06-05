@@ -128,11 +128,17 @@ export class BillingController {
 
     @Get('mess/:messId/status')
     @Roles(Role.SUPERADMIN, Role.MESSADMIN)
-    @ApiOperation({ summary: 'Enforce + get current billing status (superadmin, messadmin)' })
+    @ApiOperation({
+        summary: 'Get full billing status for a mess (superadmin, messadmin)',
+        description:
+            'Returns the current billing status including: mess status (ACTIVE/TRIAL/OVERDUE/DISABLED), ' +
+            'current billing period with due date, next billing date, number of customers, ' +
+            'per-customer rate, total amount due, and unpaid invoice details (if any).',
+    })
     @ApiParam({ name: 'messId', description: 'Mess id (UUID)' })
     async status(@Req() req: any, @Param('messId', ParseUUIDPipe) messId: string) {
         await this.billingService.assertUserCanAccessMess(req.user, messId);
-        return this.billingService.enforceBillingStatus(messId);
+        return this.billingService.getMessBillingStatus(messId);
     }
 
     // ─── Mock / Preview ────────────────────────────────────────────────────────

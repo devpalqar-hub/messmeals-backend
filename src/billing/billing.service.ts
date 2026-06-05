@@ -639,6 +639,140 @@ export class BillingService {
         }
     }
 
+    async getMessBillingStatus(messId: string) {
+        const now = new Date();
+
+        // ── 1. Enforce billing rules first ──────────────────────────────────
+        const enforcement = await this.enforceBillingStatus(messId);
+
+        // ── 2. Fetch mess info ───────────────────────────────────────────────
+        const mess = await this.prisma.mess.findUnique({
+            where: { id: messId },
+            select: {
+                id: true,
+                name: true,
+                is_active: true,
+                billingDisabled: true,
+                billingDisabledAt: true,
+                billingReactivatesAt: true,
+            },
+        });
+        if (!mess) throw new NotFoundException('Mess not found');
+
+        // ── 3. Billing config ─────────────────────────────────────────────────
+        const globalConfig = await this.getOrCreateGlobalConfig();
+        const messConfig = await this.prisma.messBillingConfig.findUnique({ where: { messId } });
+
+        // ── 4. Resolve current billing period ────────────────────────────────
+        const { periodStart, periodEnd } = await this.resolveInvoicePeriodRange(messId, undefined, now);
+
+        // ── 5. Trial check ───────────────────────────────────────────────────
+        const onTrial = !!(messConfig?.trialEndsAt && periodEnd <= messConfig.trialEndsAt);
+
+        // ── 6. Customer count for current period ─────────────────────────────
+        const customerCount = onTrial ? 0 : await this.computeCustomerCount(messId, periodStart, periodEnd);
+
+        // ── 7. Resolve per-customer rate ──────────────────────────────────────
+        const { rate: perCustomerRate, source: rateSource } = onTrial
+            ? { rate: 0, source: 'TRIAL' as const }
+            : await this.resolveRate(messId, customerCount);
+
+        // ── 8. Amounts ───────────────────────────────────────────────────────
+        const amount = customerCount * perCustomerRate;
+        const dueDate = new Date(periodEnd.getTime() - Number(globalConfig.dueDaysBeforePeriodEnd) * 24 * 60 * 60 * 1000);
+
+        // ── 9. Next billing period ─────────────────────────────────────────────
+        const nextPeriodStart = periodEnd;
+        const nextPeriodEnd = addMonthsUtc(nextPeriodStart, 1);
+        const nextDueDate = new Date(nextPeriodEnd.getTime() - Number(globalConfig.dueDaysBeforePeriodEnd) * 24 * 60 * 60 * 1000);
+
+        // ── 10. Current unpaid invoice (if any) ───────────────────────────────
+        const unpaidInvoice = await this.prisma.messInvoice.findFirst({
+            where: { messId, status: 'UNPAID' },
+            orderBy: { dueDate: 'asc' },
+            select: {
+                id: true,
+                status: true,
+                amount: true,
+                dueDate: true,
+                periodStart: true,
+                periodEnd: true,
+                customerCount: true,
+                rate: true,
+                createdAt: true,
+            },
+        });
+
+        // ── 11. Determine readable mess status ────────────────────────────────
+        let messStatus: 'ACTIVE' | 'TRIAL' | 'OVERDUE' | 'DISABLED';
+        if (mess.billingDisabled) {
+            messStatus = 'DISABLED';
+        } else if (onTrial) {
+            messStatus = 'TRIAL';
+        } else if (unpaidInvoice && new Date() > unpaidInvoice.dueDate) {
+            messStatus = 'OVERDUE';
+        } else {
+            messStatus = 'ACTIVE';
+        }
+
+        return {
+            messId: mess.id,
+            messName: mess.name,
+            isActive: mess.is_active,
+            messStatus,
+
+            // Trial
+            onTrial,
+            trialEndsAt: messConfig?.trialEndsAt?.toISOString() ?? null,
+
+            // Current billing period
+            currentPeriod: {
+                periodStart: periodStart.toISOString(),
+                periodEnd: periodEnd.toISOString(),
+                dueDate: dueDate.toISOString(),
+            },
+
+            // Next billing period
+            nextBillingDate: nextPeriodStart.toISOString(),
+            nextDueDate: nextDueDate.toISOString(),
+
+            // Customers & pricing
+            customerCount,
+            perCustomerRate,
+            rateSource,
+            amount,
+
+            // Override applied, if any
+            perCustomerRateOverride:
+                messConfig?.perCustomerRateOverride !== null && messConfig?.perCustomerRateOverride !== undefined
+                    ? Number(messConfig.perCustomerRateOverride)
+                    : null,
+
+            // Unpaid invoice details
+            unpaidInvoice: unpaidInvoice
+                ? {
+                    id: unpaidInvoice.id,
+                    status: unpaidInvoice.status,
+                    amount: Number(unpaidInvoice.amount),
+                    dueDate: unpaidInvoice.dueDate.toISOString(),
+                    periodStart: unpaidInvoice.periodStart.toISOString(),
+                    periodEnd: unpaidInvoice.periodEnd.toISOString(),
+                    customerCount: unpaidInvoice.customerCount,
+                    perCustomerRate: Number(unpaidInvoice.rate),
+                    createdAt: unpaidInvoice.createdAt.toISOString(),
+                }
+                : null,
+
+            // Billing disabled details
+            billingDisabled: mess.billingDisabled,
+            billingDisabledAt: mess.billingDisabledAt?.toISOString() ?? null,
+            billingReactivatesAt: mess.billingReactivatesAt?.toISOString() ?? null,
+
+            // Enforcement result
+            enforcement,
+        };
+    }
+
     async assertMessActiveForPortal(messId: string) {
         await this.enforceBillingStatus(messId);
         const mess = await this.prisma.mess.findUnique({
