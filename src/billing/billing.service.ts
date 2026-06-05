@@ -649,4 +649,150 @@ export class BillingService {
             throw new ForbiddenException('Mess is disabled due to pending billing');
         }
     }
+
+    /**
+     * Simulate what the billing invoice would look like for the billing period
+     * that contains `referenceDate` — without writing anything to the database.
+     */
+    async generateMockBilling(messId: string, referenceDate?: Date) {
+        const now = referenceDate ?? new Date();
+
+        // ── 1. Resolve the mess ──────────────────────────────────────────────
+        const mess = await this.prisma.mess.findUnique({
+            where: { id: messId },
+            select: {
+                id: true,
+                name: true,
+                is_active: true,
+                billingDisabled: true,
+                billingDisabledAt: true,
+                billingReactivatesAt: true,
+            },
+        });
+        if (!mess) throw new NotFoundException('Mess not found');
+
+        // ── 2. Resolve billing period ────────────────────────────────────────
+        const { periodStart, periodEnd } = await this.resolveInvoicePeriodRange(
+            messId,
+            undefined,
+            now,
+        );
+
+        // ── 3. Global config & mess-level config ─────────────────────────────
+        const globalConfig = await this.getOrCreateGlobalConfig();
+        const messConfig = await this.prisma.messBillingConfig.findUnique({
+            where: { messId },
+        });
+
+        // ── 4. Trial check ───────────────────────────────────────────────────
+        const onTrial = !!(messConfig?.trialEndsAt && periodEnd <= messConfig.trialEndsAt);
+        if (onTrial) {
+            return {
+                messId,
+                messName: mess.name,
+                referenceDate: now.toISOString(),
+                periodStart: periodStart.toISOString(),
+                periodEnd: periodEnd.toISOString(),
+                trialEndsAt: messConfig!.trialEndsAt!.toISOString(),
+                onTrial: true,
+                customerCount: 0,
+                rateSource: 'TRIAL' as const,
+                perCustomerRate: 0,
+                subtotal: 0,
+                dueDate: new Date(
+                    periodEnd.getTime() -
+                    Number(globalConfig.dueDaysBeforePeriodEnd) * 24 * 60 * 60 * 1000,
+                ).toISOString(),
+                note: 'No charge — mess is within its trial period for this billing cycle.',
+            };
+        }
+
+        // ── 5. Customer count for the period ─────────────────────────────────
+        const customerCount = await this.computeCustomerCount(messId, periodStart, periodEnd);
+
+        // ── 6. Resolve per-customer rate ──────────────────────────────────────
+        const { rate, source: rateSource, tierId } = await this.resolveRate(messId, customerCount);
+
+        // ── 7. Active billing tiers for reference ─────────────────────────────
+        const activeTiers = await this.prisma.billingTier.findMany({
+            where: { isActive: true },
+            orderBy: { minCustomers: 'asc' },
+        });
+
+        const subtotal = customerCount * rate;
+        const dueDate = new Date(
+            periodEnd.getTime() -
+            Number(globalConfig.dueDaysBeforePeriodEnd) * 24 * 60 * 60 * 1000,
+        );
+
+        // ── 8. Existing invoice for this period (if any) ──────────────────────
+        const existingInvoice = await this.prisma.messInvoice.findFirst({
+            where: { messId, periodStart, periodEnd },
+            select: {
+                id: true,
+                status: true,
+                amount: true,
+                paidAt: true,
+                dueDate: true,
+                createdAt: true,
+            },
+        });
+
+        return {
+            _preview: true,
+            messId,
+            messName: mess.name,
+            referenceDate: now.toISOString(),
+            periodStart: periodStart.toISOString(),
+            periodEnd: periodEnd.toISOString(),
+            onTrial: false,
+
+            // Counts & rate
+            customerCount,
+            perCustomerRate: rate,
+            rateSource,
+            ...(tierId && { matchedTierId: tierId }),
+
+            // Financials
+            subtotal,
+            dueDate: dueDate.toISOString(),
+
+            // Tier table for UI display
+            billingTiers: activeTiers.map((t) => ({
+                id: t.id,
+                minCustomers: t.minCustomers,
+                maxCustomers: t.maxCustomers ?? null,
+                perCustomerRate: Number(t.perCustomerRate),
+                isCurrentTier: t.id === tierId,
+            })),
+
+            // Overrides applied
+            perCustomerRateOverride:
+                messConfig?.perCustomerRateOverride !== null &&
+                messConfig?.perCustomerRateOverride !== undefined
+                    ? Number(messConfig.perCustomerRateOverride)
+                    : null,
+            trialEndsAt: messConfig?.trialEndsAt?.toISOString() ?? null,
+
+            // Global config used
+            globalConfig: {
+                defaultPerCustomerRate: Number(globalConfig.defaultPerCustomerRate),
+                defaultTrialDays: globalConfig.defaultTrialDays,
+                dueDaysBeforePeriodEnd: globalConfig.dueDaysBeforePeriodEnd,
+                graceDaysAfterDue: globalConfig.graceDaysAfterDue,
+            },
+
+            // Whether an invoice already exists for this period
+            existingInvoice: existingInvoice
+                ? {
+                      id: existingInvoice.id,
+                      status: existingInvoice.status,
+                      amount: Number(existingInvoice.amount),
+                      dueDate: existingInvoice.dueDate.toISOString(),
+                      paidAt: existingInvoice.paidAt?.toISOString() ?? null,
+                      createdAt: existingInvoice.createdAt.toISOString(),
+                  }
+                : null,
+        };
+    }
 }

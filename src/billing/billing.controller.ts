@@ -20,6 +20,7 @@ import { UpdateBillingGlobalConfigDto, UpdateMessBillingConfigDto } from './dto/
 import { UpsertBillingTierDto } from './dto/billing-tier.dto';
 import { InvoiceMonthQueryDto, SettleInvoiceDto } from './dto/invoice.dto';
 import { VerifyInvoicePaymentDto } from './dto/invoice-payment.dto';
+import { MockBillingQueryDto } from './dto/mock-billing.dto';
 
 @ApiTags('Billing')
 @ApiBearerAuth()
@@ -132,5 +133,22 @@ export class BillingController {
     async status(@Req() req: any, @Param('messId', ParseUUIDPipe) messId: string) {
         await this.billingService.assertUserCanAccessMess(req.user, messId);
         return this.billingService.enforceBillingStatus(messId);
+    }
+
+    // ─── Mock / Preview ────────────────────────────────────────────────────────
+
+    @Get('mock')
+    @Roles(Role.SUPERADMIN, Role.MESSADMIN)
+    @ApiOperation({
+        summary: 'Preview (mock) billing for a mess on a given date — no data is saved',
+        description:
+            'Returns a full billing breakdown (period, customer count, tier, rate, subtotal) ' +
+            'for the billing period that contains the given reference date. ' +
+            'Nothing is written to the database. MESSADMIN can only preview their own mess.',
+    })
+    async mockBilling(@Req() req: any, @Query() query: MockBillingQueryDto) {
+        await this.billingService.assertUserCanAccessMess(req.user, query.messId);
+        const referenceDate = query.date ? new Date(query.date) : undefined;
+        return this.billingService.generateMockBilling(query.messId, referenceDate);
     }
 }
