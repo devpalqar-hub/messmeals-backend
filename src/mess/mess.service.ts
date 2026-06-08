@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { CreateMessDto, UpdateMessDto } from './dto/create-mess.dto';
+import { CreateMessDto, UpdateMessDto, CreateMessByAdminDto } from './dto/create-mess.dto';
 import { S3Service } from 'src/s3/s3.service';
 import { FoodType, Role } from '@prisma/client';
 import { CreateMessImageDto } from './dto/create-mess-image.dto';
@@ -13,6 +13,28 @@ export class MessService {
         private readonly billingService: BillingService,
     ) { }
 
+    async createMessByAdmin(
+        userId: string,
+        dto: CreateMessByAdminDto,
+        images: { url: string }[] = [],
+    ) {
+        let adminProfile = await this.prisma.messAdminProfile.findUnique({
+            where: { userId },
+        });
+
+        if (!adminProfile) {
+            adminProfile = await this.prisma.messAdminProfile.create({
+                data: { userId },
+            });
+        }
+
+        const createDto: CreateMessDto = {
+            ...dto,
+            messAdminIds: [adminProfile.id]
+        } as CreateMessDto;
+
+        return this.create(createDto, images);
+    }
 
     async create(
         dto: CreateMessDto,

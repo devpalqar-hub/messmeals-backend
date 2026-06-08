@@ -17,7 +17,7 @@ import {
     ValidationPipe,
 } from '@nestjs/common';
 import { MessService } from './mess.service';
-import { CreateMessDto, UpdateMessDto } from './dto/create-mess.dto';
+import { CreateMessDto, UpdateMessDto, CreateMessByAdminDto } from './dto/create-mess.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
@@ -87,6 +87,22 @@ export class MessController {
     async create(@Body() dto: CreateMessDto, @Body('images') images?: { url: string }[]) {
         const imagePayload = (images || []).map((img) => ({ url: img.url }));
         return this.messService.create(dto, imagePayload);
+    }
+
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.MESSADMIN)
+    @ApiOperation({ summary: 'Create mess by admin', description: 'Mess admin creates a new mess for themselves.' })
+    @ApiResponse({ status: 201, description: 'Mess created successfully.' })
+    @ApiBody({ type: CreateMessByAdminDto })
+    @Post('admin/my-mess')
+    @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+    async createByAdmin(
+        @Req() req: any,
+        @Body() dto: CreateMessByAdminDto,
+        @Body('images') images?: { url: string }[]
+    ) {
+        const imagePayload = (images || []).map((img) => ({ url: img.url }));
+        return this.messService.createMessByAdmin(req.user.id, dto, imagePayload);
     }
 
     @Get()
