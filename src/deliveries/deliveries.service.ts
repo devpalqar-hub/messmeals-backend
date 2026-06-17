@@ -2,10 +2,10 @@ import { BadRequestException, Injectable, InternalServerErrorException, NotFound
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { UpdateDeliveryDto } from './dto/update-delivery.dto';
-import { UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
+import { UpdateDeliveryOwnerStatusDto, UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
+import { UpdateVariationStatusDto } from './dto/update-variation-status.dto';
 import { AssignDeliveryPartnerDto, AssignDeliveryPartnerPhs2Dto, AssignDeliveryPartnerToDeliveriesDto } from './dto/assign-partner.dto';
-import { DeliveryStatus, ScheduleType } from '@prisma/client';
-import { tr } from '@faker-js/faker';
+import { DeliveryStatus, Role, ScheduleType, VariationStatus } from '@prisma/client';
 
 @Injectable()
 export class DeliveriesService {
@@ -31,39 +31,57 @@ export class DeliveriesService {
         return delivery;
     }
 
-    async findAll(query: {
-        page?: number | string;
-        limit?: number | string;
-        status?: DeliveryStatus;
-        date?: string;
-        messId?: string;
-        partnerId?: string;   // ✅ delivery agent profileId
-    }) {
-        // 1️⃣ Convert and set defaults
+    async findAll(
+        query: {
+            page?: number | string;
+            limit?: number | string;
+            status?: DeliveryStatus;
+            date?: string;
+            messId?: string;
+            partnerId?: string;
+            variationId?: string;
+        },
+        user: {
+            id: string;
+            role: Role;
+            customerProfileId?: string;
+            deliveryPartnerProfileId?: string;
+            messId?: string;
+        },
+    ) {
         const page = Number(query.page) || 1;
         const limit = Number(query.limit) || 10;
         const skip = (page - 1) * limit;
 
-        const { status, date, messId, partnerId } = query;
+        const { status, date } = query;
 
-        // 2️⃣ Build filters dynamically
         const where: any = {};
 
-        // Filter by partner/delivery agent
-        if (partnerId) {
-            where.partnerId = partnerId;
+        /* ================= ROLE-BASED VISIBILITY ================= */
+
+        if (user.role === Role.USER) {
+            // User → only their deliveries
+            where.customerProfileId = user.customerProfileId;
         }
 
-        // Filter by messId
-        if (messId) {
-            where.messId = messId;
+        if (user.role === Role.DELIVERYAGENT) {
+            // Delivery agent → only assigned deliveries
+            where.partnerId = user.deliveryPartnerProfileId;
         }
+
+        if (user.role === Role.MESSADMIN) {
+            // Mess admin → only their mess
+            where.messId = user.messId;
+        }
+
+        // SUPERADMIN → no restriction
+
+        /* ================= ADDITIONAL FILTERS ================= */
 
         if (status) {
             where.status = status;
         }
 
-        // Filter by specific date
         if (date) {
             const selectedDate = new Date(date);
             const nextDate = new Date(selectedDate);
@@ -75,23 +93,64 @@ export class DeliveriesService {
             };
         }
 
-        // 3️⃣ Fetch data + count
+        // Filter by delivery partner (allowed for SUPERADMIN and MESSADMIN)
+        if (query.partnerId && (user.role === Role.SUPERADMIN || user.role === Role.MESSADMIN)) {
+            where.partnerId = query.partnerId;
+        }
+
+        // Filter by mess (allowed for SUPERADMIN only)
+        if (query.messId && user.role === Role.SUPERADMIN) {
+            where.messId = query.messId;
+        }
+
+        // Filter by variation: only deliveries that have this variation
+        if (query.variationId) {
+            where.deliveryVariations = { some: { variationId: query.variationId } };
+        }
+
+        /* ================= QUERY ================= */
+
         const [deliveries, totalCount] = await this.prisma.$transaction([
             this.prisma.deliveries.findMany({
                 where,
                 include: {
                     customer: {
                         include: {
-                            user: { select: { id: true, name: true, phone: true, email: true } },
+                            user: {
+                                select: { id: true, name: true, phone: true, email: true },
+                            },
                         },
                     },
                     mess: { select: { id: true, name: true } },
-                    plan: { select: { id: true, planName: true, price: true } },
+                    plan: {
+                        select: {
+                            id: true,
+                            planName: true,
+                            price: true,
+                            Variation: {
+                                select: { id: true, title: true, description: true, isActive: true },
+                            },
+                        },
+                    },
                     partner: {
-                        include: { user: true }, // delivery partner user details
+                        include: {
+                            user: {
+                                select: { id: true, name: true, phone: true, email: true },
+                            },
+                        },
+                    },
+                    deliveryVariations: {
+                        include: {
+                            variation: {
+                                select: { id: true, title: true, description: true },
+                            },
+                        },
                     },
                 },
-                orderBy: { date: 'desc' },
+                orderBy: [
+                    { UserSubscriptions: { deliveryPriority: 'asc' } },
+                    { date: 'desc' },
+                ],
                 skip,
                 take: limit,
             }),
@@ -99,7 +158,8 @@ export class DeliveriesService {
             this.prisma.deliveries.count({ where }),
         ]);
 
-        // 4️⃣ Response
+        /* ================= RESPONSE (UNCHANGED) ================= */
+
         return {
             message: 'Deliveries fetched successfully',
             page,
@@ -109,8 +169,9 @@ export class DeliveriesService {
             filters: {
                 status: status || 'ALL',
                 date: date || null,
-                messId: messId || null,
-                partnerId: partnerId || null,
+                variationId: query.variationId || null,
+                messId: user.role === Role.SUPERADMIN ? query.messId || null : null,
+                partnerId: user.role === Role.SUPERADMIN ? query.partnerId || null : null,
             },
             data: deliveries,
         };
@@ -124,10 +185,49 @@ export class DeliveriesService {
         const delivery = await this.prisma.deliveries.findUnique({
             where: { id },
             include: {
-                customer: true,
-                plan: true,
-                partner: true,
-                mess: true,
+                customer: {
+                    include: {
+                        user: {
+                            select: {
+                                id: true, name: true, phone: true, email: true,
+                                is_verified: true, is_active: true, role: true,
+                                createdAt: true, updatedAt: true,
+                            },
+                        },
+                        addresses: true,
+                        Wallet: true,
+                    },
+                },
+                plan: {
+                    include: {
+                        images: true,
+                        Variation: true,
+                    },
+                },
+                partner: {
+                    include: {
+                        user: {
+                            select: {
+                                id: true, name: true, phone: true, email: true,
+                                is_verified: true, is_active: true, role: true,
+                                createdAt: true, updatedAt: true,
+                            },
+                        },
+                    },
+                },
+                mess: {
+                    include: {
+                        images: true, foodTypes: true, tags: true,
+                        District: true, categories: true,
+                    },
+                },
+                deliveryVariations: {
+                    include: {
+                        variation: {
+                            select: { id: true, title: true, description: true, isActive: true },
+                        },
+                    },
+                },
             },
         });
         if (!delivery) throw new NotFoundException('Delivery not found');
@@ -160,10 +260,87 @@ export class DeliveriesService {
     }
 
     async updateStatus(id: string, updatestatusdto: UpdateDeliveryStatusDto) {
+        const existing = await this.prisma.deliveries.findUnique({ where: { id } });
+        if (!existing) throw new NotFoundException('Delivery not found');
         return this.prisma.deliveries.update({
-            where: { id: id },
-            data: {
-                status: updatestatusdto.status,
+            where: { id },
+            data: { status: updatestatusdto.status },
+            include: {
+                plan: { select: { id: true, planName: true, Variation: { select: { id: true, title: true, description: true } } } },
+                partner: { include: { user: { select: { id: true, name: true, phone: true } } } },
+                deliveryVariations: { include: { variation: { select: { id: true, title: true, description: true } } } },
+            },
+        });
+    }
+
+    /**
+     * Update the status of one variation within a delivery.
+     * Accessible by MESSADMIN (own mess) and DELIVERYAGENT (assigned to the delivery).
+     */
+    async updateVariationStatus(
+        deliveryId: string,
+        variationId: string,
+        dto: UpdateVariationStatusDto,
+        requestingUserId: string,
+    ) {
+        // Find the DeliveryVariation record
+        const dv = await this.prisma.deliveryVariation.findUnique({
+            where: { deliveryId_variationId: { deliveryId, variationId } },
+            include: {
+                delivery: {
+                    include: {
+                        mess: { include: { messAdmins: true } },
+                        partner: { include: { user: { select: { id: true } } } },
+                    },
+                },
+            },
+        });
+        if (!dv) throw new NotFoundException('Delivery variation not found');
+
+        const delivery = dv.delivery;
+
+        // Check access: must be mess admin of this delivery's mess, OR the assigned partner
+        const isMessAdmin = delivery.mess?.messAdmins?.some(a => a.userId === requestingUserId);
+        const isAssignedPartner = delivery.partner?.user?.id === requestingUserId;
+
+        if (!isMessAdmin && !isAssignedPartner) {
+            throw new BadRequestException('You do not have permission to update this delivery variation');
+        }
+
+        return this.prisma.deliveryVariation.update({
+            where: { deliveryId_variationId: { deliveryId, variationId } },
+            data: { status: dto.status },
+            include: {
+                variation: { select: { id: true, title: true, description: true } },
+            },
+        });
+    }
+
+    /**
+     * PATCH /deliveries/:id/owner-status
+     * Mess admin / superadmin can mark a delivery as COMPLETED or UNDELIVERED.
+     */
+    async updateOwnerStatus(id: string, dto: UpdateDeliveryOwnerStatusDto, requestingUserId: string) {
+        const delivery = await this.prisma.deliveries.findUnique({
+            where: { id },
+            include: { mess: { include: { messAdmins: true } } },
+        });
+        if (!delivery) throw new NotFoundException('Delivery not found');
+
+        // Verify the requesting user is an admin of this mess
+        const isMessAdmin = delivery.mess?.messAdmins?.some(a => a.userId === requestingUserId);
+        if (!isMessAdmin) {
+            // SUPERADMIN bypass is handled at the controller (role guard)
+            // If not a mess admin of this mess, reject
+            throw new BadRequestException('You are not an admin of the mess this delivery belongs to');
+        }
+
+        return this.prisma.deliveries.update({
+            where: { id },
+            data: { status: dto.status },
+            include: {
+                plan: { select: { id: true, planName: true, Variation: { select: { id: true, title: true, description: true } } } },
+                partner: { include: { user: { select: { id: true, name: true, phone: true } } } },
             },
         });
     }
@@ -255,11 +432,19 @@ export class DeliveriesService {
             }
         }
 
-        // 3️⃣ Create all new deliveries in a single transaction
+        // 3️⃣ Create deliveries, then create their variation rows
         if (deliveriesToCreate.length > 0) {
-            await this.prisma.$transaction(
-                deliveriesToCreate.map((data) => this.prisma.deliveries.create({ data }))
+            // Create deliveries individually (to get IDs back for variation linking)
+            const createdDeliveries = await this.prisma.$transaction(
+                deliveriesToCreate.map(data => this.prisma.deliveries.create({ data, select: { id: true, planId: true } }))
             );
+
+            // Group by planId, then create DeliveryVariation rows per plan
+            const planIds = [...new Set(createdDeliveries.map(d => d.planId))];
+            for (const pid of planIds) {
+                const idsForPlan = createdDeliveries.filter(d => d.planId === pid).map(d => d.id);
+                await this.createDeliveryVariationsByIds(pid, idsForPlan);
+            }
         }
 
         return {
@@ -452,9 +637,13 @@ export class DeliveriesService {
         }
 
         if (deliveriesToCreate.length > 0) {
-            await this.prisma.deliveries.createMany({
-                data: deliveriesToCreate,
+            await this.prisma.deliveries.createMany({ data: deliveriesToCreate });
+            // Auto-create DeliveryVariation rows for each delivery × plan variation
+            const createdDeliveries = await this.prisma.deliveries.findMany({
+                where: { subscriptionId: subscptn.id, date: { in: deliveriesToCreate.map(d => d.date) } },
+                select: { id: true },
             });
+            await this.createDeliveryVariationsByIds(subscptn.planId, createdDeliveries.map(d => d.id));
         }
         // ✅ Return success response
         return {
@@ -535,5 +724,258 @@ export class DeliveriesService {
     }
 
 
-}
 
+    /**
+     * Private helper: given a planId and a list of delivery IDs,
+     * fetch the plan's active variations and create one DeliveryVariation
+     * row per delivery x variation (skipping any duplicates).
+     */
+    private async createDeliveryVariationsByIds(
+        planId: string,
+        deliveryIds: string[],
+    ): Promise<void> {
+        if (deliveryIds.length === 0) return;
+
+        const plan = await this.prisma.plans.findUnique({
+            where: { id: planId },
+            select: {
+                Variation: {
+                    where: { isActive: true },
+                    select: { id: true },
+                },
+            },
+        });
+        const variationIds = plan?.Variation?.map(v => v.id) ?? [];
+        if (variationIds.length === 0) return;
+
+        const records = deliveryIds.flatMap(did =>
+            variationIds.map(vid => ({
+                deliveryId: did,
+                variationId: vid,
+                status: VariationStatus.PENDING,
+            }))
+        );
+
+        await this.prisma.deliveryVariation.createMany({
+            data: records,
+            skipDuplicates: true,
+        });
+    }
+
+    /**
+     * Analytics: variation delivery counts grouped by variation, plan, and date.
+     * Access: SUPERADMIN (any mess) | MESSADMIN (own mess only).
+     */
+    async getVariationDeliveryCounts(
+        query: {
+            messId: string;
+            fromDate: string;
+            toDate: string;
+            planId?: string;
+            status?: VariationStatus;
+        },
+        user: { id: string; role: Role; messId?: string },
+    ) {
+        const { messId, fromDate, toDate, planId, status } = query;
+
+        // ── Access control ─────────────────────────────────────────────────────
+        if (user.role === Role.MESSADMIN && user.messId !== messId) {
+            throw new BadRequestException('You do not have access to this mess');
+        }
+
+        // ── Normalise date range ───────────────────────────────────────────────
+        const from = new Date(fromDate);
+        from.setHours(0, 0, 0, 0);
+
+        const to = new Date(toDate);
+        to.setHours(23, 59, 59, 999);
+
+        if (isNaN(from.getTime()) || isNaN(to.getTime())) {
+            throw new BadRequestException('Invalid fromDate or toDate. Expected YYYY-MM-DD');
+        }
+        if (from > to) {
+            throw new BadRequestException('fromDate must be before or equal to toDate');
+        }
+
+        // ── Fetch DeliveryVariation rows with all needed joins ─────────────────
+        const rows = await this.prisma.deliveryVariation.findMany({
+            where: {
+                ...(status && { status }),
+                delivery: {
+                    messId,
+                    date: { gte: from, lte: to },
+                    ...(planId && { planId }),
+                },
+            },
+            select: {
+                id: true,
+                status: true,
+                variationId: true,
+                variation: { select: { id: true, title: true } },
+                delivery: {
+                    select: {
+                        id: true,
+                        date: true,
+                        planId: true,
+                        plan: { select: { id: true, planName: true } },
+                    },
+                },
+            },
+            orderBy: { delivery: { date: 'asc' } },
+        });
+
+        // ── Helper: blank status bucket ────────────────────────────────────────
+        const blankStatus = (): Record<VariationStatus, number> => ({
+            PENDING: 0,
+            DELIVERED: 0,
+            COMPLETED: 0,
+            UNDELIVERED: 0,
+        });
+
+        const dateStr = (d: Date) => d.toISOString().split('T')[0];
+
+        // ── Build byVariation ─────────────────────────────────────────────────
+        const varMap = new Map<
+            string,
+            {
+                variationId: string;
+                variationTitle: string;
+                totalCount: number;
+                byStatus: Record<VariationStatus, number>;
+                planMap: Map<string, { planId: string; planName: string; count: number; byStatus: Record<VariationStatus, number> }>;
+                dateMap: Map<string, { date: string; count: number; byStatus: Record<VariationStatus, number> }>;
+            }
+        >();
+
+        // ── Build byPlan ──────────────────────────────────────────────────────
+        const planMap = new Map<
+            string,
+            {
+                planId: string;
+                planName: string;
+                totalDeliveries: number;
+                varMap: Map<string, { variationId: string; variationTitle: string; count: number }>;
+            }
+        >();
+
+        // ── Build byDate ──────────────────────────────────────────────────────
+        const dateMap = new Map<
+            string,
+            {
+                date: string;
+                totalDeliveries: number;
+                varMap: Map<string, { variationId: string; variationTitle: string; count: number }>;
+            }
+        >();
+
+        // Track distinct delivery IDs for summary totals
+        const allDeliveryIds = new Set<string>();
+
+        for (const row of rows) {
+            const vid = row.variationId;
+            const vtitle = row.variation.title;
+            const pid = row.delivery.planId;
+            const pname = row.delivery.plan.planName;
+            const dkey = dateStr(row.delivery.date);
+            const st = row.status as VariationStatus;
+
+            allDeliveryIds.add(row.delivery.id);
+
+            // ── byVariation ────────────────────────────────────────────────────
+            if (!varMap.has(vid)) {
+                varMap.set(vid, {
+                    variationId: vid,
+                    variationTitle: vtitle,
+                    totalCount: 0,
+                    byStatus: blankStatus(),
+                    planMap: new Map(),
+                    dateMap: new Map(),
+                });
+            }
+            const ve = varMap.get(vid)!;
+            ve.totalCount++;
+            ve.byStatus[st]++;
+
+            // variation → plan breakdown
+            if (!ve.planMap.has(pid)) {
+                ve.planMap.set(pid, { planId: pid, planName: pname, count: 0, byStatus: blankStatus() });
+            }
+            const vpe = ve.planMap.get(pid)!;
+            vpe.count++;
+            vpe.byStatus[st]++;
+
+            // variation → date breakdown
+            if (!ve.dateMap.has(dkey)) {
+                ve.dateMap.set(dkey, { date: dkey, count: 0, byStatus: blankStatus() });
+            }
+            const vde = ve.dateMap.get(dkey)!;
+            vde.count++;
+            vde.byStatus[st]++;
+
+            // ── byPlan ─────────────────────────────────────────────────────────
+            if (!planMap.has(pid)) {
+                planMap.set(pid, { planId: pid, planName: pname, totalDeliveries: 0, varMap: new Map() });
+            }
+            const pe = planMap.get(pid)!;
+            pe.totalDeliveries++;
+            if (!pe.varMap.has(vid)) {
+                pe.varMap.set(vid, { variationId: vid, variationTitle: vtitle, count: 0 });
+            }
+            pe.varMap.get(vid)!.count++;
+
+            // ── byDate ─────────────────────────────────────────────────────────
+            if (!dateMap.has(dkey)) {
+                dateMap.set(dkey, { date: dkey, totalDeliveries: 0, varMap: new Map() });
+            }
+            const de = dateMap.get(dkey)!;
+            de.totalDeliveries++;
+            if (!de.varMap.has(vid)) {
+                de.varMap.set(vid, { variationId: vid, variationTitle: vtitle, count: 0 });
+            }
+            de.varMap.get(vid)!.count++;
+        }
+
+        // ── Serialise ─────────────────────────────────────────────────────────
+        const byVariation = [...varMap.values()].map((v) => ({
+            variationId: v.variationId,
+            variationTitle: v.variationTitle,
+            totalCount: v.totalCount,
+            byStatus: v.byStatus,
+            byPlan: [...v.planMap.values()],
+            byDate: [...v.dateMap.values()].sort((a, b) => a.date.localeCompare(b.date)),
+        }));
+
+        const byPlan = [...planMap.values()].map((p) => ({
+            planId: p.planId,
+            planName: p.planName,
+            totalDeliveries: p.totalDeliveries,
+            variations: [...p.varMap.values()],
+        }));
+
+        const byDate = [...dateMap.entries()]
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([, d]) => ({
+                date: d.date,
+                totalDeliveries: d.totalDeliveries,
+                variations: [...d.varMap.values()],
+            }));
+
+        return {
+            messId,
+            fromDate,
+            toDate,
+            filters: {
+                planId: planId ?? null,
+                status: status ?? null,
+            },
+            summary: {
+                totalDeliveries: allDeliveryIds.size,
+                totalVariationDeliveries: rows.length,
+            },
+            byVariation,
+            byPlan,
+            byDate,
+        };
+    }
+
+}

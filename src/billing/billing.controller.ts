@@ -1,0 +1,173 @@
+import {
+    Body,
+    Controller,
+    Get,
+    Param,
+    ParseUUIDPipe,
+    Patch,
+    Post,
+    Query,
+    Req,
+    UseGuards,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
+import { BillingService } from './billing.service';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/decorators/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
+import { UpdateBillingGlobalConfigDto, UpdateMessBillingConfigDto } from './dto/billing-config.dto';
+import { UpsertBillingTierDto } from './dto/billing-tier.dto';
+import { InvoiceMonthQueryDto, SettleInvoiceDto, OverrideInvoiceDatesDto } from './dto/invoice.dto';
+import { VerifyInvoicePaymentDto } from './dto/invoice-payment.dto';
+import { MockBillingQueryDto } from './dto/mock-billing.dto';
+
+@ApiTags('Billing')
+@ApiBearerAuth()
+@Controller('billing')
+@UseGuards(JwtAuthGuard, RolesGuard)
+export class BillingController {
+    constructor(private readonly billingService: BillingService) { }
+
+    @Get('global-config')
+    @Roles(Role.SUPERADMIN)
+    @ApiOperation({ summary: 'Get global billing config (superadmin)' })
+    getGlobalConfig() {
+        return this.billingService.getOrCreateGlobalConfig();
+    }
+
+    @Patch('global-config')
+    @Roles(Role.SUPERADMIN)
+    @ApiOperation({ summary: 'Update global billing config (superadmin)' })
+    updateGlobalConfig(@Body() dto: UpdateBillingGlobalConfigDto) {
+        return this.billingService.updateGlobalConfig(dto);
+    }
+
+    @Get('tiers')
+    @Roles(Role.SUPERADMIN, Role.USER, Role.MESSADMIN)
+    @ApiOperation({ summary: 'List billing tiers (superadmin, customer, messadmin)' })
+    listTiers(@Req() req: any) {
+        return this.billingService.listTiers(req.user?.role);
+    }
+
+    @Post('tiers')
+    @Roles(Role.SUPERADMIN)
+    @ApiOperation({ summary: 'Create billing tier (superadmin)' })
+    createTier(@Body() dto: UpsertBillingTierDto) {
+        return this.billingService.upsertTier(undefined, dto);
+    }
+
+    @Patch('tiers/:id')
+    @Roles(Role.SUPERADMIN)
+    @ApiOperation({ summary: 'Update billing tier (superadmin)' })
+    @ApiParam({ name: 'id', description: 'Tier id (UUID)' })
+    updateTier(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpsertBillingTierDto) {
+        return this.billingService.upsertTier(id, dto);
+    }
+
+    @Patch('mess/:messId/config')
+    @Roles(Role.SUPERADMIN)
+    @ApiOperation({ summary: 'Update per-mess billing config (superadmin)' })
+    @ApiParam({ name: 'messId', description: 'Mess id (UUID)' })
+    updateMessConfig(
+        @Param('messId', ParseUUIDPipe) messId: string,
+        @Body() dto: UpdateMessBillingConfigDto,
+    ) {
+        return this.billingService.updateMessConfig(messId, dto);
+    }
+
+    @Get('mess/:messId/invoice')
+    @Roles(Role.SUPERADMIN, Role.MESSADMIN)
+    @ApiOperation({ summary: 'Get or generate invoice for a mess (superadmin, messadmin)' })
+    @ApiParam({ name: 'messId', description: 'Mess id (UUID)' })
+    @ApiQuery({ name: 'month', required: false, description: 'Usage month (YYYY-MM)' })
+    async getInvoice(
+        @Req() req: any,
+        @Param('messId', ParseUUIDPipe) messId: string,
+        @Query() query: InvoiceMonthQueryDto,
+    ) {
+        await this.billingService.assertUserCanAccessMess(req.user, messId);
+        return this.billingService.getOrGenerateInvoice(messId, query.month);
+    }
+
+    @Post('mess/:messId/invoice/pay')
+    @Roles(Role.SUPERADMIN, Role.MESSADMIN)
+    @ApiOperation({ summary: 'Create Razorpay order for the pending invoice (superadmin, messadmin)' })
+    @ApiParam({ name: 'messId', description: 'Mess id (UUID)' })
+    async createInvoicePayOrder(
+        @Req() req: any,
+        @Param('messId', ParseUUIDPipe) messId: string,
+    ) {
+        await this.billingService.assertUserCanAccessMess(req.user, messId);
+        return this.billingService.createInvoicePaymentOrder(messId);
+    }
+
+    @Post('mess/:messId/invoice/pay/verify')
+    @Roles(Role.SUPERADMIN, Role.MESSADMIN)
+    @ApiOperation({ summary: 'Verify Razorpay payment + settle invoice (superadmin, messadmin)' })
+    @ApiParam({ name: 'messId', description: 'Mess id (UUID)' })
+    async verifyInvoicePayment(
+        @Req() req: any,
+        @Param('messId', ParseUUIDPipe) messId: string,
+        @Body() dto: VerifyInvoicePaymentDto,
+    ) {
+        await this.billingService.assertUserCanAccessMess(req.user, messId);
+        return this.billingService.verifyAndSettleInvoicePayment(messId, dto);
+    }
+
+    @Post('mess/:messId/settle')
+    @Roles(Role.SUPERADMIN)
+    @ApiOperation({ summary: 'Settle invoice (mark paid) (superadmin)' })
+    @ApiParam({ name: 'messId', description: 'Mess id (UUID)' })
+    async settle(
+        @Param('messId', ParseUUIDPipe) messId: string,
+        @Body() dto: SettleInvoiceDto,
+    ) {
+        return this.billingService.settleInvoice(messId, dto.month);
+    }
+
+    @Patch('mess/:messId/invoice/:invoiceId/override-dates')
+    @Roles(Role.SUPERADMIN)
+    @ApiOperation({ summary: 'Override invoice dates for testing (superadmin)' })
+    @ApiParam({ name: 'messId', description: 'Mess id (UUID)' })
+    @ApiParam({ name: 'invoiceId', description: 'Invoice id (UUID)' })
+    async overrideInvoiceDates(
+        @Param('messId', ParseUUIDPipe) messId: string,
+        @Param('invoiceId', ParseUUIDPipe) invoiceId: string,
+        @Body() dto: OverrideInvoiceDatesDto,
+    ) {
+        return this.billingService.overrideInvoiceDates(messId, invoiceId, dto);
+    }
+
+    @Get('mess/:messId/status')
+    @Roles(Role.SUPERADMIN, Role.MESSADMIN)
+    @ApiOperation({
+        summary: 'Get full billing status for a mess (superadmin, messadmin)',
+        description:
+            'Returns the current billing status including: mess status (ACTIVE/TRIAL/OVERDUE/DISABLED), ' +
+            'current billing period with due date, next billing date, number of customers, ' +
+            'per-customer rate, total amount due, and unpaid invoice details (if any).',
+    })
+    @ApiParam({ name: 'messId', description: 'Mess id (UUID)' })
+    async status(@Req() req: any, @Param('messId', ParseUUIDPipe) messId: string) {
+        await this.billingService.assertUserCanAccessMess(req.user, messId);
+        return this.billingService.getMessBillingStatus(messId);
+    }
+
+    // ─── Mock / Preview ────────────────────────────────────────────────────────
+
+    @Get('mock')
+    @Roles(Role.SUPERADMIN, Role.MESSADMIN)
+    @ApiOperation({
+        summary: 'Preview (mock) billing for a mess on a given date — no data is saved',
+        description:
+            'Returns a full billing breakdown (period, customer count, tier, rate, subtotal) ' +
+            'for the billing period that contains the given reference date. ' +
+            'Nothing is written to the database. MESSADMIN can only preview their own mess.',
+    })
+    async mockBilling(@Req() req: any, @Query() query: MockBillingQueryDto) {
+        await this.billingService.assertUserCanAccessMess(req.user, query.messId);
+        const referenceDate = query.date ? new Date(query.date) : undefined;
+        return this.billingService.generateMockBilling(query.messId, referenceDate);
+    }
+}

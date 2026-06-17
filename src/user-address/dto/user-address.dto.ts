@@ -40,5 +40,11 @@ export class CreateUserAddressDto {
     @ApiProperty({ example: "john@example.com" })
     @IsEmail()
     email: string;
+
+
+    @ApiProperty({ example: "location link" })
+    @IsString()
+    @IsOptional()
+    locationLink: string;
 }
 

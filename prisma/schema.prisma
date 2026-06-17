@@ -12,8 +12,17 @@ datasource db {
 
 enum DeliveryStatus {
   PENDING
-  PROGRESS
   DELIVERED
+  COMPLETED
+  UNDELIVERED
+}
+
+/// Status for a single variation within a delivery (e.g. Breakfast DELIVERED, Dinner UNDELIVERED)
+enum VariationStatus {
+  PENDING
+  DELIVERED
+  COMPLETED
+  UNDELIVERED
 }
 
 enum Role {
@@ -38,16 +47,52 @@ enum DayOfWeek {
   SATURDAY
 }
 
+enum EnquiryType {
+  USER
+  MESS_OWNER
+}
+
+enum FoodType {
+  VEG
+  NON_VEG
+  MIXED
+}
+
+enum Tags {
+  HOME_STYLE_FOOD
+  MONTHLY_PLANS
+  DAILY_FRESH_MEALS
+  FIXED_MENU
+  HYGIENIC_KITCHEN
+  AFFORDABLE_PRICING
+  VEG_AND_NON_VEG
+  ON_TIME_SERVING
+  QUALITY_INGREDIENTS
+  CONSISTENT_TASTE
+  STUDENT_FRIENDLY
+  FAMILY_MESS
+  FLEXIBLE_BOOKING
+  NO_HIDDEN_CHARGES
+  TRUSTED_MESS
+}
+
+enum InvoiceStatus {
+  UNPAID
+  PAID
+  OVERDUE
+}
+
 model User {
   id                     String                  @id @default(uuid())
   name                   String
   phone                  String                  @unique
-  email                  String                  @unique
+  email                  String?                 @unique
   otp                    String?
   expiresAt              DateTime?
   is_verified            Boolean                 @default(false)
   is_active              Boolean                 @default(true)
   role                   Role                    @default(USER)
+  password               String?
   customerProfile        CustomerProfile?
   deliveryPartnerProfile DeliveryPartnerProfile?
   messAdminProfile       MessAdminProfile?
@@ -94,7 +139,9 @@ model UserSubscriptions {
   is_active                Boolean      @default(true)
   cancelled_on             DateTime?
   customerProfileId        String?
-  createdAt                DateTime     @default(now())
+  deliveryPriority         Int?
+
+  createdAt DateTime @default(now())
 
   isActive Boolean @default(true)
 
@@ -104,6 +151,10 @@ model UserSubscriptions {
   mess                   Mess                    @relation(fields: [messId], references: [id], onDelete: Cascade)
   UserAddress            UserAddress?            @relation(fields: [userAddressId], references: [id])
   deliveries             Deliveries[]
+  payments               Payments[]
+
+  @@unique([messId, deliveryPriority])
+  @@index([messId, deliveryPriority])
 }
 
 model DeliveryPartnerProfile {
@@ -143,6 +194,7 @@ model Plans {
   usersubscriptions UserSubscriptions[]
   deliveries        Deliveries[]
   Variation         Variation[]
+  Enquiry           Enquiry[]
 }
 
 model PlanImages {
@@ -167,7 +219,25 @@ model Variation {
   updatedAt   DateTime @updatedAt
   plans       Plans[]
 
-  isActive Boolean @default(true)
+  isActive           Boolean            @default(true)
+  deliveryVariations DeliveryVariation[]
+}
+
+/// Tracks the status of each variation (Breakfast/Lunch/Dinner) within a single delivery.
+model DeliveryVariation {
+  id          String         @id @default(uuid())
+  deliveryId  String
+  variationId String
+  status      VariationStatus @default(PENDING)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  delivery  Deliveries @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  variation Variation  @relation(fields: [variationId], references: [id], onDelete: Cascade)
+
+  @@unique([deliveryId, variationId])
+  @@index([deliveryId])
+  @@index([variationId])
 }
 
 model Deliveries {
@@ -185,21 +255,30 @@ model Deliveries {
 
   isActive Boolean @default(true)
 
-  customer          CustomerProfile         @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  plan              Plans                   @relation(fields: [planId], references: [id], onDelete: Cascade)
-  partner           DeliveryPartnerProfile? @relation(fields: [partnerId], references: [id])
-  mess              Mess                    @relation(fields: [messId], references: [id], onDelete: Cascade)
-  UserSubscriptions UserSubscriptions?      @relation(fields: [subscriptionId], references: [id])
+  customer           CustomerProfile         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  plan               Plans                   @relation(fields: [planId], references: [id], onDelete: Cascade)
+  partner            DeliveryPartnerProfile? @relation(fields: [partnerId], references: [id])
+  mess               Mess                    @relation(fields: [messId], references: [id], onDelete: Cascade)
+  UserSubscriptions  UserSubscriptions?      @relation(fields: [subscriptionId], references: [id])
+  deliveryVariations DeliveryVariation[]
 }
 
 model Mess {
   id          String  @id @default(uuid())
   name        String
   description String? @db.Text
+  features    Json?
   address     String? @db.LongText
   phone       String?
   email       String?
+  isPremium   Boolean @default(false)
   is_active   Boolean @default(true)
+  latitude    String?
+  logitude    String?
+  zipcode     String?
+
+  foodTypes MessFoodType[] // ✅ relation
+  tags      MessTag[] // ✅ relation
 
   is_verified  Boolean      @default(false)
   openingHours Json?
@@ -215,6 +294,78 @@ model Mess {
   Deliveries             Deliveries[]
   UserSubscriptions      UserSubscriptions[]
   Testimonials           Testimonials[]
+  District               District?                @relation(fields: [districtId], references: [id])
+  districtId             String?
+  Enquiry                Enquiry[]
+
+  // Billing control
+  billingDisabled      Boolean            @default(false)
+  billingDisabledAt    DateTime?
+  billingReactivatesAt DateTime?
+  MessBillingConfig    MessBillingConfig?
+  MessInvoice          MessInvoice[]
+}
+
+model BillingGlobalConfig {
+  id                     String   @id @default(uuid())
+  defaultPerCustomerRate Decimal  @default(4.00)
+  defaultTrialDays       Int      @default(30)
+  dueDaysBeforePeriodEnd Int      @default(5)
+  graceDaysAfterDue      Int      @default(5)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+model BillingTier {
+  id              String   @id @default(uuid())
+  minCustomers    Int
+  maxCustomers    Int?
+  perCustomerRate Decimal  @default(0.00)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([minCustomers, maxCustomers])
+}
+
+model MessBillingConfig {
+  id                      String    @id @default(uuid())
+  messId                  String    @unique
+  trialEndsAt             DateTime?
+  perCustomerRateOverride Decimal?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  mess Mess @relation(fields: [messId], references: [id], onDelete: Cascade)
+}
+
+model MessInvoice {
+  id            String        @id @default(uuid())
+  messId        String
+  periodStart   DateTime
+  periodEnd     DateTime
+  dueDate       DateTime
+  customerCount Int
+  rate          Decimal       @default(0.00)
+  amount        Decimal       @default(0.00)
+  status        InvoiceStatus @default(UNPAID)
+  paidAt        DateTime?
+
+  // Razorpay (direct mess billing payments)
+  razorpayOrderId     String?   @unique
+  razorpayPaymentId   String?
+  razorpaySignature   String?
+  razorpayPaymentMeta Json?
+  paymentProcessedAt  DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  mess Mess @relation(fields: [messId], references: [id], onDelete: Cascade)
+
+  @@unique([messId, periodStart, periodEnd])
+  @@index([messId, status])
+  @@index([dueDate])
 }
 
 model MessImages {
@@ -222,6 +373,7 @@ model MessImages {
   messId    String
   url       String
   altText   String?
+  isCover   Boolean  @default(false)
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -251,6 +403,7 @@ model UserAddress {
   latitudeLogitude String?
   phone            String?
   email            String?
+  locationLink     String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -280,6 +433,25 @@ model Transaction {
   balanceAfter Decimal  @default(0.00) // wallet balance after transaction, stored to allow auditing
   meta         Json? // optional metadata: { fromUserId, toUserId, note, externalId }
   createdAt    DateTime @default(now())
+}
+
+model Payments {
+  id                String    @id @default(uuid())
+  subscriptionId    String
+  razorpayOrderId   String    @unique
+  razorpayPaymentId String?
+  amount            Decimal
+  status            String    @default("PENDING") // PENDING, SUCCESS, FAILED
+  customerEmail     String
+  customerPhone     String
+  customerName      String
+  metadata          Json? // Razorpay order metadata
+  failureReason     String?
+  processedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  userSubscriptions UserSubscriptions @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 }
 
 model PhoneNumbers {
@@ -313,4 +485,56 @@ model Testimonials {
   mess            Mess                    @relation(fields: [messId], references: [id], onDelete: Cascade)
   customer        CustomerProfile         @relation(fields: [customerId], references: [id], onDelete: Cascade)
   deliveryPartner DeliveryPartnerProfile? @relation(fields: [DeliveryagentId], references: [id], onDelete: Cascade)
+}
+
+model District {
+  id        String  @id @default(uuid())
+  image     String
+  name      String
+  isPopular Boolean @default(false)
+
+  mess      Mess[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Enquiry {
+  id          String      @id @default(uuid())
+  name        String
+  email       String
+  phone       String?
+  planId      String?
+  message     String      @db.Text
+  enquiryType EnquiryType @default(USER)
+  messId      String?
+
+  plan Plans? @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  messname String?
+  district String?
+  pincode  String?
+
+  mess      Mess?    @relation(fields: [messId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model MessFoodType {
+  id       String   @id @default(uuid())
+  messId   String
+  foodType FoodType
+
+  mess Mess @relation(fields: [messId], references: [id])
+
+  @@unique([messId, foodType])
+}
+
+model MessTag {
+  id     String @id @default(uuid())
+  messId String
+  tag    Tags
+
+  mess Mess @relation(fields: [messId], references: [id])
+
+  @@unique([messId, tag])
 }

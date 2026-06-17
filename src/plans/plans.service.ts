@@ -64,21 +64,38 @@ export class PlansService {
                 });
             }
 
-            // ✅ Response structure unchanged
+            const createdImages = await tx.planImages.findMany({
+                where: { planId: plan.id },
+                select: {
+                    id: true,
+                    url: true,
+                    altText: true,
+                    sortOrder: true,
+                    createdAt: true,
+                    updatedAt: true,
+                },
+            });
+
             return {
                 message: 'Plan created successfully',
-                planId: plan,
+                planId: {
+                    ...plan,
+                    images: createdImages,
+                },
             };
         });
     }
 
 
-    async findAll(page: number = 1, limit: number = 10, messId?: string) {
+    async findAll(page: number = 1, limit: number = 10, messId?: string, search?: string) {
         const skip = (page - 1) * limit;
 
         const where: any = {};
         if (messId) {
             where.messId = messId;
+        }
+        if (search) {
+            where.planName = { contains: search, mode: 'insensitive' };
         }
 
         const [plans, total] = await this.prisma.$transaction([
@@ -148,61 +165,94 @@ export class PlansService {
         return plan;
     }
 
-    async updatePlan(id: string, dto: UpdatePlanDto, files: any) {
-        if (dto.isMonthlyPlan === dto.isDailyPlan) {
+    async updatePlan(id: string, dto: UpdatePlanDto) {
+        if (
+            dto.isMonthlyPlan !== undefined &&
+            dto.isDailyPlan !== undefined &&
+            dto.isMonthlyPlan === dto.isDailyPlan
+        ) {
             throw new BadRequestException(
                 'Invalid plan type: exactly one of isMonthlyPlan or isDailyPlan must be true',
             );
         }
 
         return this.prisma.$transaction(async (tx) => {
-            // 1️⃣ Handle plan images (new uploads)
-            const planImagesData =
-                files?.planImages?.map((file) => ({
-                    url: path.join('uploads', file.filename),
-                    altText: file.originalname,
-                })) || [];
-
-            // 2️⃣ Prepare update data object
             const updateData: any = {};
 
-            if (dto.planName) updateData.planName = dto.planName;
-            if (dto.price) updateData.price = dto.price;
-            if (dto.minPrice) updateData.minPrice = dto.minPrice;
-            if (dto.description) updateData.description = dto.description;
-            if (dto.isActive) updateData.isActive = dto.isActive;
-            if (dto.isMonthlyPlan) updateData.isMonthlyPlan = dto.isMonthlyPlan;
-            if (dto.isDailyPlan) updateData.isDailyPlan = dto.isDailyPlan;
+            if (dto.planName !== undefined)
+                updateData.planName = dto.planName;
+
+            if (dto.price !== undefined)
+                updateData.price = dto.price;
+
+            if (dto.minPrice !== undefined)
+                updateData.minPrice = dto.minPrice;
+
+            if (dto.description !== undefined)
+                updateData.description = dto.description;
+
+            if (dto.isActive !== undefined)
+                updateData.isActive = dto.isActive;
+
+            if (dto.isMonthlyPlan !== undefined)
+                updateData.isMonthlyPlan = dto.isMonthlyPlan;
+
+            if (dto.isDailyPlan !== undefined)
+                updateData.isDailyPlan = dto.isDailyPlan;
+
+            if (dto.lunch !== undefined)
+                updateData.lunch = dto.lunch;
+
             if (dto.messId) {
-                // Validate mess exists
-                const mess = await tx.mess.findUnique({ where: { id: dto.messId } });
+                const mess = await tx.mess.findUnique({
+                    where: { id: dto.messId },
+                });
+
                 if (!mess) throw new BadRequestException('Mess not found');
+
                 updateData.messId = dto.messId;
             }
-            if (dto.lunch !== undefined) updateData.lunch = dto.lunch;
 
-            // 3️⃣ Handle Variations (many-to-many)
+            // Variation update
             if (dto.variationIds?.length) {
                 updateData.Variation = {
-                    set: dto.variationIds.map((id) => ({ id })), // replaces existing ones
+                    set: dto.variationIds.map((id) => ({ id })),
                 };
             }
 
-            // 4️⃣ Handle Images (if new ones uploaded)
-            if (planImagesData.length) {
-                // Optional: delete old images before adding new
-                await tx.planImages.deleteMany({ where: { planId: id } });
+            // ✅ Add images without removing existing ones
+            if (dto.planImages?.length) {
+                // fetch existing images
+                const existingImages = await tx.planImages.findMany({
+                    where: { planId: id },
+                    select: { url: true },
+                });
 
-                updateData.images = {
-                    create: planImagesData,
-                };
+                const existingUrls = new Set(existingImages.map(img => img.url));
+
+                // filter only new images
+                const newImages = dto.planImages.filter(
+                    (url) => !existingUrls.has(url),
+                );
+
+                if (newImages.length) {
+                    updateData.images = {
+                        create: newImages.map((url) => ({
+                            url,
+                            altText: 'plan-image',
+                        })),
+                    };
+                }
             }
 
-            // 5️⃣ Update plan
+
             const updatedPlan = await tx.plans.update({
                 where: { id },
                 data: updateData,
-                include: { Variation: true, images: true },
+                include: {
+                    Variation: true,
+                    images: true,
+                },
             });
 
             return {

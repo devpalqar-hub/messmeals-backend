@@ -13,8 +13,11 @@ export class DeliveryAgentService {
 
     // Create Delivery Agent + Profile
     async create(dto: DeliveryAgentCreateDto) {
-        const existingEmail = await this.prisma.user.findUnique({ where: { email: dto.email } });
-        if (existingEmail) throw new BadRequestException('Email already registered');
+        // ✅ Check email uniqueness only when email is provided
+        if (dto.email) {
+            const existingEmail = await this.prisma.user.findUnique({ where: { email: dto.email } });
+            if (existingEmail) throw new BadRequestException('Email already registered');
+        }
 
         const existingPhone = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
         if (existingPhone) throw new BadRequestException('Phone number already registered');
@@ -25,22 +28,27 @@ export class DeliveryAgentService {
         });
         if (!messExists) throw new BadRequestException('Mess not found');
 
-        // ✅ Create User + Partner Profile with messId
-        return this.prisma.user.create({
-            data: {
-                name: dto.name,
-                phone: dto.phone,
-                email: dto.email,
-                role: Role.DELIVERYAGENT,
-                is_active: dto.is_active,
-                deliveryPartnerProfile: {
-                    create: {
-                        address: dto.address,
-                        deliveryRegion: dto.deliverAgentRegion,
-                        messId: dto.messId, // 👈 added
-                    },
+        // ✅ Build user data — email is only added when provided (avoids Prisma type error)
+        const userData: any = {
+            name: dto.name,
+            phone: dto.phone,
+            role: Role.DELIVERYAGENT,
+            is_active: dto.is_active,
+            deliveryPartnerProfile: {
+                create: {
+                    address: dto.address ?? null,
+                    deliveryRegion: dto.deliverAgentRegion,
+                    messId: dto.messId,
                 },
             },
+        };
+
+        if (dto.email) {
+            userData.email = dto.email;
+        }
+
+        return this.prisma.user.create({
+            data: userData,
             include: { deliveryPartnerProfile: true },
         });
     }
@@ -194,17 +202,25 @@ export class DeliveryAgentService {
         if (!user || user.role !== Role.DELIVERYAGENT) {
             throw new NotFoundException('Delivery agent not found');
         }
-        // 2️⃣ Prepare update objects
+
+        // 2️⃣ If phone is being updated, check it's not already taken
+        if (dto.phone && dto.phone !== user.phone) {
+            const phoneInUse = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
+            if (phoneInUse) throw new BadRequestException('Phone number already registered');
+        }
+
+        // 3️⃣ Prepare update objects
         const userUpdateData: any = {};
         const profileUpdateData: any = {};
         if (dto.name !== undefined) userUpdateData.name = dto.name;
+        if (dto.phone !== undefined) userUpdateData.phone = dto.phone;
         if (dto.is_active !== undefined) userUpdateData.is_active = dto.is_active;
         if (dto.address !== undefined) profileUpdateData.address = dto.address;
         if (dto.deliverAgentRegion !== undefined)
             profileUpdateData.deliverAgentRegion = dto.deliverAgentRegion;
         if (dto.messId !== undefined) profileUpdateData.messId = dto.messId;
 
-        // 3️⃣ Execute updates in a transaction (atomic)
+        // 4️⃣ Execute updates in a transaction (atomic)
         await this.prisma.$transaction(async (tx) => {
             if (Object.keys(userUpdateData).length > 0) {
                 await tx.user.update({
@@ -222,7 +238,7 @@ export class DeliveryAgentService {
                 });
             }
         });
-        // 4️⃣ Return updated agent with details
+        // 5️⃣ Return updated agent with details
         const updatedAgent = await this.prisma.user.findUnique({
             where: { id },
             include: {
@@ -256,6 +272,37 @@ export class DeliveryAgentService {
         return this.prisma.user.delete({
             where: { id },
         });
+    }
+
+    /**
+     * Assign a delivery agent to a mess (replace existing mess linkage)
+     */
+    async assignDeliveryAgentToMess(agentId: string, messId: string) {
+        // validate agent exists and is delivery agent
+        const user = await this.prisma.user.findUnique({ where: { id: agentId }, include: { deliveryPartnerProfile: true } });
+        if (!user || user.role !== Role.DELIVERYAGENT) {
+            throw new NotFoundException('Delivery agent not found');
+        }
+
+        // validate mess exists
+        const mess = await this.prisma.mess.findUnique({ where: { id: messId } });
+        if (!mess) {
+            throw new BadRequestException('Mess not found');
+        }
+
+        // if profile exists, update messId; otherwise create profile
+        if (user.deliveryPartnerProfile) {
+            const updated = await this.prisma.deliveryPartnerProfile.update({
+                where: { id: user.deliveryPartnerProfile.id },
+                data: { messId },
+            });
+            return { message: 'Delivery agent assigned to mess', data: updated };
+        } else {
+            const created = await this.prisma.deliveryPartnerProfile.create({
+                data: { userId: agentId, messId },
+            });
+            return { message: 'Delivery agent profile created and assigned to mess', data: created };
+        }
     }
 
 
@@ -414,11 +461,12 @@ export class DeliveryAgentService {
         };
     }
 
-
     async myDeliveries(
         userId: string,
         status?: DeliveryStatus,
-        date?: string // expected in YYYY-MM-DD format
+        date?: string,
+        page: number = 1,
+        limit: number = 10,
     ) {
         // 1️⃣ Fetch user + delivery partner profile
         const user = await this.prisma.user.findUnique({
@@ -434,16 +482,18 @@ export class DeliveryAgentService {
 
         const profileId = user.deliveryPartnerProfile.id;
 
+        // pagination calculation
+        const skip = (page - 1) * limit;
+
         // 2️⃣ Build WHERE filter
         const where: any = {
             partnerId: profileId,
         };
 
         if (status) {
-            where.status = status; // apply only if provided
+            where.status = status;
         }
 
-        // 2️⃣ Adding optional date filter (full-day range)
         if (date) {
             const startOfDay = new Date(date + "T00:00:00.000Z");
             const endOfDay = new Date(date + "T23:59:59.999Z");
@@ -454,7 +504,7 @@ export class DeliveryAgentService {
             };
         }
 
-        // 3️⃣ Fetch deliveries
+        // 3️⃣ Fetch deliveries (pagination added)
         const deliveries = await this.prisma.deliveries.findMany({
             where,
             include: {
@@ -476,14 +526,18 @@ export class DeliveryAgentService {
                 },
             },
             orderBy: { createdAt: "desc" },
+            skip,
+            take: limit,
         });
 
-        // 4️⃣ Response formatting
+        // 4️⃣ Response formatting (UNCHANGED STRUCTURE)
         return {
             message: "Deliveries fetched successfully",
             filters: {
                 status: status || "ALL",
                 date: date || "ALL",
+                page,
+                limit,
             },
             user: {
                 userId: user.id,
@@ -519,6 +573,7 @@ export class DeliveryAgentService {
             })),
         };
     }
+
 
 
 

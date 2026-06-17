@@ -4,7 +4,7 @@ import { Reflector } from '@nestjs/core';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+  constructor(private reflector: Reflector) { }
 
   canActivate(context: ExecutionContext): boolean {
     const requiredRoles = this.reflector.getAllAndOverride<string[]>('roles', [
@@ -17,6 +17,11 @@ export class RolesGuard implements CanActivate {
     const { user } = context.switchToHttp().getRequest();
     console.log('Required Roles:', requiredRoles);
     console.log('User Role:', user.role);
+
+    // ✅ SUPERADMIN has full access to all endpoints
+    if (user.role === 'SUPERADMIN') {
+      return true;
+    }
 
     return requiredRoles.includes(user.role);
   }

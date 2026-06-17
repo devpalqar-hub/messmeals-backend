@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>FCM Token Test</title>
+</head>
+
+<body>
+    <h3>Firebase FCM Token Generator</h3>
+    <button onclick="getToken()">Get FCM Token</button>
+    <pre id="output"></pre>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getMessaging, getToken } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js";
+
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const messaging = getMessaging(app);
+
+        window.getToken = async () => {
+            const token = await getToken(messaging, {
+                vapidKey: "YOUR_PUBLIC_VAPID_KEY"
+            });
+            document.getElementById("output").textContent = token;
+        };
+    </script>
+</body>
+
+</html>
