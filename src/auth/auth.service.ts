@@ -13,7 +13,7 @@ import { UserService } from 'src/user/user.service';
 import { DeliveryStatus, EnquiryType, Role } from '@prisma/client';
 import { generate6DigitOtp } from 'src/common/utility/utils';
 import { MailerService } from '@nestjs-modules/mailer';
-import { subDays, startOfDay, endOfDay } from 'date-fns';
+import { subDays, startOfDay, endOfDay, startOfMonth, endOfMonth, subMonths, format } from 'date-fns';
 import { OtpVerifyDto } from './dto/otp-verify.dto';
 import { TwoFactorService } from 'src/twofactor/twofactor.service';
 import { SuperAdminLoginDto } from './dto/superadmin-login.dto';
@@ -686,7 +686,7 @@ export class AuthService {
                 : {};
 
         // ---------------------------------------------------
-        // Date filter construction
+        // Date filter construction (applied to createdAt)
         // ---------------------------------------------------
 
         let dateFilter: any = {};
@@ -695,12 +695,8 @@ export class AuthService {
             // single day insight
             const start = startOfDay(new Date(date1));
             const end = endOfDay(new Date(date1));
-
             dateFilter = {
-                start_date: {
-                    gte: start,
-                    lte: end,
-                },
+                createdAt: { gte: start, lte: end },
             };
         }
 
@@ -708,16 +704,10 @@ export class AuthService {
             // date range insight
             const start = startOfDay(new Date(date1));
             const end = endOfDay(new Date(date2));
-
             dateFilter = {
-                start_date: {
-                    gte: start,
-                    lte: end,
-                },
+                createdAt: { gte: start, lte: end },
             };
         }
-
-
 
         // ---------------------------------------------------
         // 2️⃣ Total Customers
@@ -732,8 +722,7 @@ export class AuthService {
                             ...messFilter,
                             ...dateFilter,
                         },
-                    }
-
+                    },
                 },
             },
         });
@@ -762,78 +751,186 @@ export class AuthService {
             },
         });
 
-
         // ---------------------------------------------------
-        // 4️⃣ Subscriptions
+        // 4️⃣ Fetch ALL subscriptions (for revenue breakdown)
         // ---------------------------------------------------
 
-        const subscriptions = await this.prisma.userSubscriptions.findMany({
+        const allSubscriptions = await this.prisma.userSubscriptions.findMany({
             where: {
                 ...messFilter,
                 ...dateFilter,
             },
-
             select: {
+                id: true,
                 totalPrice: true,
                 discountedPrice: true,
                 is_active: true,
                 start_date: true,
+                end_date: true,
                 createdAt: true,
+                cancelled_on: true,
             },
         });
 
         // ---------------------------------------------------
-        // 5️⃣ Calculations (UNCHANGED)
+        // 5️⃣ Revenue Calculations
         // ---------------------------------------------------
-
-        const totalRevenue = subscriptions.reduce(
-            (sum, s) => sum + Number(s.discountedPrice || s.totalPrice),
-            0
-        );
-
-        const completedOrders = subscriptions.filter(s => s.is_active).length;
-        const totalOrders = subscriptions.length;
-
-        const pendingRevenue = subscriptions
-            .filter(s => !s.is_active)
-            .reduce(
-                (sum, s) =>
-                    sum + Number(s.discountedPrice || s.totalPrice),
-                0
-            );
 
         const today = new Date();
 
-        const todaysRevenue = subscriptions
-            .filter(
-                s =>
-                    s.start_date >= startOfDay(today) &&
-                    s.start_date <= endOfDay(today)
+        /**
+         * totalRevenue  – sum of discountedPrice for ALL subscriptions in scope.
+         *                 This represents total billed/collected amount.
+         */
+        const totalRevenue = allSubscriptions.reduce(
+            (sum, s) => sum + Number(s.discountedPrice || s.totalPrice),
+            0,
+        );
+
+        /**
+         * pendingRevenue – subscriptions that are still active AND whose
+         *                  end_date is in the future (service not yet fully delivered).
+         *                  Money is received but the service period is ongoing.
+         */
+        const pendingRevenue = allSubscriptions
+            .filter(s =>
+                s.is_active &&
+                !s.cancelled_on &&
+                s.end_date !== null &&
+                new Date(s.end_date) > today,
             )
             .reduce(
-                (sum, s) =>
-                    sum + Number(s.discountedPrice || s.totalPrice),
-                0
+                (sum, s) => sum + Number(s.discountedPrice || s.totalPrice),
+                0,
             );
+
+        /**
+         * collectedRevenue – subscriptions that are either expired (end_date passed)
+         *                    or cancelled (fully served / completed).
+         */
+        const collectedRevenue = allSubscriptions
+            .filter(s =>
+                !s.is_active ||
+                s.cancelled_on !== null ||
+                (s.end_date !== null && new Date(s.end_date) <= today),
+            )
+            .reduce(
+                (sum, s) => sum + Number(s.discountedPrice || s.totalPrice),
+                0,
+            );
+
+        // Current calendar month boundaries
+        const monthStart = startOfMonth(today);
+        const monthEnd = endOfMonth(today);
+
+        /**
+         * currentMonthRevenue – all subscriptions created this calendar month.
+         */
+        const currentMonthRevenue = allSubscriptions
+            .filter(s => {
+                const created = new Date(s.createdAt);
+                return created >= monthStart && created <= monthEnd;
+            })
+            .reduce(
+                (sum, s) => sum + Number(s.discountedPrice || s.totalPrice),
+                0,
+            );
+
+        // Today's revenue (subscriptions created today)
+        const todaysRevenue = allSubscriptions
+            .filter(s => {
+                const created = new Date(s.createdAt);
+                return created >= startOfDay(today) && created <= endOfDay(today);
+            })
+            .reduce(
+                (sum, s) => sum + Number(s.discountedPrice || s.totalPrice),
+                0,
+            );
+
+        const completedOrders = allSubscriptions.filter(s => s.is_active).length;
+        const totalOrders = allSubscriptions.length;
 
         const avgPerCustomer =
             totalCustomers > 0 ? totalRevenue / totalCustomers : 0;
 
         // ---------------------------------------------------
-        // 6️⃣ Final response (ONLY ADD messesCount)
+        // 6️⃣ Monthly Analytics (last 6 months breakdown)
+        // ---------------------------------------------------
+
+        const monthlyAnalytics: {
+            month: string;
+            revenue: number;
+            subscriptions: number;
+        }[] = [];
+
+        for (let i = 5; i >= 0; i--) {
+            const refDate = subMonths(today, i);
+            const mStart = startOfMonth(refDate);
+            const mEnd = endOfMonth(refDate);
+            const label = format(refDate, 'MMM yyyy');
+
+            // Fetch month bucket from DB to avoid re-querying per month on large datasets
+            const monthSubs = allSubscriptions.filter(s => {
+                const created = new Date(s.createdAt);
+                return created >= mStart && created <= mEnd;
+            });
+
+            const monthRevenue = monthSubs.reduce(
+                (sum, s) => sum + Number(s.discountedPrice || s.totalPrice),
+                0,
+            );
+
+            monthlyAnalytics.push({
+                month: label,
+                revenue: monthRevenue,
+                subscriptions: monthSubs.length,
+            });
+        }
+
+        // ---------------------------------------------------
+        // 7️⃣ Active vs Expired subscription counts
+        // ---------------------------------------------------
+
+        const activeSubscriptions = allSubscriptions.filter(
+            s => s.is_active && !s.cancelled_on && (s.end_date === null || new Date(s.end_date) >= today),
+        ).length;
+
+        const expiredSubscriptions = allSubscriptions.filter(
+            s => s.end_date !== null && new Date(s.end_date) < today,
+        ).length;
+
+        const cancelledSubscriptions = allSubscriptions.filter(
+            s => s.cancelled_on !== null,
+        ).length;
+
+        // ---------------------------------------------------
+        // 8️⃣ Final response
         // ---------------------------------------------------
 
         return {
+            // Revenue
             totalRevenue,
-            completedOrders,
+            pendingRevenue,
+            collectedRevenue,
+            currentMonthRevenue,
+            todaysRevenue,
+            avgPerCustomer,
+
+            // Orders / Subscriptions
             totalOrders,
+            completedOrders,
+            activeSubscriptions,
+            expiredSubscriptions,
+            cancelledSubscriptions,
+
+            // People
             totalCustomers,
             totalPartners,
             activePartners,
-            avgPerCustomer,
-            pendingRevenue,
-            todaysRevenue,
-            messesCount, // ✅ newly added
+            messesCount,
+
+            // Analytics
+            monthlyAnalytics,
         };
     }
 

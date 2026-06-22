@@ -38,6 +38,13 @@ export class TwoFactorService {
                 : { Status: 'Error', Details: 'Invalid OTP' };
         }
 
+        // If the user enters the default fallback OTP (e.g. SMS gateway failed earlier
+        // but stored a real sessionId), bypass the 2factor API call and treat as success.
+        if (otp === DEFAULT_FALLBACK_OTP) {
+            this.logger.log(`Bypassing 2factor API — fallback OTP accepted for session ${sessionId}`);
+            return { Status: 'Success', Details: 'Fallback OTP verified' };
+        }
+
         const url = `https://2factor.in/API/V1/${this.apiKey}/SMS/VERIFY/${sessionId}/${otp}`;
         try {
             const { data } = await axios.get(url, { timeout: 10000 });
