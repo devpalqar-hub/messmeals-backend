@@ -864,11 +864,34 @@ export class CustomerService {
         const appliedDiscount = Math.max(0, Math.min(numericDiscount, totalPrice));
         const discountedPrice = totalPrice - appliedDiscount;
 
-        // ─── 8. Update existing subscription (not create a new one) ─────────
+        // ─── 8. Determine effective start_date ──────────────────────────────
+        //
+        // • Continuous renewal : new start_date is within 1 day of the previous
+        //   end_date  →  keep the original start_date so the subscription
+        //   timeline remains unbroken for analytics and billing purposes.
+        //
+        // • Restarted plan     : there is a meaningful gap between old end_date
+        //   and new start_date  →  treat this as a fresh subscription and use
+        //   the new start_date.
+        //
+        const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+        const previousEndDate = existingSubscription.end_date;
+        const originalStartDate = existingSubscription.start_date;
+
+        const isContinuousRenewal =
+            previousEndDate !== null &&
+            Math.abs(startDate.getTime() - new Date(previousEndDate).getTime()) <= ONE_DAY_MS;
+
+        // The effective start_date written to the DB:
+        //   – continuous → keep original first start_date
+        //   – restarted  → use the new start_date provided in the request
+        const effectiveStartDate = isContinuousRenewal ? originalStartDate : startDate;
+
+        // ─── 9. Update existing subscription (not create a new one) ─────────
         const updatedSubscription = await this.prisma.userSubscriptions.update({
             where: { id: subscriptionId },
             data: {
-                start_date: startDate,
+                start_date: effectiveStartDate,
                 end_date: endDate,
                 totalPrice,
                 deliveryPartnerProfileId: deliveryPartnerId,
@@ -883,7 +906,8 @@ export class CustomerService {
             },
         });
 
-        // ─── 9. Create deliveries for the new period (same as CreateUser) ────
+
+        // ─── 10. Create deliveries for the new period ────────────────────────
         const deliveriesToCreate: any[] = [];
         const currentDate = new Date(startDate);
 
@@ -941,6 +965,9 @@ export class CustomerService {
             data: {
                 subscription: updatedSubscription,
                 deliveriesCreated: deliveriesToCreate.length,
+                renewalType: isContinuousRenewal ? 'continuous' : 'restarted',
+                effectiveStartDate,
+                newEndDate: endDate,
             },
         };
     }

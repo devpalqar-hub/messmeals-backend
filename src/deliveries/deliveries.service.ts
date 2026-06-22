@@ -307,13 +307,39 @@ export class DeliveriesService {
             throw new BadRequestException('You do not have permission to update this delivery variation');
         }
 
-        return this.prisma.deliveryVariation.update({
+        const updatedDv = await this.prisma.deliveryVariation.update({
             where: { deliveryId_variationId: { deliveryId, variationId } },
             data: { status: dto.status },
             include: {
                 variation: { select: { id: true, title: true, description: true } },
             },
         });
+
+        // ── Auto-complete delivery when all variations are in a terminal state ──
+        // Fetch all variation statuses for this delivery after the update
+        const allVariations = await this.prisma.deliveryVariation.findMany({
+            where: { deliveryId },
+            select: { status: true },
+        });
+
+        const terminalStatuses: VariationStatus[] = [VariationStatus.DELIVERED, VariationStatus.COMPLETED, VariationStatus.UNDELIVERED];
+        const allTerminal = allVariations.length > 0 && allVariations.every(v => terminalStatuses.includes(v.status));
+
+        if (allTerminal) {
+            // Determine the aggregate delivery status:
+            // COMPLETED if at least one variation is DELIVERED or COMPLETED, otherwise UNDELIVERED
+            const hasDelivered = allVariations.some(
+                v => v.status === VariationStatus.DELIVERED || v.status === VariationStatus.COMPLETED,
+            );
+            const newDeliveryStatus = hasDelivered ? DeliveryStatus.COMPLETED : DeliveryStatus.UNDELIVERED;
+
+            await this.prisma.deliveries.update({
+                where: { id: deliveryId },
+                data: { status: newDeliveryStatus },
+            });
+        }
+
+        return updatedDv;
     }
 
     /**
