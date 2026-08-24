@@ -1,6 +1,10 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { DeliveryStatus, ScheduleType } from '@prisma/client';
 import crypto from 'crypto';
+
+/** Distinguishes a fresh plan booking from a paid extension of an existing one. */
+export type PaymentPurpose = 'NEW_BOOKING' | 'EXTENSION';
 
 @Injectable()
 export class PaymentsService {
@@ -21,6 +25,8 @@ export class PaymentsService {
         customerName?: string,
         successUrl?: string,
         cancelUrl?: string,
+        purpose: PaymentPurpose = 'NEW_BOOKING',
+        extraMeta?: Record<string, any>,
     ) {
         try {
             // Validate subscription exists
@@ -55,6 +61,8 @@ export class PaymentsService {
                     userId: subscription.CustomerProfile?.userId || null,
                     successUrl: successUrl || null,
                     cancelUrl: cancelUrl || null,
+                    purpose,
+                    ...(extraMeta || {}),
                 },
             };
 
@@ -146,7 +154,10 @@ export class PaymentsService {
 
     /**
      * Handle successful payment webhook
-     * Create subscription only after payment is confirmed
+     * - NEW_BOOKING: activates the subscription and generates its deliveries
+     *   (nothing is created until payment succeeds).
+     * - EXTENSION: pushes end_date to the paid-for date and generates the
+     *   extra deliveries for the newly covered range.
      */
     async handlePaymentSuccess(
         razorpayOrderId: string,
@@ -166,18 +177,53 @@ export class PaymentsService {
                 throw new BadRequestException('Payment already processed');
             }
 
-            // Update subscription to active only after payment success
-            const subscription = await this.prisma.userSubscriptions.update({
+            const notes = (payment.metadata as any)?.notes || {};
+            const purpose: PaymentPurpose = notes.purpose === 'EXTENSION' ? 'EXTENSION' : 'NEW_BOOKING';
+
+            let subscription = await this.prisma.userSubscriptions.findUnique({
                 where: { id: payment.subscriptionId },
-                data: {
-                    is_active: true,
-                    createdAt: new Date(),
-                },
-                include: {
-                    plan: true,
-                    CustomerProfile: true,
-                },
+                include: { plan: true, CustomerProfile: true },
             });
+            if (!subscription) {
+                throw new NotFoundException('Subscription not found for this payment');
+            }
+
+            if (purpose === 'EXTENSION') {
+                const newEndDate = notes.newEndDate ? new Date(notes.newEndDate) : null;
+                if (!newEndDate || isNaN(newEndDate.getTime())) {
+                    throw new BadRequestException('Missing/invalid newEndDate on extension payment');
+                }
+
+                const rangeStart = new Date(subscription.end_date as Date);
+                rangeStart.setDate(rangeStart.getDate() + 1);
+
+                subscription = await this.prisma.userSubscriptions.update({
+                    where: { id: subscription.id },
+                    data: { end_date: newEndDate, is_active: true, cancelled_on: null },
+                    include: { plan: true, CustomerProfile: true },
+                });
+
+                await this.generateDeliveriesForRange(subscription, rangeStart, newEndDate);
+            } else {
+                subscription = await this.prisma.userSubscriptions.update({
+                    where: { id: subscription.id },
+                    data: { is_active: true },
+                    include: { plan: true, CustomerProfile: true },
+                });
+
+                // Generate deliveries only if this booking has none yet
+                // (webhooks can safely be retried without duplicating them).
+                const existingDeliveries = await this.prisma.deliveries.count({
+                    where: { subscriptionId: subscription.id },
+                });
+                if (existingDeliveries === 0) {
+                    await this.generateDeliveriesForRange(
+                        subscription,
+                        subscription.start_date,
+                        subscription.end_date as Date,
+                    );
+                }
+            }
 
             // Update payment status to SUCCESS
             await this.prisma.payments.update({
@@ -203,7 +249,10 @@ export class PaymentsService {
 
             return {
                 success: true,
-                message: 'Payment successful, subscription activated',
+                message:
+                    purpose === 'EXTENSION'
+                        ? 'Payment successful, subscription extended'
+                        : 'Payment successful, subscription activated',
                 data: subscription,
             };
         } catch (error) {
@@ -214,8 +263,11 @@ export class PaymentsService {
     }
 
     /**
-     * Handle payment failure webhook
-     * Delete the subscription if payment fails
+     * Handle payment failure webhook.
+     * - NEW_BOOKING: the subscription was never active, so it is deleted
+     *   (nothing was ever delivered/charged for it).
+     * - EXTENSION: the subscription already existed and is running — it is
+     *   left untouched, only the payment attempt is marked FAILED.
      */
     async handlePaymentFailure(razorpayOrderId: string, reason?: string) {
         try {
@@ -237,14 +289,22 @@ export class PaymentsService {
                 },
             });
 
-            // Delete the subscription that was created but not paid for
-            await this.prisma.userSubscriptions.delete({
-                where: { id: payment.subscriptionId },
-            });
+            const notes = (payment.metadata as any)?.notes || {};
+            const purpose: PaymentPurpose = notes.purpose === 'EXTENSION' ? 'EXTENSION' : 'NEW_BOOKING';
+
+            if (purpose === 'NEW_BOOKING') {
+                // Delete the subscription that was created but not paid for.
+                await this.prisma.userSubscriptions.deleteMany({
+                    where: { id: payment.subscriptionId, is_active: false },
+                });
+            }
 
             return {
                 success: true,
-                message: 'Payment failed, subscription cancelled',
+                message:
+                    purpose === 'EXTENSION'
+                        ? 'Payment failed, subscription extension was not applied'
+                        : 'Payment failed, subscription cancelled',
                 orderId: razorpayOrderId,
             };
         } catch (error) {
@@ -252,6 +312,78 @@ export class PaymentsService {
                 `Failed to process payment failure: ${error.message}`,
             );
         }
+    }
+
+    /**
+     * Creates PENDING deliveries (+ their plan variations) for every
+     * chargeable day of [rangeStart, rangeEnd] according to the
+     * subscription's scheduleType/selectedDays. Used both for the initial
+     * booking (after payment success) and for paid extensions.
+     */
+    private async generateDeliveriesForRange(
+        subscription: {
+            id: string;
+            planId: string;
+            messId: string;
+            customerProfileId: string | null;
+            deliveryPartnerProfileId: string | null;
+            scheduleType: ScheduleType;
+            selectedDays: any;
+        },
+        rangeStart: Date,
+        rangeEnd: Date,
+    ) {
+        if (!subscription.customerProfileId || rangeStart > rangeEnd) return;
+
+        const weekdayMap = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+        const selectedDaysUpper =
+            subscription.scheduleType === ScheduleType.CUSTOM
+                ? ((subscription.selectedDays as string[]) ?? []).map((d) => d.toUpperCase())
+                : [];
+
+        const deliveriesToCreate: any[] = [];
+        const currentDate = new Date(rangeStart);
+        while (currentDate <= rangeEnd) {
+            const shouldCreate =
+                subscription.scheduleType === ScheduleType.EVERYDAY ||
+                selectedDaysUpper.includes(weekdayMap[currentDate.getUTCDay()]);
+
+            if (shouldCreate) {
+                deliveriesToCreate.push({
+                    date: new Date(currentDate),
+                    customerId: subscription.customerProfileId,
+                    planId: subscription.planId,
+                    subscriptionId: subscription.id,
+                    status: DeliveryStatus.PENDING,
+                    partnerId: subscription.deliveryPartnerProfileId,
+                    messId: subscription.messId,
+                });
+            }
+            currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+        }
+
+        if (deliveriesToCreate.length === 0) return;
+
+        await this.prisma.deliveries.createMany({ data: deliveriesToCreate });
+
+        const plan = await this.prisma.plans.findUnique({
+            where: { id: subscription.planId },
+            select: { Variation: { where: { isActive: true }, select: { id: true } } },
+        });
+        const variationIds = plan?.Variation?.map((v) => v.id) ?? [];
+        if (variationIds.length === 0) return;
+
+        const createdDeliveries = await this.prisma.deliveries.findMany({
+            where: { subscriptionId: subscription.id, date: { in: deliveriesToCreate.map((d) => d.date) } },
+            select: { id: true },
+        });
+
+        await this.prisma.deliveryVariation.createMany({
+            data: createdDeliveries.flatMap((d) =>
+                variationIds.map((vid) => ({ deliveryId: d.id, variationId: vid, status: 'PENDING' as const })),
+            ),
+            skipDuplicates: true,
+        });
     }
 
     /**

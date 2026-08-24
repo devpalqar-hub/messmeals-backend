@@ -11,6 +11,10 @@ import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { PauseSubDto } from './dto/pause-sub.dto';
+import { CompleteProfileDto } from './dto/complete-profile.dto';
+import { ExtendSubscriptionDto } from './dto/extend-subscription.dto';
+import { SkipVariationDto } from './dto/skip-variation.dto';
+import { Role } from '@prisma/client';
 import {
     ApiBearerAuth, ApiBody, ApiOperation, ApiParam,
     ApiQuery, ApiTags,
@@ -246,8 +250,18 @@ export class CustomerController {
     }
 
 
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.USER)
+    @ApiBearerAuth()
     @Post('choose/plan')
-    @ApiOperation({ summary: 'Choose plan', description: 'Creates a subscription payment flow for a chosen plan.' })
+    @ApiOperation({
+        summary: 'Book a mess plan',
+        description:
+            'Customer direct-booking: pick a plan, start/end date (monthly = start date + number of months, ' +
+            'daily = start date + end date with optional weekday selection), and a pickup address. ' +
+            'Creates a pending subscription and a Razorpay order (successUrl/cancelUrl are echoed back by Razorpay ' +
+            'after checkout). Deliveries are generated only once payment succeeds.',
+    })
     async ChoosePlan(
         @Body() dto: choosePlanDto,
         @Req() req
@@ -256,8 +270,11 @@ export class CustomerController {
     }
 
 
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.USER)
+    @ApiBearerAuth()
     @Patch('cancel/subscription')
-    @ApiOperation({ summary: 'Cancel own subscription', description: 'Cancels the authenticated user subscription.' })
+    @ApiOperation({ summary: 'Cancel own subscription', description: 'Cancels the authenticated user subscription, fully or for a date range.' })
     async CancelUserSubscription(
         @Body() dto: CancelSubDto,
         @Req() req
@@ -267,13 +284,75 @@ export class CustomerController {
     }
 
 
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.USER)
+    @ApiBearerAuth()
     @Patch('pause/subscription')
-    @ApiOperation({ summary: 'Pause own subscription', description: 'Pauses the authenticated user subscription.' })
+    @ApiOperation({
+        summary: 'Pause own subscription',
+        description:
+            'Pauses the authenticated user subscription for a selected date range. ' +
+            'Deliveries within the pause window are shifted forward and end_date is extended by the same duration.',
+    })
     async PauseSubscription(
         @Body() dto: PauseSubDto,
         @Req() req
     ) {
         return this.cusomerservice.PauseUserSubscription(dto, req.user.id);
+    }
+
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.USER)
+    @ApiBearerAuth()
+    @Patch('extend/subscription')
+    @ApiOperation({
+        summary: 'Extend own subscription',
+        description:
+            'Extends the authenticated user subscription to a later end date. Only the incremental days are ' +
+            'charged via a new Razorpay order; end_date is pushed and the extra deliveries are created once ' +
+            'payment succeeds.',
+    })
+    async ExtendSubscription(
+        @Body() dto: ExtendSubscriptionDto,
+        @Req() req,
+    ) {
+        return this.cusomerservice.ExtendSubscription(dto, req.user.id);
+    }
+
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.USER)
+    @ApiBearerAuth()
+    @Patch('subscription/:subscriptionId/skip-variation')
+    @ApiOperation({
+        summary: 'Skip one meal on a date',
+        description:
+            'Skips a single variation (e.g. Lunch only) for one delivery date without cancelling the whole ' +
+            'day\'s delivery — for frequency/meal-based plans (Breakfast/Lunch/Dinner).',
+    })
+    @ApiParam({ name: 'subscriptionId', description: 'Subscription UUID' })
+    async skipVariation(
+        @Param('subscriptionId') subscriptionId: string,
+        @Body() dto: SkipVariationDto,
+        @Req() req,
+    ) {
+        return this.cusomerservice.SkipDeliveryVariation(subscriptionId, dto, req.user.id);
+    }
+
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.USER)
+    @ApiBearerAuth()
+    @Patch('complete-profile')
+    @ApiOperation({
+        summary: 'Complete customer profile',
+        description:
+            'Filled in right after first OTP verification (see /auth/verify-otp -> isNewUser) to set name, ' +
+            'email and an initial pickup address.',
+    })
+    async completeProfile(
+        @Body() dto: CompleteProfileDto,
+        @Req() req,
+    ) {
+        return this.cusomerservice.completeProfile(req.user.id, dto);
     }
 
 

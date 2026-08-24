@@ -237,7 +237,12 @@ export class AuthService {
             },
         });
         if (!user) throw new UnauthorizedException('User not found');
-        // Step3. Update verification only once
+
+        // Step3. Update verification only once. If the account was not yet
+        // verified, this is effectively the user's first successful login —
+        // surfaced to the client as `isNewUser` so it can route to a
+        // "complete profile" screen.
+        const isNewUser = !user.is_verified;
         if (!user.is_verified) {
             await this.prisma.user.update({
                 where: { phone },
@@ -245,6 +250,13 @@ export class AuthService {
             });
             user.is_verified = true;
         }
+
+        // For customers, also flag whether the profile still needs basic
+        // details (name/email/address) filled in via the complete-profile API.
+        const isProfileComplete =
+            user.role === Role.USER
+                ? Boolean(user.name && user.email && (user.customerProfile?.addresses?.length ?? 0) > 0)
+                : true;
 
         // Step4. Role specific payload
         let payloadData = {};
@@ -301,7 +313,9 @@ export class AuthService {
                 ...payloadData,
             },
             accessToken,
-            message: user.is_verified
+            isNewUser,
+            isProfileComplete,
+            message: isNewUser
                 ? 'User verified successfully'
                 : 'User already verified before',
             status: 200,
