@@ -96,6 +96,7 @@ model User {
   customerProfile        CustomerProfile?
   deliveryPartnerProfile DeliveryPartnerProfile?
   messAdminProfile       MessAdminProfile?
+  expenses               Expense[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -304,6 +305,9 @@ model Mess {
   billingReactivatesAt DateTime?
   MessBillingConfig    MessBillingConfig?
   MessInvoice          MessInvoice[]
+
+  expenseCategories ExpenseCategory[]
+  expenses          Expense[]
 }
 
 model BillingGlobalConfig {
@@ -469,6 +473,46 @@ model Category {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// Expense categories are managed per-mess by the mess owner (e.g. Groceries, Rent, Staff Salary).
+model ExpenseCategory {
+  id          String   @id @default(uuid())
+  messId      String
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  mess     Mess      @relation(fields: [messId], references: [id], onDelete: Cascade)
+  expenses Expense[]
+
+  @@unique([messId, name])
+  @@index([messId])
+}
+
+model Expense {
+  id            String   @id @default(uuid())
+  messId        String
+  categoryId    String
+  title         String
+  amount        Decimal  @default(0.00)
+  description   String?  @db.Text
+  expenseDate   DateTime @default(now())
+  paymentMethod String?
+  receiptUrl    String?
+  createdById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  mess      Mess            @relation(fields: [messId], references: [id], onDelete: Cascade)
+  category  ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  createdBy User?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([messId])
+  @@index([categoryId])
+  @@index([messId, expenseDate])
 }
 
 model Testimonials {
