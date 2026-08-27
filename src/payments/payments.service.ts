@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { DeliveryStatus, ScheduleType } from '@prisma/client';
+import axios from 'axios';
 import crypto from 'crypto';
 
 /** Distinguishes a fresh plan booking from a paid extension of an existing one. */
@@ -46,50 +47,49 @@ export class PaymentsService {
                 throw new NotFoundException('Subscription not found');
             }
 
-            // Create Razorpay order object
-            // Note: In production, you would make actual API call to Razorpay
-            // For testing purposes, we're simulating the response
-            const orderId = `order_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-            const orderData = {
-                amount: Math.round(amount * 100), // Convert to paise (smallest currency unit)
-                currency: 'INR',
-                receipt: `receipt_${subscriptionId}`,
+            // Create a real, payable Razorpay Payment Link (hosted checkout page).
+            // successUrl is wired in as callback_url so Razorpay redirects the user back
+            // there once payment completes; reference_id lets us correlate the webhook
+            // even though the link id (not a raw order id) is what we store below.
+            const paymentLink = await this.createRazorpayPaymentLink({
+                amountInRupees: amount,
+                referenceId: subscriptionId,
+                customerName,
+                customerEmail,
+                customerPhone,
+                description: purpose === 'EXTENSION' ? 'Meal Subscription Extension' : 'Meal Subscription',
+                callbackUrl: successUrl,
                 notes: {
                     subscriptionId,
                     planId: subscription.planId,
                     userId: subscription.CustomerProfile?.userId || null,
-                    successUrl: successUrl || null,
                     cancelUrl: cancelUrl || null,
                     purpose,
                     ...(extraMeta || {}),
                 },
-            };
+            });
 
             // Store pending payment in database for webhook validation
             const pendingPayment = await this.prisma.payments.create({
                 data: {
-                    razorpayOrderId: orderId,
+                    razorpayOrderId: paymentLink.id,
                     subscriptionId,
                     amount: amount,
                     status: 'PENDING',
                     customerEmail: customerEmail || '',
                     customerPhone: customerPhone || '',
                     customerName: customerName || '',
-                    metadata: orderData,
+                    metadata: paymentLink,
                 },
             });
-
-            // Generate session URL for Razorpay Checkout
-            // This would be used by frontend to redirect to Razorpay
-            const sessionUrl = this.generateSessionUrl(orderId, amount, customerEmail || '', customerPhone || '');
 
             return {
                 success: true,
                 message: 'Payment order created successfully',
                 data: {
-                    orderId,
-                    sessionUrl,
+                    orderId: paymentLink.id,
+                    // Real, directly-openable Razorpay hosted checkout URL (redirect/webview friendly).
+                    paymentUrl: paymentLink.short_url,
                     amount,
                     currency: 'INR',
                     paymentId: pendingPayment.id,
@@ -106,32 +106,66 @@ export class PaymentsService {
     }
 
     /**
-     * Generate session URL for Razorpay Checkout
-     * Frontend will redirect to this URL
+     * Creates a Razorpay Payment Link via the real Payment Links API
+     * (https://api.razorpay.com/v1/payment_links). Falls back to a simulated link when
+     * RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET aren't configured, so local/dev keeps working.
      */
-    private generateSessionUrl(
-        orderId: string,
-        amount: number,
-        email: string,
-        phone: string,
-    ): string {
-        const baseUrl = process.env.RAZORPAY_CHECKOUT_URL || 'https://checkout.razorpay.com/v1/checkout.js';
+    private async createRazorpayPaymentLink(params: {
+        amountInRupees: number;
+        referenceId: string;
+        customerName?: string;
+        customerEmail?: string;
+        customerPhone?: string;
+        description?: string;
+        callbackUrl?: string;
+        notes?: Record<string, any>;
+    }) {
+        const amount = Math.round(params.amountInRupees * 100); // paise
 
-        // Build checkout parameters
-        const params: Record<string, string> = {
-            key: this.razorpayKeyId || '',
-            order_id: orderId,
-            name: 'Supermeals',
-            description: 'Meal Subscription',
-            amount: Math.round(amount * 100).toString(),
+        if (!this.razorpayKeyId || !this.razorpayKeySecret) {
+            // Fallback: simulated payment link (keeps local/dev working without live Razorpay keys)
+            const id = `plink_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+            return {
+                id,
+                short_url: `${process.env.RAZORPAY_CHECKOUT_URL || 'https://rzp.io/l'}/${id}`,
+                amount,
+                currency: 'INR',
+                status: 'created',
+                reference_id: params.referenceId,
+                created_at: Math.floor(Date.now() / 1000),
+                _simulated: true,
+            };
+        }
+
+        const payload: Record<string, any> = {
+            amount,
             currency: 'INR',
-            email: email || '',
-            contact: phone || '',
+            accept_partial: false,
+            reference_id: params.referenceId,
+            description: params.description || 'Meal Subscription Payment',
+            customer: {
+                name: params.customerName || undefined,
+                email: params.customerEmail || undefined,
+                contact: params.customerPhone || undefined,
+            },
+            notify: { sms: false, email: false },
+            notes: params.notes ?? {},
         };
+        if (params.callbackUrl) {
+            payload.callback_url = params.callbackUrl;
+            payload.callback_method = 'get';
+        }
 
-        const checkoutParams = new URLSearchParams(params);
+        const auth = Buffer.from(`${this.razorpayKeyId}:${this.razorpayKeySecret}`).toString('base64');
+        const res = await axios.post('https://api.razorpay.com/v1/payment_links', payload, {
+            headers: {
+                Authorization: `Basic ${auth}`,
+                'Content-Type': 'application/json',
+            },
+            timeout: 15000,
+        });
 
-        return `${baseUrl}?${checkoutParams.toString()}`;
+        return res.data;
     }
 
     /**

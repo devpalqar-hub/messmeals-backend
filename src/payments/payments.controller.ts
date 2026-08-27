@@ -77,9 +77,39 @@ export class PaymentsController {
             const { event, payload: eventPayload } = payload;
 
             switch (event) {
+                // Payment orders are now created as Razorpay Payment Links, so the id we store
+                // (Payments.razorpayOrderId) is the payment_link id, not the auto-generated order
+                // id — correlate on the payment_link.* events below.
+                case 'payment_link.paid': {
+                    const linkId = eventPayload.payment_link?.entity?.id;
+                    const paymentId = eventPayload.payment?.entity?.id;
+
+                    if (!linkId || !paymentId) {
+                        throw new Error('Missing payment link or payment ID in webhook');
+                    }
+
+                    return await this.paymentsService.handlePaymentSuccess(linkId, paymentId);
+                }
+
+                case 'payment_link.cancelled':
+                case 'payment_link.expired': {
+                    const linkId = eventPayload.payment_link?.entity?.id;
+
+                    if (!linkId) {
+                        throw new Error('Missing payment link ID in webhook');
+                    }
+
+                    return await this.paymentsService.handlePaymentFailure(
+                        linkId,
+                        event === 'payment_link.expired' ? 'Payment link expired' : 'Payment link cancelled',
+                    );
+                }
+
+                // Kept for backward compatibility with older direct-order integrations
+                // (create-order endpoint / any account config that still sends these).
                 case 'order.paid':
                 case 'payment.authorized':
-                    // Payment successful - activate subscription
+                case 'payment.captured': {
                     const orderId = eventPayload.payment?.entity?.order_id;
                     const paymentId = eventPayload.payment?.entity?.id;
 
@@ -88,10 +118,10 @@ export class PaymentsController {
                     }
 
                     return await this.paymentsService.handlePaymentSuccess(orderId, paymentId);
+                }
 
                 case 'payment.failed':
-                case 'order.paid.failed':
-                    // Payment failed - delete subscription
+                case 'order.paid.failed': {
                     const failedOrderId = eventPayload.payment?.entity?.order_id || eventPayload.order?.entity?.id;
                     const failureReason = eventPayload.payment?.entity?.error_description;
 
@@ -103,20 +133,7 @@ export class PaymentsController {
                         failedOrderId,
                         failureReason,
                     );
-
-                case 'payment.captured':
-                    // Payment captured (for authorized payments)
-                    const capturedOrderId = eventPayload.payment?.entity?.order_id;
-                    const capturedPaymentId = eventPayload.payment?.entity?.id;
-
-                    if (!capturedOrderId || !capturedPaymentId) {
-                        throw new Error('Missing order or payment ID in webhook');
-                    }
-
-                    return await this.paymentsService.handlePaymentSuccess(
-                        capturedOrderId,
-                        capturedPaymentId,
-                    );
+                }
 
                 default:
                     // Log unhandled events but don't fail

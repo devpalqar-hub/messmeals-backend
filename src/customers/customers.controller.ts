@@ -273,6 +273,44 @@ export class CustomerController {
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(Role.USER)
     @ApiBearerAuth()
+    @Post('choose/plan/price')
+    @ApiOperation({
+        summary: 'Calculate plan price',
+        description:
+            'Same request body as "Book a mess plan" (choose/plan), but performs no writes — ' +
+            'no subscription and no Razorpay order are created. Returns only the calculated price ' +
+            'so the frontend can show a quote before the user confirms booking.',
+    })
+    async CalculatePlanPrice(
+        @Body() dto: choosePlanDto,
+    ) {
+        return this.cusomerservice.calculatePlanPrice(dto);
+    }
+
+
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.USER)
+    @ApiBearerAuth()
+    @Get('my/subscriptions')
+    @ApiOperation({
+        summary: 'List own subscriptions',
+        description:
+            'Returns the authenticated user\'s own subscriptions, with a computed status ' +
+            '(ACTIVE | PAUSED | CANCELLED | INACTIVE). Defaults to active subscriptions only ' +
+            '— pass status=all to include paused/cancelled/inactive ones too.',
+    })
+    @ApiQuery({ name: 'status', required: false, example: 'active', description: '"active" (default) or "all"' })
+    async getMySubscriptions(
+        @Req() req,
+        @Query('status') status?: string,
+    ) {
+        return this.cusomerservice.getMySubscriptions(req.user.id, status);
+    }
+
+
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.USER)
+    @ApiBearerAuth()
     @Patch('cancel/subscription')
     @ApiOperation({ summary: 'Cancel own subscription', description: 'Cancels the authenticated user subscription, fully or for a date range.' })
     async CancelUserSubscription(

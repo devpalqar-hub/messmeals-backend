@@ -1451,17 +1451,20 @@ export class CustomerService {
     }
 
 
-    async choosePlan(dto: choosePlanDto, userId: string) {
-        const {
-            addressId,
-            planId,
-            start_date,
-            end_date,
-            scheduleType,
-            selectedDays, // Array of weekdays if CUSTOM (e.g. ["MONDAY", "WEDNESDAY", "FRIDAY"])
-            successUrl,
-            cancelUrl,
-        } = dto;
+    /**
+     * Shared pricing logic for a plan booking: validates the plan and dates, normalizes
+     * the schedule, and computes totalPrice = chargeable days × plan.price. Used by both
+     * choosePlan (which also creates the subscription + payment order) and calculatePlanPrice
+     * (which only returns the number, with no side effects).
+     */
+    private async computePlanPricing(params: {
+        planId: string;
+        start_date: string;
+        end_date?: string;
+        scheduleType: ScheduleType;
+        selectedDays?: string[];
+    }) {
+        const { planId, start_date, end_date, scheduleType, selectedDays } = params;
 
         const normalizedScheduleType =
             scheduleType === ScheduleType.CUSTOM || (Array.isArray(selectedDays) && selectedDays.length > 0)
@@ -1476,18 +1479,12 @@ export class CustomerService {
         if (normalizedScheduleType === ScheduleType.CUSTOM && (!normalizedSelectedDays || normalizedSelectedDays.length === 0)) {
             throw new BadRequestException('Selected days are required for CUSTOM schedule type');
         }
-        let address = await this.prisma.userAddress.findUnique({ where: { id: addressId } });
-        if (!address) {
-            throw new BadRequestException('Address not found');
-        }
 
-        // customer existence is validated below when fetching profile with user relation
         //Validate plan
         const plan = await this.prisma.plans.findUnique({
             where: { id: planId },
         });
         if (!plan) throw new BadRequestException('Plan not found');
-
 
         // Calculate duration and price
         const startDate = new Date(start_date);
@@ -1522,6 +1519,51 @@ export class CustomerService {
         const diffInMs = endDate.getTime() - startDate.getTime();
         const diffInDays = Math.ceil(diffInMs / (1000 * 60 * 60 * 24));
         const totalPrice = diffInDays * Number(plan.price);
+
+        return { plan, startDate, endDate, diffInDays, totalPrice, normalizedScheduleType, normalizedSelectedDays };
+    }
+
+    /**
+     * Price-only preview for /customer/choose/plan. Accepts the exact same body but performs
+     * no writes (no subscription, no payment order) — just returns the calculated price.
+     */
+    async calculatePlanPrice(dto: choosePlanDto) {
+        const { planId, start_date, end_date, scheduleType, selectedDays } = dto;
+        const { totalPrice, diffInDays, startDate, endDate } = await this.computePlanPricing({
+            planId,
+            start_date,
+            end_date,
+            scheduleType,
+            selectedDays,
+        });
+
+        return {
+            price: totalPrice,
+            chargeableDays: diffInDays,
+            start_date: startDate,
+            end_date: endDate,
+        };
+    }
+
+    async choosePlan(dto: choosePlanDto, userId: string) {
+        const {
+            addressId,
+            planId,
+            start_date,
+            end_date,
+            scheduleType,
+            selectedDays, // Array of weekdays if CUSTOM (e.g. ["MONDAY", "WEDNESDAY", "FRIDAY"])
+            successUrl,
+            cancelUrl,
+        } = dto;
+
+        let address = await this.prisma.userAddress.findUnique({ where: { id: addressId } });
+        if (!address) {
+            throw new BadRequestException('Address not found');
+        }
+
+        const { plan, startDate, endDate, totalPrice, normalizedScheduleType, normalizedSelectedDays } =
+            await this.computePlanPricing({ planId, start_date, end_date, scheduleType, selectedDays });
 
         // Create a pending (inactive) subscription. It will be activated only after successful payment.
         // Include the user relation to access email/phone
@@ -1571,6 +1613,102 @@ export class CustomerService {
         };
     }
 
+
+    /**
+     * Self-service: returns the authenticated user's own subscriptions, computing the same
+     * ACTIVE | PAUSED | CANCELLED | INACTIVE status used in the admin-facing findOne(). Defaults
+     * to active subscriptions only; pass status='all' to include paused/cancelled/inactive too.
+     */
+    async getMySubscriptions(userId: string, status?: string) {
+        const customerProfile = await this.prisma.customerProfile.findUnique({
+            where: { userId },
+            include: {
+                userSubscriptions: {
+                    include: {
+                        plan: { include: { images: true, Variation: true } },
+                        UserAddress: true,
+                    },
+                    orderBy: { createdAt: 'desc' },
+                },
+            },
+        });
+
+        if (!customerProfile) {
+            throw new NotFoundException('Customer profile not found');
+        }
+
+        const today = new Date();
+
+        const withStatus = customerProfile.userSubscriptions.map((sub) => {
+            let computedStatus: 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'INACTIVE';
+            if (sub.cancelled_on) {
+                computedStatus = 'CANCELLED';
+            } else if (
+                sub.pause_start_date &&
+                sub.pause_end_date &&
+                today >= new Date(sub.pause_start_date) &&
+                today <= new Date(sub.pause_end_date)
+            ) {
+                computedStatus = 'PAUSED';
+            } else if (sub.is_active) {
+                computedStatus = 'ACTIVE';
+            } else {
+                computedStatus = 'INACTIVE';
+            }
+            return { sub, computedStatus };
+        });
+
+        const wantsAll = (status || '').toLowerCase() === 'all';
+        const filtered = wantsAll ? withStatus : withStatus.filter((x) => x.computedStatus === 'ACTIVE');
+
+        return {
+            data: filtered.map(({ sub, computedStatus }) => ({
+                id: sub.id,
+                messId: sub.messId,
+                start_date: sub.start_date,
+                end_date: sub.end_date,
+                selectedDays: sub.selectedDays,
+                scheduleType: sub.scheduleType,
+                totalPrice: Number(sub.totalPrice),
+                discount: Number(sub.discount),
+                discountedPrice: Number(sub.discountedPrice),
+                deliveryPartnerProfileId: sub.deliveryPartnerProfileId,
+                pause_start_date: sub.pause_start_date,
+                pause_end_date: sub.pause_end_date,
+                cancellation_start_date: sub.cancellation_start_date,
+                cancellation_end_date: sub.cancellation_end_date,
+                cancelled_on: sub.cancelled_on,
+                status: computedStatus,
+                createdAt: sub.createdAt,
+                plan: sub.plan
+                    ? {
+                        id: sub.plan.id,
+                        name: sub.plan.planName,
+                        price: Number(sub.plan.price),
+                        description: sub.plan.description,
+                        isMonthlyPlan: sub.plan.isMonthlyPlan,
+                        isDailyPlan: sub.plan.isDailyPlan,
+                        images: sub.plan.images.map((img) => ({
+                            url: img.url,
+                            altText: img.altText,
+                        })),
+                    }
+                    : null,
+                address: sub.UserAddress
+                    ? {
+                        id: sub.UserAddress.id,
+                        name: sub.UserAddress.name,
+                        street: sub.UserAddress.street,
+                        townOrcity: sub.UserAddress.townOrcity,
+                        postcode: sub.UserAddress.postcode,
+                    }
+                    : null,
+            })),
+            meta: {
+                total: filtered.length,
+            },
+        };
+    }
 
     //This function is for user to cancel their active subscriptions
     async CancelUserSubscription(dto: CancelSubDto, userId: string) {
