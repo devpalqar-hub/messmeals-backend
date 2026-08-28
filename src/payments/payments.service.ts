@@ -12,7 +12,19 @@ export class PaymentsService {
     private razorpayKeyId = process.env.RAZORPAY_KEY_ID;
     private razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET;
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(private readonly prisma: PrismaService) {
+        if (!this.razorpayKeyId || !this.razorpayKeySecret) {
+            console.warn(
+                '[RAZORPAY DEBUG] RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET is not set. ' +
+                'Payment links will be SIMULATED (a fake rzp.io URL that cannot actually be paid) ' +
+                'and webhook signatures cannot be verified. Set both env vars to use real Razorpay.',
+            );
+        } else {
+            console.log(
+                `[RAZORPAY DEBUG] Razorpay configured. keyId=${this.razorpayKeyId.slice(0, 8)}... (live payment links enabled)`,
+            );
+        }
+    }
 
     /**
      * Create a Razorpay order for subscription payment
@@ -29,6 +41,16 @@ export class PaymentsService {
         purpose: PaymentPurpose = 'NEW_BOOKING',
         extraMeta?: Record<string, any>,
     ) {
+        console.log('[RAZORPAY DEBUG] createPaymentOrder called', {
+            subscriptionId,
+            amount,
+            customerEmail,
+            customerPhone,
+            purpose,
+            successUrl,
+            cancelUrl,
+        });
+
         try {
             // Validate subscription exists
             const subscription = await this.prisma.userSubscriptions.findUnique({
@@ -44,6 +66,7 @@ export class PaymentsService {
             });
 
             if (!subscription) {
+                console.error('[RAZORPAY DEBUG] createPaymentOrder: subscription not found', subscriptionId);
                 throw new NotFoundException('Subscription not found');
             }
 
@@ -67,6 +90,13 @@ export class PaymentsService {
                     purpose,
                     ...(extraMeta || {}),
                 },
+            });
+
+            console.log('[RAZORPAY DEBUG] payment link created', {
+                id: paymentLink.id,
+                short_url: paymentLink.short_url,
+                status: paymentLink.status,
+                simulated: !!paymentLink._simulated,
             });
 
             // Store pending payment in database for webhook validation
@@ -98,10 +128,19 @@ export class PaymentsService {
                     customerName,
                 },
             };
-        } catch (error) {
-            throw new BadRequestException(
-                `Failed to create payment order: ${error.message}`,
-            );
+        } catch (error: any) {
+            // error.message alone hides the real Razorpay reason (e.g. axios just says
+            // "Request failed with status code 400"). Log + surface the actual API response.
+            const razorpayError = error?.response?.data?.error;
+            console.error('[RAZORPAY DEBUG] createPaymentOrder FAILED', {
+                subscriptionId,
+                httpStatus: error?.response?.status,
+                razorpayError,
+                message: error?.message,
+            });
+
+            const reason = razorpayError?.description || error.message;
+            throw new BadRequestException(`Failed to create payment order: ${reason}`);
         }
     }
 
@@ -125,6 +164,10 @@ export class PaymentsService {
         if (!this.razorpayKeyId || !this.razorpayKeySecret) {
             // Fallback: simulated payment link (keeps local/dev working without live Razorpay keys)
             const id = `plink_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+            console.warn(
+                `[RAZORPAY DEBUG] createRazorpayPaymentLink: no keys configured, returning SIMULATED link ${id} — ` +
+                'this URL is NOT real and cannot be opened/paid. Set RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET to fix this.',
+            );
             return {
                 id,
                 short_url: `${process.env.RAZORPAY_CHECKOUT_URL || 'https://rzp.io/l'}/${id}`,
@@ -156,16 +199,30 @@ export class PaymentsService {
             payload.callback_method = 'get';
         }
 
-        const auth = Buffer.from(`${this.razorpayKeyId}:${this.razorpayKeySecret}`).toString('base64');
-        const res = await axios.post('https://api.razorpay.com/v1/payment_links', payload, {
-            headers: {
-                Authorization: `Basic ${auth}`,
-                'Content-Type': 'application/json',
-            },
-            timeout: 15000,
-        });
+        console.log('[RAZORPAY DEBUG] POST /v1/payment_links payload:', JSON.stringify(payload));
 
-        return res.data;
+        const auth = Buffer.from(`${this.razorpayKeyId}:${this.razorpayKeySecret}`).toString('base64');
+        try {
+            const res = await axios.post('https://api.razorpay.com/v1/payment_links', payload, {
+                headers: {
+                    Authorization: `Basic ${auth}`,
+                    'Content-Type': 'application/json',
+                },
+                timeout: 15000,
+            });
+
+            console.log('[RAZORPAY DEBUG] POST /v1/payment_links response:', JSON.stringify(res.data));
+            return res.data;
+        } catch (error: any) {
+            // Surface Razorpay's actual error body (e.g. invalid contact/email format, auth failure)
+            // instead of letting axios' generic "Request failed with status code 4xx" hide it.
+            console.error('[RAZORPAY DEBUG] POST /v1/payment_links FAILED', {
+                httpStatus: error?.response?.status,
+                razorpayError: error?.response?.data,
+                requestPayload: payload,
+            });
+            throw error;
+        }
     }
 
     /**
@@ -175,13 +232,27 @@ export class PaymentsService {
         body: string,
         signature: string,
     ): boolean {
+        if (!this.razorpayKeySecret) {
+            console.warn(
+                '[RAZORPAY DEBUG] verifyWebhookSignature: RAZORPAY_KEY_SECRET is not set — ' +
+                'every real Razorpay webhook signature will fail verification.',
+            );
+        }
         try {
             const hash = crypto
                 .createHmac('sha256', this.razorpayKeySecret || '')
                 .update(body)
                 .digest('hex');
-            return hash === signature;
-        } catch (error) {
+            const isValid = hash === signature;
+            console.log('[RAZORPAY DEBUG] verifyWebhookSignature', {
+                isValid,
+                bodyLength: body?.length ?? 0,
+                receivedSignature: signature,
+                computedSignature: hash,
+            });
+            return isValid;
+        } catch (error: any) {
+            console.error('[RAZORPAY DEBUG] verifyWebhookSignature threw', error?.message);
             return false;
         }
     }
@@ -197,6 +268,7 @@ export class PaymentsService {
         razorpayOrderId: string,
         razorpayPaymentId: string,
     ) {
+        console.log('[RAZORPAY DEBUG] handlePaymentSuccess called', { razorpayOrderId, razorpayPaymentId });
         try {
             // Find pending payment record
             const payment = await this.prisma.payments.findUnique({
@@ -204,10 +276,25 @@ export class PaymentsService {
             });
 
             if (!payment) {
+                // Most common cause: we store Payments.razorpayOrderId = payment_link id (plink_xxx),
+                // but if the Razorpay dashboard's webhook is subscribed to payment.captured/order.paid
+                // instead of payment_link.paid, the controller passes in payment.entity.order_id
+                // (Razorpay's auto-generated underlying order id) which will never match — money is
+                // captured on Razorpay's side but the subscription never activates here. Check that
+                // "Payment Links" events (payment_link.paid) are enabled for this webhook in the
+                // Razorpay dashboard.
+                console.error(
+                    `[RAZORPAY DEBUG] handlePaymentSuccess: no payment row found for razorpayOrderId=${razorpayOrderId}. ` +
+                    'Verify the Razorpay webhook is subscribed to payment_link.paid (not just payment.captured/order.paid).',
+                );
                 throw new NotFoundException('Payment record not found');
             }
 
             if (payment.status !== 'PENDING') {
+                console.warn('[RAZORPAY DEBUG] handlePaymentSuccess: payment already processed', {
+                    razorpayOrderId,
+                    currentStatus: payment.status,
+                });
                 throw new BadRequestException('Payment already processed');
             }
 
@@ -281,6 +368,13 @@ export class PaymentsService {
                 });
             }
 
+            console.log('[RAZORPAY DEBUG] handlePaymentSuccess: subscription activated', {
+                razorpayOrderId,
+                razorpayPaymentId,
+                subscriptionId: subscription.id,
+                purpose,
+            });
+
             return {
                 success: true,
                 message:
@@ -289,7 +383,13 @@ export class PaymentsService {
                         : 'Payment successful, subscription activated',
                 data: subscription,
             };
-        } catch (error) {
+        } catch (error: any) {
+            console.error('[RAZORPAY DEBUG] handlePaymentSuccess FAILED', {
+                razorpayOrderId,
+                razorpayPaymentId,
+                error: error?.message,
+                stack: error?.stack,
+            });
             throw new BadRequestException(
                 `Failed to process payment success: ${error.message}`,
             );
@@ -304,12 +404,14 @@ export class PaymentsService {
      *   left untouched, only the payment attempt is marked FAILED.
      */
     async handlePaymentFailure(razorpayOrderId: string, reason?: string) {
+        console.log('[RAZORPAY DEBUG] handlePaymentFailure called', { razorpayOrderId, reason });
         try {
             const payment = await this.prisma.payments.findUnique({
                 where: { razorpayOrderId },
             });
 
             if (!payment) {
+                console.error('[RAZORPAY DEBUG] handlePaymentFailure: no payment row found for razorpayOrderId=' + razorpayOrderId);
                 throw new NotFoundException('Payment record not found');
             }
 
@@ -341,7 +443,13 @@ export class PaymentsService {
                         : 'Payment failed, subscription cancelled',
                 orderId: razorpayOrderId,
             };
-        } catch (error) {
+        } catch (error: any) {
+            console.error('[RAZORPAY DEBUG] handlePaymentFailure FAILED', {
+                razorpayOrderId,
+                reason,
+                error: error?.message,
+                stack: error?.stack,
+            });
             throw new BadRequestException(
                 `Failed to process payment failure: ${error.message}`,
             );

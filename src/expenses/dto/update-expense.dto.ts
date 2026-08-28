@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsDateString, IsNumber, IsOptional, IsPositive, IsString, IsUUID } from 'class-validator';
+import { ExpenseStatus } from '@prisma/client';
+import { IsDateString, IsEnum, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 export class UpdateExpenseDto {
     @ApiPropertyOptional({ example: '8e6f4f4a-3bb7-4c74-9f42-5b3f7e5c7c11', description: 'Expense category UUID' })
@@ -16,7 +17,7 @@ export class UpdateExpenseDto {
     @ApiPropertyOptional({ example: 1500 })
     @IsOptional()
     @IsNumber()
-    @IsPositive()
+    @Min(0)
     @Transform(({ value }) => (value === '' || value === undefined ? undefined : Number(value)))
     amount?: number;
 
@@ -39,4 +40,13 @@ export class UpdateExpenseDto {
     @IsOptional()
     @IsString()
     receiptUrl?: string;
+
+    @ApiPropertyOptional({
+        enum: ExpenseStatus,
+        example: ExpenseStatus.PAID,
+        description: 'Move a PENDING entry to UNPAID/PAID once completed, or mark an UNPAID expense as PAID.',
+    })
+    @IsOptional()
+    @IsEnum(ExpenseStatus)
+    status?: ExpenseStatus;
 }

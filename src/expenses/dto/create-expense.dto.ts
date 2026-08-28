@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsDateString, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, IsUUID } from 'class-validator';
+import { ExpenseStatus } from '@prisma/client';
+import { IsDateString, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 export class CreateExpenseDto {
     @ApiProperty({ example: 'c2b7d4af-7c5f-4d4a-9a08-2f2f7d4e3a11', description: 'Mess UUID this expense belongs to' })
@@ -16,11 +17,15 @@ export class CreateExpenseDto {
     @IsNotEmpty()
     title!: string;
 
-    @ApiProperty({ example: 1500 })
+    @ApiPropertyOptional({
+        example: 1500,
+        description: 'Required and must be > 0 unless status is PENDING (a pending entry can be logged without a final amount and completed later).',
+    })
+    @IsOptional()
     @IsNumber()
-    @IsPositive()
+    @Min(0)
     @Transform(({ value }) => (value === '' || value === undefined ? undefined : Number(value)))
-    amount!: number;
+    amount?: number;
 
     @ApiPropertyOptional({ example: 'Bought from the local wholesale market' })
     @IsOptional()
@@ -41,4 +46,14 @@ export class CreateExpenseDto {
     @IsOptional()
     @IsString()
     receiptUrl?: string;
+
+    @ApiPropertyOptional({
+        enum: ExpenseStatus,
+        example: ExpenseStatus.UNPAID,
+        description:
+            'Defaults to UNPAID. Set to PENDING to log a placeholder entry (amount optional) that can be completed and moved to UNPAID/PAID later.',
+    })
+    @IsOptional()
+    @IsEnum(ExpenseStatus)
+    status?: ExpenseStatus;
 }

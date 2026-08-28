@@ -17,7 +17,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
+import { ExpenseStatus, Role } from '@prisma/client';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
@@ -42,7 +42,9 @@ export class ExpensesController {
 
     @ApiOperation({
         summary: 'Create expense',
-        description: 'Records a new expense for a mess under a given expense category.',
+        description:
+            'Records a new expense for a mess under a given expense category. Defaults to status UNPAID. ' +
+            'Pass status=PENDING to log a placeholder entry (amount can be left out) and fill in the rest later via PATCH.',
     })
     @ApiResponse({ status: 201, description: 'Expense created successfully.' })
     @Post()
@@ -90,6 +92,7 @@ export class ExpensesController {
     @ApiQuery({ name: 'date1', required: true })
     @ApiQuery({ name: 'date2', required: false })
     @ApiQuery({ name: 'categoryId', required: false })
+    @ApiQuery({ name: 'status', required: false, enum: ExpenseStatus })
     @Get('analytics/summary')
     analyticsSummary(@Req() req: any, @Query(new ValidationPipe({ transform: true })) query: ExpenseAnalyticsQueryDto) {
         return this.expensesService.analyticsSummary(req.user, query);
@@ -100,6 +103,7 @@ export class ExpensesController {
     @ApiQuery({ name: 'date1', required: true })
     @ApiQuery({ name: 'date2', required: false })
     @ApiQuery({ name: 'categoryId', required: false })
+    @ApiQuery({ name: 'status', required: false, enum: ExpenseStatus })
     @Get('analytics/by-category')
     analyticsByCategory(@Req() req: any, @Query(new ValidationPipe({ transform: true })) query: ExpenseAnalyticsQueryDto) {
         return this.expensesService.analyticsByCategory(req.user, query);
@@ -110,6 +114,7 @@ export class ExpensesController {
     @ApiQuery({ name: 'date1', required: true })
     @ApiQuery({ name: 'date2', required: false })
     @ApiQuery({ name: 'categoryId', required: false })
+    @ApiQuery({ name: 'status', required: false, enum: ExpenseStatus })
     @Get('analytics/graph')
     analyticsGraph(@Req() req: any, @Query(new ValidationPipe({ transform: true })) query: ExpenseAnalyticsQueryDto) {
         return this.expensesService.analyticsGraph(req.user, query);
@@ -117,7 +122,11 @@ export class ExpensesController {
 
     @ApiOperation({
         summary: 'List expenses',
-        description: 'Returns expenses for a mess with optional category, search, date-range filters and pagination.',
+        description:
+            'Returns expenses for a mess with optional category, search, date-range and status (PAID/UNPAID/PENDING) ' +
+            'filters, plus pagination. The response also includes a `summary` block with paid/unpaid/pending totals ' +
+            'for the same category/date-range/search filters (independent of the status filter), so a paid/unpaid/' +
+            'pending tab UI can show stable counts.',
     })
     @ApiQuery({ name: 'messId', required: true, description: 'Mess UUID' })
     @ApiQuery({ name: 'page', required: false, example: 1 })
@@ -126,6 +135,7 @@ export class ExpensesController {
     @ApiQuery({ name: 'categoryId', required: false })
     @ApiQuery({ name: 'date1', required: false })
     @ApiQuery({ name: 'date2', required: false })
+    @ApiQuery({ name: 'status', required: false, enum: ExpenseStatus, description: 'Filter the list by payment status' })
     @ApiResponse({ status: 200, description: 'Expenses fetched successfully.' })
     @Get()
     findAll(
@@ -137,6 +147,7 @@ export class ExpensesController {
         @Query('categoryId') categoryId?: string,
         @Query('date1') date1?: string,
         @Query('date2') date2?: string,
+        @Query('status') status?: ExpenseStatus,
     ) {
         return this.expensesService.findAll(
             req.user,
@@ -147,6 +158,7 @@ export class ExpensesController {
             categoryId,
             date1,
             date2,
+            status,
         );
     }
 

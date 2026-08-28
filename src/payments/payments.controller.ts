@@ -54,27 +54,42 @@ export class PaymentsController {
         @Req() req: any,
         @Body() payload: RazorpayWebhookDto,
     ) {
+        console.log('[RAZORPAY DEBUG] webhook received', {
+            event: payload?.event,
+            hasSignatureHeader: !!req.headers['x-razorpay-signature'],
+            hasRawBody: !!req.rawBody,
+            rawBodyLength: req.rawBody?.length ?? 0,
+        });
+
         try {
             // Get signature from headers
             const signature = req.headers['x-razorpay-signature'] as string;
 
             if (!signature) {
+                console.error('[RAZORPAY DEBUG] webhook rejected: missing x-razorpay-signature header');
                 throw new UnauthorizedException('Missing webhook signature');
             }
 
             // Verify webhook signature
             const rawBody = (req.rawBody || Buffer.from('')).toString('utf8');
+            if (!req.rawBody) {
+                // If body-parser's `verify` hook (see main.ts) didn't run for this route,
+                // rawBody is empty and the HMAC below will never match a real signature.
+                console.error('[RAZORPAY DEBUG] webhook: req.rawBody is missing — signature verification will fail');
+            }
             const isValidSignature = this.paymentsService.verifyWebhookSignature(
                 rawBody,
                 signature,
             );
 
             if (!isValidSignature) {
+                console.error('[RAZORPAY DEBUG] webhook rejected: invalid signature', { event: payload?.event });
                 throw new UnauthorizedException('Invalid webhook signature');
             }
 
             // Handle different event types
             const { event, payload: eventPayload } = payload;
+            console.log('[RAZORPAY DEBUG] webhook signature verified, processing event:', event, JSON.stringify(eventPayload));
 
             switch (event) {
                 // Payment orders are now created as Razorpay Payment Links, so the id we store
@@ -141,7 +156,11 @@ export class PaymentsController {
                     return { success: true, message: 'Webhook received' };
             }
         } catch (error: any) {
-            console.error('Webhook processing error:', error);
+            console.error('[RAZORPAY DEBUG] webhook processing error', {
+                event: payload?.event,
+                message: error?.message,
+                stack: error?.stack,
+            });
             // Return 200 OK to Razorpay even on error (to prevent retry)
             // Error details are logged for debugging
             return {

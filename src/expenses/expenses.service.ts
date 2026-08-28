@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, Role } from '@prisma/client';
+import { ExpenseStatus, Prisma, Role } from '@prisma/client';
 import { endOfDay, startOfDay } from 'date-fns';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { paginate } from 'src/common/utility/pagination.util';
@@ -22,20 +22,65 @@ export class ExpensesService {
         return category;
     }
 
+    /** A PENDING entry is a placeholder that can be completed later; every other status needs a real amount. */
+    private assertAmountForStatus(status: ExpenseStatus, amount: number | undefined | null) {
+        if (status !== ExpenseStatus.PENDING && (amount === undefined || amount === null || Number(amount) <= 0)) {
+            throw new BadRequestException('amount is required and must be greater than 0 unless status is PENDING');
+        }
+    }
+
+    /** Status breakdown (paid/unpaid/pending totals) for the given base filters, ignoring any status filter itself. */
+    private async getStatusSummary(where: Prisma.ExpenseWhereInput) {
+        const grouped = await this.prisma.expense.groupBy({
+            by: ['status'],
+            where,
+            _sum: { amount: true },
+            _count: { id: true },
+        });
+
+        const byStatus: Record<ExpenseStatus, { amount: number; count: number }> = {
+            PAID: { amount: 0, count: 0 },
+            UNPAID: { amount: 0, count: 0 },
+            PENDING: { amount: 0, count: 0 },
+        };
+
+        let totalAmount = 0;
+        let totalCount = 0;
+        for (const g of grouped) {
+            const amount = Number(g._sum.amount || 0);
+            const count = g._count.id;
+            byStatus[g.status] = { amount, count };
+            totalAmount += amount;
+            totalCount += count;
+        }
+
+        return {
+            total: { amount: totalAmount, count: totalCount },
+            paid: byStatus.PAID,
+            unpaid: byStatus.UNPAID,
+            pending: byStatus.PENDING,
+        };
+    }
+
     async create(user: AuthUser, dto: CreateExpenseDto) {
         await assertMessAccess(this.prisma, user, dto.messId);
         await this.getCategoryOrThrow(dto.categoryId, dto.messId);
+
+        const status = dto.status ?? ExpenseStatus.UNPAID;
+        this.assertAmountForStatus(status, dto.amount);
 
         return this.prisma.expense.create({
             data: {
                 messId: dto.messId,
                 categoryId: dto.categoryId,
                 title: dto.title,
-                amount: dto.amount,
+                amount: dto.amount ?? 0,
                 description: dto.description,
                 expenseDate: dto.expenseDate ? new Date(dto.expenseDate) : undefined,
                 paymentMethod: dto.paymentMethod,
                 receiptUrl: dto.receiptUrl,
+                status,
+                paidAt: status === ExpenseStatus.PAID ? new Date() : null,
                 createdById: user.id,
             },
             include: { category: true },
@@ -51,10 +96,11 @@ export class ExpensesService {
         categoryId?: string,
         date1?: string,
         date2?: string,
+        status?: ExpenseStatus,
     ) {
         await assertMessAccess(this.prisma, user, messId);
 
-        const where: Prisma.ExpenseWhereInput = {
+        const baseWhere: Prisma.ExpenseWhereInput = {
             messId,
             ...(categoryId && { categoryId }),
             ...(search && { title: { contains: search } }),
@@ -66,14 +112,20 @@ export class ExpensesService {
             }),
         };
 
-        return paginate({
-            prismaModel: this.prisma.expense,
-            page,
-            limit,
-            where,
-            include: { category: true },
-            orderBy: { expenseDate: 'desc' },
-        });
+        const [result, summary] = await Promise.all([
+            paginate({
+                prismaModel: this.prisma.expense,
+                page,
+                limit,
+                where: { ...baseWhere, ...(status && { status }) },
+                include: { category: true },
+                orderBy: { expenseDate: 'desc' },
+            }),
+            // summary intentionally ignores the status filter so paid/unpaid/pending tab totals stay stable
+            this.getStatusSummary(baseWhere),
+        ]);
+
+        return { ...result, summary };
     }
 
     async findOne(user: AuthUser, id: string) {
@@ -98,6 +150,15 @@ export class ExpensesService {
             await this.getCategoryOrThrow(dto.categoryId, expense.messId);
         }
 
+        const nextStatus = dto.status ?? expense.status;
+        const nextAmount = dto.amount !== undefined ? dto.amount : Number(expense.amount);
+        this.assertAmountForStatus(nextStatus, nextAmount);
+
+        const paidAt =
+            nextStatus === ExpenseStatus.PAID
+                ? (!dto.status && expense.status === ExpenseStatus.PAID ? expense.paidAt : new Date())
+                : null;
+
         return this.prisma.expense.update({
             where: { id },
             data: {
@@ -108,6 +169,8 @@ export class ExpensesService {
                 ...(dto.expenseDate !== undefined && { expenseDate: new Date(dto.expenseDate) }),
                 ...(dto.paymentMethod !== undefined && { paymentMethod: dto.paymentMethod }),
                 ...(dto.receiptUrl !== undefined && { receiptUrl: dto.receiptUrl }),
+                status: nextStatus,
+                paidAt,
             },
             include: { category: true },
         });
@@ -133,6 +196,7 @@ export class ExpensesService {
             messId: query.messId,
             expenseDate: { gte: from, lte: to },
             ...(query.categoryId && { categoryId: query.categoryId }),
+            ...(query.status && { status: query.status }),
         };
 
         const agg = await this.prisma.expense.aggregate({
@@ -159,6 +223,7 @@ export class ExpensesService {
                 messId: query.messId,
                 expenseDate: { gte: from, lte: to },
                 ...(query.categoryId && { categoryId: query.categoryId }),
+                ...(query.status && { status: query.status }),
             },
             _sum: { amount: true },
             _count: { id: true },
@@ -193,6 +258,7 @@ export class ExpensesService {
                 messId: query.messId,
                 expenseDate: { gte: from, lte: to },
                 ...(query.categoryId && { categoryId: query.categoryId }),
+                ...(query.status && { status: query.status }),
             },
             select: { amount: true, expenseDate: true },
             orderBy: { expenseDate: 'asc' },
