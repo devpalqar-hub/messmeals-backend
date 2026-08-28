@@ -476,11 +476,14 @@ model Category {
 }
 
 /// PENDING = a lightweight placeholder entry logged now to be completed/paid later (amount may be a guess or unset).
-/// UNPAID = a fully recorded expense that is owed but not yet paid.
-/// PAID = a fully recorded expense that has been settled.
+/// UNPAID = a fully recorded expense (amount set) with no payment recorded yet (paidAmount = 0).
+/// PARTIALLY_PAID = a fully recorded expense with some but not all of `amount` paid (0 < paidAmount < amount).
+/// PAID = a fully recorded expense that has been settled in full (paidAmount >= amount).
+/// UNPAID/PARTIALLY_PAID/PAID are calculated from amount vs paidAmount — not set directly by the caller.
 enum ExpenseStatus {
   PENDING
   UNPAID
+  PARTIALLY_PAID
   PAID
 }
 
@@ -507,6 +510,7 @@ model Expense {
   categoryId    String
   title         String
   amount        Decimal       @default(0.00)
+  paidAmount    Decimal       @default(0.00)
   description   String?       @db.Text
   expenseDate   DateTime      @default(now())
   paymentMethod String?

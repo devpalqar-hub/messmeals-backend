@@ -44,7 +44,8 @@ export class ExpensesController {
     @ApiOperation({
         summary: 'Create expense',
         description:
-            'Records a new expense for a mess under a given expense category. Defaults to status UNPAID. ' +
+            'Records a new expense for a mess under a given expense category. Status (UNPAID/PARTIALLY_PAID/PAID) ' +
+            'is calculated automatically from amount vs paidAmount — not set directly. ' +
             'Pass status=PENDING to log a placeholder entry (amount can be left out) and fill in the rest later via PATCH.',
     })
     @ApiResponse({ status: 201, description: 'Expense created successfully.' })
@@ -124,10 +125,11 @@ export class ExpensesController {
     @ApiOperation({
         summary: 'List expenses',
         description:
-            'Returns expenses for a mess with optional category, search, date-range and status (PAID/UNPAID/PENDING) ' +
-            'filters, plus pagination. The response also includes a `summary` block with paid/unpaid/pending totals ' +
-            'for the same category/date-range/search filters (independent of the status filter), so a paid/unpaid/' +
-            'pending tab UI can show stable counts.',
+            'Returns expenses for a mess with optional category, search, date-range and status ' +
+            '(PENDING/UNPAID/PARTIALLY_PAID/PAID) filters, plus pagination. Each expense includes `balanceDue` ' +
+            '(amount - paidAmount) and `isFullyPaid`. The response also includes a `summary` block with totals per ' +
+            'status for the same category/date-range/search filters (independent of the status filter), so a status ' +
+            'tab UI can show stable counts.',
     })
     @ApiQuery({ name: 'messId', required: true, description: 'Mess UUID' })
     @ApiQuery({ name: 'page', required: false, example: 1 })
@@ -171,7 +173,12 @@ export class ExpensesController {
         return this.expensesService.findOne(req.user, id);
     }
 
-    @ApiOperation({ summary: 'Update expense' })
+    @ApiOperation({
+        summary: 'Update expense',
+        description:
+            'Updates expense fields, including amount/paidAmount. Status (PENDING/UNPAID/PARTIALLY_PAID/PAID) is ' +
+            're-calculated automatically from the resulting amount vs paidAmount — it cannot be set directly here.',
+    })
     @ApiParam({ name: 'id', description: 'Expense UUID' })
     @ApiResponse({ status: 200, description: 'Expense updated successfully.' })
     @Patch(':id')
@@ -186,10 +193,10 @@ export class ExpensesController {
     @ApiOperation({
         summary: 'Update expense payment',
         description:
-            'Dedicated endpoint to settle an expense\'s payment: complete a PENDING placeholder into ' +
-            'UNPAID/PAID (supply the final amount here if it was left out at creation), or flip an UNPAID ' +
-            'expense to PAID once it\'s actually been settled. status must be UNPAID or PAID — use ' +
-            'PATCH /expenses/:id to set PENDING.',
+            'Dedicated endpoint to record a payment against an expense: pass `paidAmount` as the cumulative total ' +
+            'paid to date (and `amount` too if it was left out at creation, e.g. a PENDING placeholder). Status ' +
+            '(UNPAID/PARTIALLY_PAID/PAID) is calculated automatically from amount vs paidAmount — safe to call ' +
+            'repeatedly to record instalments.',
     })
     @ApiParam({ name: 'id', description: 'Expense UUID' })
     @ApiResponse({ status: 200, description: 'Expense payment updated successfully.' })

@@ -1,7 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { ExpenseStatus } from '@prisma/client';
-import { IsDateString, IsEnum, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsDateString, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 export class UpdateExpenseDto {
     @ApiPropertyOptional({ example: '8e6f4f4a-3bb7-4c74-9f42-5b3f7e5c7c11', description: 'Expense category UUID' })
@@ -14,12 +13,22 @@ export class UpdateExpenseDto {
     @IsString()
     title?: string;
 
-    @ApiPropertyOptional({ example: 1500 })
+    @ApiPropertyOptional({ example: 1500, description: 'Total amount owed. Leaving this at 0/unset keeps the expense PENDING.' })
     @IsOptional()
     @IsNumber()
     @Min(0)
     @Transform(({ value }) => (value === '' || value === undefined ? undefined : Number(value)))
     amount?: number;
+
+    @ApiPropertyOptional({
+        example: 750,
+        description: 'How much of `amount` has been paid so far. Compared against amount to calculate the status automatically (UNPAID/PARTIALLY_PAID/PAID).',
+    })
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    @Transform(({ value }) => (value === '' || value === undefined ? undefined : Number(value)))
+    paidAmount?: number;
 
     @ApiPropertyOptional({ example: 'Bought from the local wholesale market' })
     @IsOptional()
@@ -40,13 +49,4 @@ export class UpdateExpenseDto {
     @IsOptional()
     @IsString()
     receiptUrl?: string;
-
-    @ApiPropertyOptional({
-        enum: ExpenseStatus,
-        example: ExpenseStatus.PAID,
-        description: 'Move a PENDING entry to UNPAID/PAID once completed, or mark an UNPAID expense as PAID.',
-    })
-    @IsOptional()
-    @IsEnum(ExpenseStatus)
-    status?: ExpenseStatus;
 }

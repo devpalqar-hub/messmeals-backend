@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { ExpenseStatus } from '@prisma/client';
-import { IsDateString, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsDateString, IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 export class CreateExpenseDto {
     @ApiProperty({ example: 'c2b7d4af-7c5f-4d4a-9a08-2f2f7d4e3a11', description: 'Mess UUID this expense belongs to' })
@@ -19,13 +19,25 @@ export class CreateExpenseDto {
 
     @ApiPropertyOptional({
         example: 1500,
-        description: 'Required and must be > 0 unless status is PENDING (a pending entry can be logged without a final amount and completed later).',
+        description: 'Total amount owed. Required and must be > 0 unless status is PENDING (a pending entry can be logged without a final amount and completed later).',
     })
     @IsOptional()
     @IsNumber()
     @Min(0)
     @Transform(({ value }) => (value === '' || value === undefined ? undefined : Number(value)))
     amount?: number;
+
+    @ApiPropertyOptional({
+        example: 0,
+        description:
+            'How much of `amount` has already been paid (defaults to 0). Compared against `amount` to calculate ' +
+            'the expense status automatically: UNPAID (0), PARTIALLY_PAID (< amount) or PAID (>= amount). Ignored when status is PENDING.',
+    })
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    @Transform(({ value }) => (value === '' || value === undefined ? undefined : Number(value)))
+    paidAmount?: number;
 
     @ApiPropertyOptional({ example: 'Bought from the local wholesale market' })
     @IsOptional()
@@ -48,12 +60,13 @@ export class CreateExpenseDto {
     receiptUrl?: string;
 
     @ApiPropertyOptional({
-        enum: ExpenseStatus,
-        example: ExpenseStatus.UNPAID,
+        enum: [ExpenseStatus.PENDING],
+        example: ExpenseStatus.PENDING,
         description:
-            'Defaults to UNPAID. Set to PENDING to log a placeholder entry (amount optional) that can be completed and moved to UNPAID/PAID later.',
+            'Pass PENDING to log a placeholder entry with no final amount yet, to be completed later. ' +
+            'Omit otherwise — the real status (UNPAID/PARTIALLY_PAID/PAID) is always calculated from amount vs paidAmount, not set directly.',
     })
     @IsOptional()
-    @IsEnum(ExpenseStatus)
+    @IsIn([ExpenseStatus.PENDING])
     status?: ExpenseStatus;
 }

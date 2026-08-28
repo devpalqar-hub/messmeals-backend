@@ -1,26 +1,28 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { ExpenseStatus } from '@prisma/client';
-import { IsDateString, IsIn, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsDateString, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class PayExpenseDto {
-    @ApiProperty({
-        enum: [ExpenseStatus.UNPAID, ExpenseStatus.PAID],
-        example: ExpenseStatus.PAID,
-        description:
-            'The payment outcome to record — UNPAID or PAID. Use this to complete a PENDING placeholder ' +
-            '(the amount must be supplied here if it was left out at creation) or to flip an UNPAID expense ' +
-            'to PAID once it has actually been settled. Not for setting PENDING — use PATCH /expenses/:id for that.',
+    @ApiPropertyOptional({
+        example: 1500,
+        description: 'Finalizes/updates the total amount owed. Required here if the expense has no amount yet (e.g. it was created PENDING).',
     })
-    @IsIn([ExpenseStatus.UNPAID, ExpenseStatus.PAID])
-    status!: ExpenseStatus;
-
-    @ApiPropertyOptional({ example: 1500, description: 'Required if the expense still has no amount (e.g. it was created as PENDING).' })
     @IsOptional()
     @IsNumber()
     @Min(0)
     @Transform(({ value }) => (value === '' || value === undefined ? undefined : Number(value)))
     amount?: number;
+
+    @ApiProperty({
+        example: 1500,
+        description:
+            'Total amount paid so far (cumulative, not incremental — pass the full amount paid to date, not just this instalment). ' +
+            'Compared against amount to calculate the resulting status: UNPAID (0), PARTIALLY_PAID (< amount) or PAID (>= amount).',
+    })
+    @IsNumber()
+    @Min(0)
+    @Transform(({ value }) => (value === '' || value === undefined ? undefined : Number(value)))
+    paidAmount!: number;
 
     @ApiPropertyOptional({ example: 'CASH', description: 'Free-text payment mode, e.g. CASH, UPI, CARD, BANK_TRANSFER' })
     @IsOptional()
@@ -32,7 +34,7 @@ export class PayExpenseDto {
     @IsString()
     receiptUrl?: string;
 
-    @ApiPropertyOptional({ example: '2026-08-27', description: 'When status=PAID, defaults to now if omitted.' })
+    @ApiPropertyOptional({ example: '2026-08-27', description: 'When the expense becomes fully paid, defaults to now if omitted.' })
     @IsOptional()
     @IsDateString()
     paidAt?: string;
