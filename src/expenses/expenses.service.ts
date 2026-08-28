@@ -6,6 +6,7 @@ import { paginate } from 'src/common/utility/pagination.util';
 import { assertMessAccess } from 'src/common/utility/mess-access.util';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
+import { PayExpenseDto } from './dto/pay-expense.dto';
 import { ExpenseAnalyticsQueryDto } from './dto/expense-analytics-query.dto';
 
 type AuthUser = { id: string; role: Role | string };
@@ -170,6 +171,35 @@ export class ExpensesService {
                 ...(dto.paymentMethod !== undefined && { paymentMethod: dto.paymentMethod }),
                 ...(dto.receiptUrl !== undefined && { receiptUrl: dto.receiptUrl }),
                 status: nextStatus,
+                paidAt,
+            },
+            include: { category: true },
+        });
+    }
+
+    /**
+     * Dedicated "settle payment" action: completes a PENDING placeholder (supplying the amount if it
+     * was left out) or flips an UNPAID expense to PAID/back, without needing the full generic update
+     * payload. Rejects PENDING as a target — that's what the create/update PENDING flow is for.
+     */
+    async payExpense(user: AuthUser, id: string, dto: PayExpenseDto) {
+        const expense = await this.findOne(user, id); // existence + access check
+
+        const nextAmount = dto.amount !== undefined ? dto.amount : Number(expense.amount);
+        this.assertAmountForStatus(dto.status, nextAmount);
+
+        const paidAt =
+            dto.status === ExpenseStatus.PAID
+                ? (dto.paidAt ? new Date(dto.paidAt) : new Date())
+                : null;
+
+        return this.prisma.expense.update({
+            where: { id },
+            data: {
+                ...(dto.amount !== undefined && { amount: dto.amount }),
+                ...(dto.paymentMethod !== undefined && { paymentMethod: dto.paymentMethod }),
+                ...(dto.receiptUrl !== undefined && { receiptUrl: dto.receiptUrl }),
+                status: dto.status,
                 paidAt,
             },
             include: { category: true },

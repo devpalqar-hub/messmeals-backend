@@ -25,6 +25,7 @@ import { S3Service } from 'src/s3/s3.service';
 import { ExpensesService } from './expenses.service';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
+import { PayExpenseDto } from './dto/pay-expense.dto';
 import { ExpenseAnalyticsQueryDto } from './dto/expense-analytics-query.dto';
 
 const maxSize = 10 * 1024 * 1024; // 10MB per receipt
@@ -180,6 +181,25 @@ export class ExpensesController {
         @Body() dto: UpdateExpenseDto,
     ) {
         return this.expensesService.update(req.user, id, dto);
+    }
+
+    @ApiOperation({
+        summary: 'Update expense payment',
+        description:
+            'Dedicated endpoint to settle an expense\'s payment: complete a PENDING placeholder into ' +
+            'UNPAID/PAID (supply the final amount here if it was left out at creation), or flip an UNPAID ' +
+            'expense to PAID once it\'s actually been settled. status must be UNPAID or PAID — use ' +
+            'PATCH /expenses/:id to set PENDING.',
+    })
+    @ApiParam({ name: 'id', description: 'Expense UUID' })
+    @ApiResponse({ status: 200, description: 'Expense payment updated successfully.' })
+    @Patch(':id/payment')
+    updatePayment(
+        @Req() req: any,
+        @Param('id', ParseUUIDPipe) id: string,
+        @Body() dto: PayExpenseDto,
+    ) {
+        return this.expensesService.payExpense(req.user, id, dto);
     }
 
     @ApiOperation({ summary: 'Delete expense' })
