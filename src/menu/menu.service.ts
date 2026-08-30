@@ -25,30 +25,9 @@ export class MenuService {
         return variation;
     }
 
-    /** Every linked plan must belong to the same mess as the menu itself. */
-    private async assertPlansBelongToMess(planIds: string[], messId: string) {
-        if (planIds.length === 0) return;
-
-        const plans = await this.prisma.plans.findMany({
-            where: { id: { in: planIds } },
-            select: { id: true, messId: true },
-        });
-
-        if (plans.length !== planIds.length) {
-            throw new BadRequestException('One or more plan IDs are invalid');
-        }
-        const foreignPlan = plans.find((p) => p.messId !== messId);
-        if (foreignPlan) {
-            throw new BadRequestException('A menu can only be linked to plans of the same mess');
-        }
-    }
-
     async create(user: AuthUser, dto: CreateMenuDto) {
         await assertMessAccess(this.prisma, user, dto.messId);
         await this.getVariationOrThrow(dto.variationId);
-
-        const planIds = dto.planIds ?? [];
-        await this.assertPlansBelongToMess(planIds, dto.messId);
 
         return this.prisma.menu.create({
             data: {
@@ -58,7 +37,6 @@ export class MenuService {
                 days: dto.days,
                 items: dto.items,
                 isActive: dto.isActive ?? true,
-                ...(planIds.length > 0 && { plans: { connect: planIds.map((id) => ({ id })) } }),
             },
             include: menuInclude,
         });
@@ -123,13 +101,10 @@ export class MenuService {
     }
 
     async update(user: AuthUser, id: string, dto: UpdateMenuDto) {
-        const menu = await this.findOne(user, id); // existence + access check
+        await this.findOne(user, id); // existence + access check
 
         if (dto.variationId) {
             await this.getVariationOrThrow(dto.variationId);
-        }
-        if (dto.planIds) {
-            await this.assertPlansBelongToMess(dto.planIds, menu.messId);
         }
 
         return this.prisma.menu.update({
@@ -140,7 +115,6 @@ export class MenuService {
                 ...(dto.days !== undefined && { days: dto.days }),
                 ...(dto.items !== undefined && { items: dto.items }),
                 ...(dto.isActive !== undefined && { isActive: dto.isActive }),
-                ...(dto.planIds !== undefined && { plans: { set: dto.planIds.map((pid) => ({ id: pid })) } }),
             },
             include: menuInclude,
         });

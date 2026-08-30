@@ -52,6 +52,13 @@ export class UpdatePlanDto {
     @IsString({ each: true })
     planImages?: string[];
 
+    // Optional — replaces the full set of menus linked to this plan (must belong to the same mess).
+    // Pass [] to unlink all.
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    menuIds?: string[];
+
 
     //default false
     @IsOptional()

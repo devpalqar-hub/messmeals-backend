@@ -40,16 +40,6 @@ export class UpdateMenuDto {
     @IsString()
     items?: string;
 
-    @ApiPropertyOptional({
-        example: ['7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111'],
-        description: 'Replaces the full set of linked plans (must belong to the same mess). Pass [] to unlink all.',
-        type: [String],
-    })
-    @IsOptional()
-    @IsArray()
-    @IsUUID('4', { each: true })
-    planIds?: string[];
-
     @ApiPropertyOptional({ example: true })
     @IsOptional()
     @IsBoolean()

@@ -86,7 +86,7 @@ export class PlansController {
     // @Roles('SUPERADMIN')
     @ApiOperation({
         summary: 'Create a plan',
-        description: 'Creates a new plan with optional gallery images and linked variations.'
+        description: 'Creates a new plan with optional gallery images, linked variations, and optionally linked menus (menuIds — must belong to the same mess).'
     })
     @ApiResponse({ status: 201, description: 'Plan created successfully.' })
     @ApiBody({
@@ -99,6 +99,7 @@ export class PlansController {
                 description: { type: 'string', example: 'Balanced weekday meal plan' },
                 messId: { type: 'string', example: 'c2b7d4af-7c5f-4d4a-9a08-2f2f7d4e3a11' },
                 variationIds: { type: 'array', example: ['1f2e3d4c-1111-2222-3333-444455556666'], items: { type: 'string' } },
+                menuIds: { type: 'array', example: ['7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111'], items: { type: 'string' }, description: 'Optional — existing menus of the same mess to link to this plan.' },
                 isMonthlyPlan: { type: 'boolean', example: true },
                 isDailyPlan: { type: 'boolean', example: false },
                 planImages: {
@@ -187,9 +188,17 @@ export class PlansController {
     // @Roles('SUPERADMIN')
     @ApiOperation({
         summary: 'Update plan',
-        description: 'Updates an existing plan using its UUID identifier.'
+        description: 'Updates an existing plan using its UUID identifier. Pass menuIds to replace the full set of linked menus (must belong to the same mess); pass [] to unlink all.'
     })
     @ApiParam({ name: 'id', description: 'Plan UUID', example: '8e6f4f4a-3bb7-4c74-9f42-5b3f7e5c7c11' })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                menuIds: { type: 'array', example: ['7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111'], items: { type: 'string' }, description: 'Optional — replaces all linked menus. Pass [] to unlink all.' },
+            },
+        },
+    })
     @ApiResponse({ status: 200, description: 'Plan updated successfully.' })
     @Patch(':id')
     async updatePlan(
@@ -201,6 +210,14 @@ export class PlansController {
                 dto.variationIds = JSON.parse(dto.variationIds);
             } catch {
                 dto.variationIds = [];
+            }
+        }
+
+        if (typeof dto.menuIds === 'string') {
+            try {
+                dto.menuIds = JSON.parse(dto.menuIds);
+            } catch {
+                dto.menuIds = [];
             }
         }
 

@@ -32,8 +32,8 @@ export class MenuController {
         summary: 'Create menu',
         description:
             'Creates a weekly menu for a mess: a meal variation (Breakfast/Lunch/Dinner), the days of the week it ' +
-            'applies to, and its items as free text. Linking it to plans (planIds) is optional — a menu can exist ' +
-            'unlinked, and the same menu can be linked to multiple plans of that mess.',
+            'applies to, and its items as free text. A menu can exist unlinked from any plan — link it to one or ' +
+            'more plans of the same mess via menuIds on POST/PATCH /plans instead.',
     })
     @ApiResponse({ status: 201, description: 'Menu created successfully.' })
     @Post()
@@ -109,7 +109,7 @@ export class MenuController {
     @ApiBearerAuth()
     @ApiOperation({
         summary: 'Update menu',
-        description: 'Updates a menu\'s fields. Pass planIds to replace the full set of linked plans (all must belong to the same mess); pass [] to unlink all.',
+        description: 'Updates a menu\'s own fields. To change which plans it\'s linked to, use menuIds on PATCH /plans/:id instead.',
     })
     @ApiParam({ name: 'id', description: 'Menu UUID' })
     @ApiResponse({ status: 200, description: 'Menu updated successfully.' })
