@@ -148,8 +148,7 @@ export class PlansService {
                         select: {
                             id: true,
                             name: true,
-                            days: true,
-                            items: true,
+                            schedule: true,
                         },
                     },
                 },
@@ -197,8 +196,7 @@ export class PlansService {
                     select: {
                         id: true,
                         name: true,
-                        days: true,
-                        items: true,
+                        schedule: true,
                     },
                 },
             },

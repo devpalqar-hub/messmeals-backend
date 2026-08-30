@@ -1,44 +1,62 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { DayOfWeek } from '@prisma/client';
-import {
-    ArrayMinSize,
-    IsArray,
-    IsBoolean,
-    IsEnum,
-    IsOptional,
-    IsString,
-    IsUUID,
-} from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsBoolean, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { MenuDayEntryDto } from './menu-day-entry.dto';
 
 export class UpdateMenuDto {
-    @ApiPropertyOptional({
-        example: '1f2e3d4c-1111-2222-3333-444455556666',
-        description: 'Variation UUID this menu is for (e.g. Breakfast / Lunch / Dinner).',
-    })
-    @IsOptional()
-    @IsUUID()
-    variationId?: string;
-
-    @ApiPropertyOptional({ example: 'Weekday Lunch' })
+    @ApiPropertyOptional({ example: 'Weekly Menu' })
     @IsOptional()
     @IsString()
     name?: string;
 
-    @ApiPropertyOptional({
-        enum: DayOfWeek,
-        isArray: true,
-        example: ['MONDAY', 'WEDNESDAY', 'FRIDAY'],
-    })
+    @ApiPropertyOptional({ type: [MenuDayEntryDto], description: 'Replaces Monday\'s meal entries entirely when present.' })
     @IsOptional()
     @IsArray()
-    @ArrayMinSize(1)
-    @IsEnum(DayOfWeek, { each: true })
-    days?: DayOfWeek[];
+    @ValidateNested({ each: true })
+    @Type(() => MenuDayEntryDto)
+    monday?: MenuDayEntryDto[];
 
-    @ApiPropertyOptional({ example: 'Rice, Dal, Sabzi, Roti, Pickle' })
+    @ApiPropertyOptional({ type: [MenuDayEntryDto], description: 'Replaces Tuesday\'s meal entries entirely when present.' })
     @IsOptional()
-    @IsString()
-    items?: string;
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => MenuDayEntryDto)
+    tuesday?: MenuDayEntryDto[];
+
+    @ApiPropertyOptional({ type: [MenuDayEntryDto], description: 'Replaces Wednesday\'s meal entries entirely when present.' })
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => MenuDayEntryDto)
+    wednesday?: MenuDayEntryDto[];
+
+    @ApiPropertyOptional({ type: [MenuDayEntryDto], description: 'Replaces Thursday\'s meal entries entirely when present.' })
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => MenuDayEntryDto)
+    thursday?: MenuDayEntryDto[];
+
+    @ApiPropertyOptional({ type: [MenuDayEntryDto], description: 'Replaces Friday\'s meal entries entirely when present.' })
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => MenuDayEntryDto)
+    friday?: MenuDayEntryDto[];
+
+    @ApiPropertyOptional({ type: [MenuDayEntryDto], description: 'Replaces Saturday\'s meal entries entirely when present.' })
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => MenuDayEntryDto)
+    saturday?: MenuDayEntryDto[];
+
+    @ApiPropertyOptional({ type: [MenuDayEntryDto], description: 'Replaces Sunday\'s meal entries entirely when present.' })
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => MenuDayEntryDto)
+    sunday?: MenuDayEntryDto[];
 
     @ApiPropertyOptional({ example: true })
     @IsOptional()
