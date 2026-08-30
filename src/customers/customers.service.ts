@@ -92,7 +92,6 @@ export class CustomerService {
             walletAmount,
             discount,
             planId,
-            deliveryPartnerId,
             start_date,
             end_date,
 
@@ -100,6 +99,10 @@ export class CustomerService {
             scheduleType,
             selectedDays, // Array of weekdays if CUSTOM (e.g. ["MONDAY", "WEDNESDAY", "FRIDAY"])
         } = dto;
+
+        // Treat an empty/blank string the same as "not provided" — a form field left unselected
+        // often submits "" rather than omitting the key, and "" is not a valid FK value.
+        const deliveryPartnerId = dto.deliveryPartnerId?.trim() ? dto.deliveryPartnerId.trim() : undefined;
 
         if (ScheduleType.CUSTOM === scheduleType && (!selectedDays || selectedDays.length === 0)) {
             throw new BadRequestException('Selected days are required for CUSTOM schedule type');

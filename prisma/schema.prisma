@@ -298,11 +298,25 @@ model Mess {
   address     String? @db.LongText
   phone       String?
   email       String?
+  /// Optional icon/logo — a public URL (e.g. uploaded via POST /s3/upload) shown for the mess.
+  icon        String?
   isPremium   Boolean @default(false)
   is_active   Boolean @default(true)
   latitude    String?
   logitude    String?
   zipcode     String?
+
+  /// URL-friendly identifier auto-generated from the mess name on create — used by the
+  /// public GET /open/mess/:slug detail endpoint.
+  slug String? @unique
+
+  /// Superadmin-controlled: whether this mess is shown at all on the public website
+  /// (GET /open/messes and /open/mess/:slug only ever return listed messes).
+  isListed Boolean @default(false)
+
+  /// Superadmin-controlled: whether this mess is eligible for the "featured" public
+  /// listing (nearby-within-20km, shuffled order — see OpenMessService).
+  isFeatured Boolean @default(false)
 
   foodTypes MessFoodType[] // ✅ relation
   tags      MessTag[] // ✅ relation

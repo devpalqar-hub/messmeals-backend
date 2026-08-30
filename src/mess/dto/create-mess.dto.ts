@@ -143,6 +143,14 @@ export class CreateMessDto {
     @IsOptional()
     @IsString()
     zipcode?: string;
+
+    @ApiPropertyOptional({
+        example: 'https://cdn.example.com/mess/icon.png',
+        description: 'Optional icon/logo URL for the mess (upload via POST /s3/upload first).',
+    })
+    @IsOptional()
+    @IsString()
+    icon?: string;
 }
 
 export class UpdateMessImageDto {
@@ -266,6 +274,14 @@ export class UpdateMessDto {
     zipcode?: string;
 
     @ApiPropertyOptional({
+        example: 'https://cdn.example.com/mess/icon.png',
+        description: 'Optional icon/logo URL for the mess (upload via POST /s3/upload first).',
+    })
+    @IsOptional()
+    @IsString()
+    icon?: string;
+
+    @ApiPropertyOptional({
         example: [
             {
                 id: '7e6d5c4b-3a2f-1e0d-9c8b-7a6f5e4d3c2b',
@@ -295,4 +311,23 @@ export class CreateMessByAdminDto extends PartialType(CreateMessDto) {
     @IsString()
     @IsNotEmpty()
     zipcode!: string;
+}
+
+/// Superadmin-only: PATCH /mess/:id/listing
+export class UpdateMessListingDto {
+    @ApiPropertyOptional({
+        example: true,
+        description: 'Whether this mess is shown at all on the public website.',
+    })
+    @IsOptional()
+    @IsBoolean()
+    isListed?: boolean;
+
+    @ApiPropertyOptional({
+        example: false,
+        description: 'Whether this mess is eligible for the featured/nearby public section.',
+    })
+    @IsOptional()
+    @IsBoolean()
+    isFeatured?: boolean;
 }

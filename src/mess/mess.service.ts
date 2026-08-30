@@ -57,9 +57,12 @@ export class MessService {
         }
 
         // 🔹 Create mess
+        const slug = await this.generateUniqueSlug(dto.name);
+
         const mess = await this.prisma.mess.create({
             data: {
                 name: dto.name,
+                slug,
                 description: dto.description,
                 address: dto.address,
                 phone: dto.phone,
@@ -71,7 +74,7 @@ export class MessService {
                 openingHours: dto.openingHours,
                 features: dto.features,
                 zipcode: dto.zipcode,
-
+                icon: dto.icon,
 
                 ...(dto.districtId && {
                     District: { connect: { id: dto.districtId } },
@@ -166,6 +169,31 @@ export class MessService {
             },
         };
 
+    }
+
+    /// Lowercase, hyphenated, alnum-only slug base from a mess name (e.g. "Super Meals!" -> "super-meals").
+    private slugify(text: string): string {
+        const base = text
+            .toString()
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+        return base || 'mess';
+    }
+
+    /// Generates a slug for a new mess, appending -2, -3, ... on collision so it stays unique.
+    private async generateUniqueSlug(name: string): Promise<string> {
+        const base = this.slugify(name);
+        let slug = base;
+        let attempt = 2;
+
+        while (await this.prisma.mess.findUnique({ where: { slug }, select: { id: true } })) {
+            slug = `${base}-${attempt}`;
+            attempt++;
+        }
+
+        return slug;
     }
 
     private getDistanceKm(
@@ -612,6 +640,7 @@ export class MessService {
                 ...(dto.isPremium !== undefined && { isPremium: dto.isPremium }),
                 ...(dto.features !== undefined && { features: dto.features }),
                 ...(dto.zipcode !== undefined && { zipcode: dto.zipcode }),
+                ...(dto.icon !== undefined && { icon: dto.icon }),
 
                 ...(dto.districtId !== undefined && {
                     District: dto.districtId
@@ -981,6 +1010,50 @@ export class MessService {
         };
     }
 
+    /// Dev/back-office helper: gives every existing mess created before slugs existed
+    /// a slug, so it becomes reachable via GET /open/mess/:slug. New messes always get
+    /// one automatically on create — see generateUniqueSlug().
+    async backfillMissingSlugs() {
+        const messes = await this.prisma.mess.findMany({
+            where: { slug: null },
+            select: { id: true, name: true },
+        });
+
+        if (!messes.length) {
+            return { message: 'No messes found with a missing slug' };
+        }
+
+        for (const mess of messes) {
+            const slug = await this.generateUniqueSlug(mess.name);
+            await this.prisma.mess.update({ where: { id: mess.id }, data: { slug } });
+        }
+
+        return { message: `${messes.length} messes given a slug` };
+    }
+
+    /// Superadmin-only toggle for the public website: whether this mess is listed at
+    /// all, and (independently) whether it's eligible for the "featured" section.
+    async updateListing(id: string, dto: { isListed?: boolean; isFeatured?: boolean }) {
+        const mess = await this.prisma.mess.findUnique({ where: { id } });
+        if (!mess) {
+            throw new NotFoundException('Mess not found');
+        }
+
+        // A mess without a slug (created before slugs existed) can't be resolved by the
+        // public detail endpoint — give it one the moment it's listed.
+        const needsSlug = dto.isListed && !mess.slug;
+
+        const updated = await this.prisma.mess.update({
+            where: { id },
+            data: {
+                ...(dto.isListed !== undefined && { isListed: dto.isListed }),
+                ...(dto.isFeatured !== undefined && { isFeatured: dto.isFeatured }),
+                ...(needsSlug && { slug: await this.generateUniqueSlug(mess.name) }),
+            },
+        });
+
+        return { message: 'Mess listing settings updated', data: updated };
+    }
 
     async addCoverImages(
         messId: string,
