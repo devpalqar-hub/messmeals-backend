@@ -54,32 +54,77 @@ export class PaymentsController {
         @Req() req: any,
         @Body() payload: RazorpayWebhookDto,
     ) {
+        console.log('[RAZORPAY DEBUG] webhook received', {
+            event: payload?.event,
+            hasSignatureHeader: !!req.headers['x-razorpay-signature'],
+            hasRawBody: !!req.rawBody,
+            rawBodyLength: req.rawBody?.length ?? 0,
+        });
+
         try {
             // Get signature from headers
             const signature = req.headers['x-razorpay-signature'] as string;
 
             if (!signature) {
+                console.error('[RAZORPAY DEBUG] webhook rejected: missing x-razorpay-signature header');
                 throw new UnauthorizedException('Missing webhook signature');
             }
 
             // Verify webhook signature
             const rawBody = (req.rawBody || Buffer.from('')).toString('utf8');
+            if (!req.rawBody) {
+                // If body-parser's `verify` hook (see main.ts) didn't run for this route,
+                // rawBody is empty and the HMAC below will never match a real signature.
+                console.error('[RAZORPAY DEBUG] webhook: req.rawBody is missing — signature verification will fail');
+            }
             const isValidSignature = this.paymentsService.verifyWebhookSignature(
                 rawBody,
                 signature,
             );
 
             if (!isValidSignature) {
+                console.error('[RAZORPAY DEBUG] webhook rejected: invalid signature', { event: payload?.event });
                 throw new UnauthorizedException('Invalid webhook signature');
             }
 
             // Handle different event types
             const { event, payload: eventPayload } = payload;
+            console.log('[RAZORPAY DEBUG] webhook signature verified, processing event:', event, JSON.stringify(eventPayload));
 
             switch (event) {
+                // Payment orders are now created as Razorpay Payment Links, so the id we store
+                // (Payments.razorpayOrderId) is the payment_link id, not the auto-generated order
+                // id — correlate on the payment_link.* events below.
+                case 'payment_link.paid': {
+                    const linkId = eventPayload.payment_link?.entity?.id;
+                    const paymentId = eventPayload.payment?.entity?.id;
+
+                    if (!linkId || !paymentId) {
+                        throw new Error('Missing payment link or payment ID in webhook');
+                    }
+
+                    return await this.paymentsService.handlePaymentSuccess(linkId, paymentId);
+                }
+
+                case 'payment_link.cancelled':
+                case 'payment_link.expired': {
+                    const linkId = eventPayload.payment_link?.entity?.id;
+
+                    if (!linkId) {
+                        throw new Error('Missing payment link ID in webhook');
+                    }
+
+                    return await this.paymentsService.handlePaymentFailure(
+                        linkId,
+                        event === 'payment_link.expired' ? 'Payment link expired' : 'Payment link cancelled',
+                    );
+                }
+
+                // Kept for backward compatibility with older direct-order integrations
+                // (create-order endpoint / any account config that still sends these).
                 case 'order.paid':
                 case 'payment.authorized':
-                    // Payment successful - activate subscription
+                case 'payment.captured': {
                     const orderId = eventPayload.payment?.entity?.order_id;
                     const paymentId = eventPayload.payment?.entity?.id;
 
@@ -88,10 +133,10 @@ export class PaymentsController {
                     }
 
                     return await this.paymentsService.handlePaymentSuccess(orderId, paymentId);
+                }
 
                 case 'payment.failed':
-                case 'order.paid.failed':
-                    // Payment failed - delete subscription
+                case 'order.paid.failed': {
                     const failedOrderId = eventPayload.payment?.entity?.order_id || eventPayload.order?.entity?.id;
                     const failureReason = eventPayload.payment?.entity?.error_description;
 
@@ -103,20 +148,7 @@ export class PaymentsController {
                         failedOrderId,
                         failureReason,
                     );
-
-                case 'payment.captured':
-                    // Payment captured (for authorized payments)
-                    const capturedOrderId = eventPayload.payment?.entity?.order_id;
-                    const capturedPaymentId = eventPayload.payment?.entity?.id;
-
-                    if (!capturedOrderId || !capturedPaymentId) {
-                        throw new Error('Missing order or payment ID in webhook');
-                    }
-
-                    return await this.paymentsService.handlePaymentSuccess(
-                        capturedOrderId,
-                        capturedPaymentId,
-                    );
+                }
 
                 default:
                     // Log unhandled events but don't fail
@@ -124,7 +156,11 @@ export class PaymentsController {
                     return { success: true, message: 'Webhook received' };
             }
         } catch (error: any) {
-            console.error('Webhook processing error:', error);
+            console.error('[RAZORPAY DEBUG] webhook processing error', {
+                event: payload?.event,
+                message: error?.message,
+                stack: error?.stack,
+            });
             // Return 200 OK to Razorpay even on error (to prevent retry)
             // Error details are logged for debugging
             return {

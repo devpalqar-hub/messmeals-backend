@@ -61,5 +61,20 @@ export class RazorpayWebhookDto {
                 created_at: number;
             };
         };
+        payment_link?: {
+            entity: {
+                id: string;
+                entity: string;
+                reference_id?: string;
+                short_url: string;
+                status: string;
+                amount: number;
+                amount_paid?: number;
+                currency: string;
+                description?: string;
+                notes?: Record<string, any>;
+                created_at: number;
+            };
+        };
     };
 }
