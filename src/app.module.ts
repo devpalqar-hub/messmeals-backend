@@ -25,13 +25,15 @@ import { DistrictModule } from './district/district.module';
 import { PaymentsModule } from './payments/payments.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { BillingModule } from './billing/billing.module';
+import { ExpenseCategoriesModule } from './expense-categories/expense-categories.module';
+import { ExpensesModule } from './expenses/expenses.module';
 
 
 @Module({
   imports: [AuthModule, CustomerModule, DeliveriesModule, DeliveryAgentModule, UserSubscriptionsModule,
     PlansModule, PrismaModule, UserModule, VariationModule, ContactFormModule, DistrictModule,
     MessModule, MessAdminModule, AddressModule, CategoryModule, TestimonialsModule, PaymentsModule, AnalyticsModule,
-    BillingModule,
+    BillingModule, ExpenseCategoriesModule, ExpensesModule,
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'uploads'),
       serveRoot: "/uploads",

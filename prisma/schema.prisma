@@ -96,6 +96,7 @@ model User {
   customerProfile        CustomerProfile?
   deliveryPartnerProfile DeliveryPartnerProfile?
   messAdminProfile       MessAdminProfile?
+  expenses               Expense[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -219,18 +220,18 @@ model Variation {
   updatedAt   DateTime @updatedAt
   plans       Plans[]
 
-  isActive           Boolean            @default(true)
+  isActive           Boolean             @default(true)
   deliveryVariations DeliveryVariation[]
 }
 
 /// Tracks the status of each variation (Breakfast/Lunch/Dinner) within a single delivery.
 model DeliveryVariation {
-  id          String         @id @default(uuid())
+  id          String          @id @default(uuid())
   deliveryId  String
   variationId String
   status      VariationStatus @default(PENDING)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
   delivery  Deliveries @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
   variation Variation  @relation(fields: [variationId], references: [id], onDelete: Cascade)
@@ -304,6 +305,9 @@ model Mess {
   billingReactivatesAt DateTime?
   MessBillingConfig    MessBillingConfig?
   MessInvoice          MessInvoice[]
+
+  expenseCategories ExpenseCategory[]
+  expenses          Expense[]
 }
 
 model BillingGlobalConfig {
@@ -469,6 +473,62 @@ model Category {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// PENDING = a lightweight placeholder entry logged now to be completed/paid later (amount may be a guess or unset).
+/// UNPAID = a fully recorded expense (amount set) with no payment recorded yet (paidAmount = 0).
+/// PARTIALLY_PAID = a fully recorded expense with some but not all of `amount` paid (0 < paidAmount < amount).
+/// PAID = a fully recorded expense that has been settled in full (paidAmount >= amount).
+/// UNPAID/PARTIALLY_PAID/PAID are calculated from amount vs paidAmount — not set directly by the caller.
+enum ExpenseStatus {
+  PENDING
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+}
+
+/// Expense categories are managed per-mess by the mess owner (e.g. Groceries, Rent, Staff Salary).
+model ExpenseCategory {
+  id          String   @id @default(uuid())
+  messId      String
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  mess     Mess      @relation(fields: [messId], references: [id], onDelete: Cascade)
+  expenses Expense[]
+
+  @@unique([messId, name])
+  @@index([messId])
+}
+
+model Expense {
+  id            String        @id @default(uuid())
+  messId        String
+  categoryId    String
+  title         String
+  amount        Decimal       @default(0.00)
+  paidAmount    Decimal       @default(0.00)
+  description   String?       @db.Text
+  expenseDate   DateTime      @default(now())
+  paymentMethod String?
+  receiptUrl    String?
+  status        ExpenseStatus @default(UNPAID)
+  paidAt        DateTime?
+  createdById   String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  mess      Mess            @relation(fields: [messId], references: [id], onDelete: Cascade)
+  category  ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  createdBy User?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([messId])
+  @@index([categoryId])
+  @@index([messId, expenseDate])
+  @@index([messId, status])
 }
 
 model Testimonials {
