@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsNumber, IsOptional, IsPhoneNumber, IsString, IsBoolean, IsEnum, IsJSON, IsArray, IsUUID } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsNumber, IsOptional, IsPhoneNumber, IsString, IsBoolean, IsEnum, IsJSON, IsArray, IsUUID } from 'class-validator';
 import { ScheduleType, DayOfWeek } from '@prisma/client';
 
 export class CreateCustomerDto {
@@ -10,6 +10,7 @@ export class CreateCustomerDto {
 
     @ApiProperty({ example: '+919876543218' })
     @IsString()
+    @IsNotEmpty({ message: 'phone is required' })
     phone: string;
 
     @ApiProperty({ example: 'john@example.com' })
@@ -45,9 +46,13 @@ export class CreateCustomerDto {
     @IsString()
     planId: string
 
-    @ApiProperty({ example: 'b3f4fb3e-0e61-43c3-8b3b-b833f18b2f55' })
+    @ApiPropertyOptional({
+        example: 'b3f4fb3e-0e61-43c3-8b3b-b833f18b2f55',
+        description: 'Optional. A customer can be registered without a delivery partner and assigned one later.',
+    })
+    @IsOptional()
     @IsString()
-    deliveryPartnerId: string
+    deliveryPartnerId?: string
 
     @ApiProperty({ example: '2026-05-07' })
     @IsString()

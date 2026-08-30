@@ -103,23 +103,30 @@ export class CustomerService {
         }
 
 
-        // 1️⃣ Validate delivery partner
-        const deliveryPartner = await this.prisma.deliveryPartnerProfile.findUnique({
-            where: { id: deliveryPartnerId },
-        });
-        if (!deliveryPartner) throw new BadRequestException('Delivery Partner not found');
-
-        // 2️⃣ Validate plan
+        // 1️⃣ Validate plan
         const plan = await this.prisma.plans.findUnique({
             where: { id: planId },
         });
         if (!plan) throw new BadRequestException('Plan not found');
 
-        if (plan.messId !== deliveryPartner.messId) {
-            throw new BadRequestException('Plan does not belong to the specified Mess');
+        // 2️⃣ Validate delivery partner — optional. A customer can be registered without one
+        // (e.g. assigned to a delivery agent later); only cross-checked against the plan's mess when given.
+        let deliveryPartner: { id: string; messId: string } | null = null;
+        if (deliveryPartnerId) {
+            deliveryPartner = await this.prisma.deliveryPartnerProfile.findUnique({
+                where: { id: deliveryPartnerId },
+            });
+            if (!deliveryPartner) throw new BadRequestException('Delivery Partner not found');
+
+            if (plan.messId !== deliveryPartner.messId) {
+                throw new BadRequestException('Plan does not belong to the specified Mess');
+            }
         }
-        console.log("helloooo - 1")
-        // 3️⃣ Check if user exists
+
+        // 3️⃣ Check if user exists. A phone/email already registered as a customer (role USER) is
+        // reused as-is — this is what lets a *different* mess admin register the same person for
+        // their own mess/plan: the existing User + CustomerProfile is shared, only a new
+        // UserSubscriptions row (scoped to plan.messId below) is created.
         let user = await this.prisma.user.findFirst({
             where: {
                 OR: [
@@ -128,6 +135,7 @@ export class CustomerService {
                 ],
             },
         });
+        const wasExistingUser = !!user;
 
         if (user) {
             const allowedRoles: Role[] = [
@@ -183,6 +191,21 @@ export class CustomerService {
                         latitude_logitude,
                     },
                 });
+            }
+        }
+
+        // Guard against literally double-registering the same customer for the same plan.
+        // Different messes/plans for the same phone number remain fully allowed — that's the point.
+        if (wasExistingUser) {
+            const duplicateActiveSub = await this.prisma.userSubscriptions.findFirst({
+                where: {
+                    customerProfileId: customerProfile.id,
+                    planId,
+                    is_active: true,
+                },
+            });
+            if (duplicateActiveSub) {
+                throw new BadRequestException('This customer already has an active subscription for this plan');
             }
         }
 
@@ -363,14 +386,15 @@ export class CustomerService {
 
         // ✅ Return success response
         return {
-            message: user.createdAt
-                ? 'New user and subscription created successfully'
-                : 'Subscription created successfully for existing user',
+            message: wasExistingUser
+                ? 'Subscription created successfully for existing customer'
+                : 'New customer and subscription created successfully',
             data: {
                 user,
                 customerProfile,
                 userSubscription,
                 deliveriesCreated: deliveriesToCreate.length,
+                isNewCustomer: !wasExistingUser,
             },
         };
     }

@@ -195,6 +195,7 @@ model Plans {
   deliveries        Deliveries[]
   Variation         Variation[]
   Enquiry           Enquiry[]
+  menus             Menu[]
 }
 
 model PlanImages {
@@ -219,18 +220,42 @@ model Variation {
   updatedAt   DateTime @updatedAt
   plans       Plans[]
 
-  isActive           Boolean            @default(true)
+  isActive           Boolean             @default(true)
   deliveryVariations DeliveryVariation[]
+  menus              Menu[]
+}
+
+/// A weekly menu for a mess: a meal variation (Breakfast/Lunch/Dinner — an existing Variation),
+/// the days of the week it applies to, and its items as free text. Optionally linked to one or
+/// more plans of the same mess (a plan need not have a menu, and the same menu can be reused
+/// across several plans of that mess).
+model Menu {
+  id          String   @id @default(uuid())
+  messId      String
+  variationId String
+  name        String?
+  days        Json // array of DayOfWeek values, e.g. ["MONDAY", "WEDNESDAY", "FRIDAY"]
+  items       String   @db.Text // free-text menu items, e.g. "Rice, Dal, Sabzi, Roti, Pickle"
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  mess      Mess      @relation(fields: [messId], references: [id], onDelete: Cascade)
+  variation Variation @relation(fields: [variationId], references: [id], onDelete: Cascade)
+  plans     Plans[] // optional — the same menu can link to multiple plans of this mess
+
+  @@index([messId])
+  @@index([variationId])
 }
 
 /// Tracks the status of each variation (Breakfast/Lunch/Dinner) within a single delivery.
 model DeliveryVariation {
-  id          String         @id @default(uuid())
+  id          String          @id @default(uuid())
   deliveryId  String
   variationId String
   status      VariationStatus @default(PENDING)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
   delivery  Deliveries @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
   variation Variation  @relation(fields: [variationId], references: [id], onDelete: Cascade)
@@ -304,6 +329,7 @@ model Mess {
   billingReactivatesAt DateTime?
   MessBillingConfig    MessBillingConfig?
   MessInvoice          MessInvoice[]
+  menus                Menu[]
 }
 
 model BillingGlobalConfig {
