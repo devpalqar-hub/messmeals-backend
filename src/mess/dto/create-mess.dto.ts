@@ -151,6 +151,16 @@ export class CreateMessDto {
     @IsOptional()
     @IsString()
     icon?: string;
+
+    @ApiPropertyOptional({ example: '9.9312', description: 'Optional latitude of the mess location.' })
+    @IsOptional()
+    @IsString()
+    latitude?: string;
+
+    @ApiPropertyOptional({ example: '76.2673', description: 'Optional longitude of the mess location.' })
+    @IsOptional()
+    @IsString()
+    longitude?: string;
 }
 
 export class UpdateMessImageDto {
@@ -280,6 +290,16 @@ export class UpdateMessDto {
     @IsOptional()
     @IsString()
     icon?: string;
+
+    @ApiPropertyOptional({ example: '9.9312', description: 'Optional latitude of the mess location.' })
+    @IsOptional()
+    @IsString()
+    latitude?: string;
+
+    @ApiPropertyOptional({ example: '76.2673', description: 'Optional longitude of the mess location.' })
+    @IsOptional()
+    @IsString()
+    longitude?: string;
 
     @ApiPropertyOptional({
         example: [

@@ -20,6 +20,7 @@ import { SuperAdminLoginDto } from './dto/superadmin-login.dto';
 import { SuperAdminRegisterDto } from './dto/superadmin-register.dto';
 import { CreateMessAdminBySuperAdminDto, UpdateMessAdminBySuperAdminDto, MessAdminListQueryDto } from './dto/messadmin-admin.dto';
 import { MessOwnerSendOtpDto, MessOwnerSignupDto } from './dto/mess-owner-signup.dto';
+import { isPhoneOrEmailTaken } from 'src/common/utility/identity.util';
 import * as bcrypt from 'bcrypt';
 
 
@@ -133,8 +134,13 @@ export class AuthService {
     //dummy otp of 123456 is given right now. after dlt registration change it to otp variable
     async sendOtpForLogin(loginDto: LoginDto) {
         const { phone } = loginDto;
-        let user = await this.prisma.user.findUnique({ where: { phone: phone } });
-        if (!user) {
+        // Customers live in their own `Customer` table now — check both, since this
+        // endpoint is shared by every role (login OTP request only, no role known yet).
+        const [customer, user] = await Promise.all([
+            this.prisma.customer.findUnique({ where: { phone } }),
+            this.prisma.user.findUnique({ where: { phone } }),
+        ]);
+        if (!customer && !user) {
             throw new UnauthorizedException('User not found');
         }
         // if (process.env.NODE_ENV === 'STAGING') {
@@ -214,8 +220,9 @@ export class AuthService {
             }
 
         }
-        // Step2. Fetch user and profiles
-        const user = await this.prisma.user.findUnique({
+        // Step2. Customers live in their own `Customer` table — try that first (this
+        // endpoint is the single shared login for every role, keyed only on phone).
+        const customer = await this.prisma.customer.findUnique({
             where: { phone },
             include: {
                 customerProfile: {
@@ -224,6 +231,62 @@ export class AuthService {
                         Wallet: true,
                     },
                 },
+            },
+        });
+
+        if (customer) {
+            const isNewUser = !customer.is_verified;
+            if (!customer.is_verified) {
+                await this.prisma.customer.update({
+                    where: { phone },
+                    data: { is_verified: true },
+                });
+                customer.is_verified = true;
+            }
+
+            // Flag whether the profile still needs basic details (name/email/address)
+            // filled in via the complete-profile API.
+            const isProfileComplete = Boolean(
+                customer.name && customer.email && (customer.customerProfile?.addresses?.length ?? 0) > 0,
+            );
+
+            const payloadData = {
+                profile: customer.customerProfile,
+                addresses: customer.customerProfile?.addresses || [],
+                wallet: customer.customerProfile?.Wallet || null,
+            };
+
+            const accessToken = this.jwtService.sign({
+                sub: customer.id,
+                phone: customer.phone,
+                email: customer.email,
+                role: Role.USER,
+            });
+
+            return {
+                user: {
+                    id: customer.id,
+                    name: customer.name,
+                    phone: customer.phone,
+                    email: customer.email,
+                    role: Role.USER,
+                    ...payloadData,
+                },
+                accessToken,
+                isNewUser,
+                isProfileComplete,
+                message: isNewUser
+                    ? 'User verified successfully'
+                    : 'User already verified before',
+                status: 200,
+            };
+        }
+
+        // Step2b. Not a customer — fall back to the staff table
+        // (MESSADMIN / SUPERADMIN / DELIVERYAGENT).
+        const user = await this.prisma.user.findUnique({
+            where: { phone },
+            include: {
                 deliveryPartnerProfile: {
                     include: {
                         mess: true, // delivery agent belongs to one mess
@@ -251,25 +314,12 @@ export class AuthService {
             user.is_verified = true;
         }
 
-        // For customers, also flag whether the profile still needs basic
-        // details (name/email/address) filled in via the complete-profile API.
-        const isProfileComplete =
-            user.role === Role.USER
-                ? Boolean(user.name && user.email && (user.customerProfile?.addresses?.length ?? 0) > 0)
-                : true;
+        const isProfileComplete = true;
 
         // Step4. Role specific payload
         let payloadData = {};
 
         switch (user.role) {
-            case Role.USER:
-                payloadData = {
-                    profile: user.customerProfile,
-                    addresses: user.customerProfile?.addresses || [],
-                    wallet: user.customerProfile?.Wallet || null,
-                };
-                break;
-
             case Role.DELIVERYAGENT:
                 payloadData = {
                     profile: user.deliveryPartnerProfile,
@@ -337,14 +387,9 @@ export class AuthService {
         const districtName = dto.district?.trim() ?? null;
         const zipcode = dto.zipcode?.trim() ?? null;
 
-        const existingUser = await this.prisma.user.findFirst({
-            where: {
-                OR: [{ phone }, { email }],
-            },
-            select: { id: true },
-        });
-
-        if (existingUser) {
+        // Checks both the staff `User` table and the customer `Customer` table —
+        // phone/email must stay globally unique across both.
+        if (await isPhoneOrEmailTaken(this.prisma, { phone, email })) {
             throw new BadRequestException('User already exists with this phone or email');
         }
 
@@ -495,14 +540,9 @@ export class AuthService {
         // cleanup: remove the OTP session marker record
         await this.prisma.enquiry.delete({ where: { id: sessionRow.id } }).catch(() => undefined);
 
-        const existingUser = await this.prisma.user.findFirst({
-            where: {
-                OR: [{ phone }, { email }],
-            },
-            select: { id: true },
-        });
-
-        if (existingUser) {
+        // Checks both the staff `User` table and the customer `Customer` table —
+        // phone/email must stay globally unique across both.
+        if (await isPhoneOrEmailTaken(this.prisma, { phone, email })) {
             throw new BadRequestException('User already exists with this phone or email');
         }
 
@@ -727,9 +767,8 @@ export class AuthService {
         // 2️⃣ Total Customers
         // ---------------------------------------------------
 
-        const totalCustomers = await this.prisma.user.count({
+        const totalCustomers = await this.prisma.customer.count({
             where: {
-                role: 'USER',
                 customerProfile: {
                     userSubscriptions: {
                         some: {
@@ -1007,13 +1046,7 @@ export class AuthService {
     }
 
     async createMessAdminBySuperAdmin(dto: CreateMessAdminBySuperAdminDto) {
-        const existingUser = await this.prisma.user.findFirst({
-            where: {
-                OR: [{ email: dto.email }, { phone: dto.phone }],
-            },
-        });
-
-        if (existingUser) {
+        if (await isPhoneOrEmailTaken(this.prisma, { phone: dto.phone, email: dto.email })) {
             throw new BadRequestException('User already exists');
         }
 
@@ -1074,24 +1107,15 @@ export class AuthService {
             throw new NotFoundException('Mess admin not found');
         }
 
-        const existingEmail = dto.email
-            ? await this.prisma.user.findFirst({
-                where: { email: dto.email, NOT: { id } },
-            })
-            : null;
-
-        if (existingEmail) {
-            throw new BadRequestException('Email already in use');
-        }
-
-        const existingPhone = dto.phone
-            ? await this.prisma.user.findFirst({
-                where: { phone: dto.phone, NOT: { id } },
-            })
-            : null;
-
-        if (existingPhone) {
-            throw new BadRequestException('Phone number already in use');
+        if (
+            (dto.email || dto.phone) &&
+            (await isPhoneOrEmailTaken(this.prisma, {
+                phone: dto.phone,
+                email: dto.email,
+                excludeUserId: id,
+            }))
+        ) {
+            throw new BadRequestException('Email or phone number already in use');
         }
 
         const updateData: any = {};
@@ -1170,22 +1194,27 @@ export class AuthService {
             latitudeLogitude,
         } = dto;
         const otp = '123456'
-        // Fetch user with customerProfile
-        let user = await this.prisma.user.findUnique({
+        // Customers live in their own `Customer` table — fetch with customerProfile
+        let customer = await this.prisma.customer.findUnique({
             where: { phone },
             include: { customerProfile: true },
         });
 
-        // Create user (and empty customerProfile) only if not present
-        if (!user) {
-            user = await this.prisma.user.create({
+        // Create customer (and empty customerProfile) only if not present
+        if (!customer) {
+            // A phone/email already used by a staff account (mess admin / superadmin /
+            // delivery agent) can't also register as a customer.
+            if (await isPhoneOrEmailTaken(this.prisma, { phone, email })) {
+                throw new BadRequestException('Phone or email already registered');
+            }
+
+            customer = await this.prisma.customer.create({
                 data: {
                     name,
                     email,
                     phone,
-                    otp: otp, //remove this 
+                    otp: otp, //remove this
                     expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now //remove this
-                    role: Role.USER, // keep as in your original code
                     is_verified: false,
                     customerProfile: {
                         create: {},
@@ -1195,12 +1224,12 @@ export class AuthService {
             });
         }
 
-        // Ensure customerProfile exists (in case of legacy users without profile)
-        let customerProfile = user.customerProfile;
+        // Ensure customerProfile exists (in case of legacy customers without profile)
+        let customerProfile = customer.customerProfile;
         if (!customerProfile) {
             customerProfile = await this.prisma.customerProfile.create({
                 data: {
-                    userId: user.id,
+                    userId: customer.id,
                 },
             });
         }
@@ -1278,6 +1307,12 @@ export class AuthService {
         const otp = '123456'
         // Create user + deliveryPartnerProfile if not found
         if (!user) {
+            // A phone/email already used by a customer can't also register as a
+            // delivery agent.
+            if (await isPhoneOrEmailTaken(this.prisma, { phone, email })) {
+                throw new BadRequestException('Phone or email already registered');
+            }
+
             user = await this.prisma.user.create({
                 data: {
                     name,
@@ -1377,13 +1412,7 @@ export class AuthService {
 
 
     async registerSuperAdmin(dto: SuperAdminRegisterDto) {
-        const existingUser = await this.prisma.user.findFirst({
-            where: {
-                OR: [{ email: dto.email }, { phone: dto.phone }],
-            },
-        });
-
-        if (existingUser) {
+        if (await isPhoneOrEmailTaken(this.prisma, { phone: dto.phone, email: dto.email })) {
             throw new BadRequestException('User already exists');
         }
 

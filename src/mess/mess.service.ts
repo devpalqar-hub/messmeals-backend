@@ -75,6 +75,8 @@ export class MessService {
                 features: dto.features,
                 zipcode: dto.zipcode,
                 icon: dto.icon,
+                latitude: dto.latitude,
+                logitude: dto.longitude,
 
                 ...(dto.districtId && {
                     District: { connect: { id: dto.districtId } },
@@ -360,7 +362,10 @@ export class MessService {
                 where,
                 include: {
                     plans: {
-                        include: { Variation: true },
+                        include: {
+                            Variation: true,
+                            menus: { select: { id: true, name: true } },
+                        },
                     },
                     messAdmins: {
                         include: {
@@ -543,6 +548,7 @@ export class MessService {
                     include: {
                         images: true,
                         Variation: true,
+                        menus: { select: { id: true, name: true } },
                     },
                 },
                 messAdmins: {
@@ -641,6 +647,8 @@ export class MessService {
                 ...(dto.features !== undefined && { features: dto.features }),
                 ...(dto.zipcode !== undefined && { zipcode: dto.zipcode }),
                 ...(dto.icon !== undefined && { icon: dto.icon }),
+                ...(dto.latitude !== undefined && { latitude: dto.latitude }),
+                ...(dto.longitude !== undefined && { logitude: dto.longitude }),
 
                 ...(dto.districtId !== undefined && {
                     District: dto.districtId

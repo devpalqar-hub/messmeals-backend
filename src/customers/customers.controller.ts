@@ -63,12 +63,14 @@ export class CustomerController {
     @ApiQuery({ name: 'search', required: false })
     @ApiQuery({ name: 'messId', required: false })
     @ApiQuery({ name: 'isActive', required: false })
+    @ApiQuery({ name: 'subscriptionFilter', required: false, description: '"ending_soon" narrows to customers with an active subscription ending within 7 days' })
     async findAll(
         @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
         @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
         @Query('search') search?: string,
         @Query('messId') messId?: string,
         @Query('isActive') isActive?: string,
+        @Query('subscriptionFilter') subscriptionFilter?: string,
     ) {
         return this.cusomerservice.findAll(
             page,
@@ -76,7 +78,18 @@ export class CustomerController {
             search,
             messId,
             isActive !== undefined ? isActive === 'true' : undefined,
+            subscriptionFilter,
         );
+    }
+
+    @Get('summary')
+    @ApiOperation({
+        summary: 'Customer summary stats',
+        description: 'Returns active-subscription count, how many are ending within 7 days, and the total amount owed back to the mess (sum of negative wallet balances) — optionally scoped to a mess.',
+    })
+    @ApiQuery({ name: 'messId', required: false })
+    async getSummary(@Query('messId') messId?: string) {
+        return this.cusomerservice.getCustomerSummary(messId);
     }
 
 

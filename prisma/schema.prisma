@@ -15,6 +15,7 @@ enum DeliveryStatus {
   DELIVERED
   COMPLETED
   UNDELIVERED
+  CANCELLED
 }
 
 /// Status for a single variation within a delivery (e.g. Breakfast DELIVERED, Dinner UNDELIVERED)
@@ -23,6 +24,7 @@ enum VariationStatus {
   DELIVERED
   COMPLETED
   UNDELIVERED
+  CANCELLED
 }
 
 enum Role {
@@ -82,6 +84,10 @@ enum InvoiceStatus {
   OVERDUE
 }
 
+/// Staff/admin identity table — MESSADMIN, SUPERADMIN, and DELIVERYAGENT accounts.
+/// Customer (role=USER) accounts live in their own `Customer` table (see below); the
+/// `Role` enum is still used app-wide (JWT payload / `@Roles(Role.USER)` guards) even
+/// though no row here ever carries `role: USER` anymore.
 model User {
   id                     String                  @id @default(uuid())
   name                   String
@@ -93,10 +99,31 @@ model User {
   is_active              Boolean                 @default(true)
   role                   Role                    @default(USER)
   password               String?
-  customerProfile        CustomerProfile?
   deliveryPartnerProfile DeliveryPartnerProfile?
   messAdminProfile       MessAdminProfile?
   expenses               Expense[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Customer identity table — a structural twin of `User`'s account fields, scoped to
+/// role=USER accounts only. Split out from `User` so customer accounts don't share an
+/// identity table with mess-admin/superadmin/delivery-agent staff accounts. `phone`/
+/// `email` uniqueness here is enforced together with `User`'s at the application layer
+/// (see `isPhoneOrEmailTaken` in src/common/utility) since MySQL can't express a unique
+/// constraint spanning two tables.
+model Customer {
+  id              String           @id @default(uuid())
+  name            String
+  phone           String           @unique
+  email           String?          @unique
+  otp             String?
+  expiresAt       DateTime?
+  is_verified     Boolean          @default(false)
+  is_active       Boolean          @default(true)
+  password        String?
+  customerProfile CustomerProfile?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -111,7 +138,7 @@ model CustomerProfile {
   userId            String   @unique
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              Customer @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   deliveries        Deliveries[]
   userSubscriptions UserSubscriptions[]

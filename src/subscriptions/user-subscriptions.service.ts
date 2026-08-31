@@ -224,7 +224,6 @@ export class UserSubscriptionsService {
                                 name: true,
                                 phone: true,
                                 email: true,
-                                role: true,
                             },
                         },
                     },

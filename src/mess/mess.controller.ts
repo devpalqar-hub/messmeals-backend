@@ -63,6 +63,8 @@ export class MessController {
                 districtId: { type: 'string', example: '5f6a1b2c-3d4e-5f60-7a8b-9c0d1e2f3a4b' },
                 features: { type: 'array', items: { type: 'string' }, example: ['wifi', 'parking', 'home-delivery'] },
                 icon: { type: 'string', example: 'https://cdn.example.com/mess/icon.png', description: 'Optional icon/logo URL (upload via POST /s3/upload first).' },
+                latitude: { type: 'string', example: '9.9312' },
+                longitude: { type: 'string', example: '76.2673' },
                 images: {
                     type: 'array',
                     example: [{ url: 'https://cdn.example.com/mess/gallery-1.jpg' }],
@@ -204,6 +206,8 @@ export class MessController {
                 districtId: { type: 'string', example: '5f6a1b2c-3d4e-5f60-7a8b-9c0d1e2f3a4b' },
                 features: { type: 'array', items: { type: 'string' }, example: ['wifi', 'parking', 'home-delivery'] },
                 icon: { type: 'string', example: 'https://cdn.example.com/mess/icon.png', description: 'Optional icon/logo URL (upload via POST /s3/upload first).' },
+                latitude: { type: 'string', example: '9.9312' },
+                longitude: { type: 'string', example: '76.2673' },
                 images: {
                     type: 'array',
                     example: [{ id: '7e6d5c4b-3a2f-1e0d-9c8b-7a6f5e4d3c2b', url: 'https://cdn.example.com/mess/gallery-1.jpg' }],

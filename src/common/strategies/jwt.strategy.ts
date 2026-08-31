@@ -26,13 +26,42 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
+    // Customers live in their own `Customer` table, split out from the shared `User`
+    // table (see prisma/schema.prisma) — the JWT's `role` claim tells us which table
+    // to resolve `payload.sub` against, but the returned `req.user` shape is kept
+    // identical either way so every downstream consumer is unaffected.
+    if (payload.role === Role.USER) {
+      const customer = await this.prisma.customer.findUnique({
+        where: { id: payload.sub },
+        select: {
+          id: true,
+          email: true,
+          customerProfile: { select: { id: true } },
+        },
+      });
+
+      if (!customer) {
+        throw new UnauthorizedException('User not found');
+      }
+
+      return {
+        id: customer.id,
+        email: customer.email,
+        role: Role.USER,
+        customerProfileId: customer.customerProfile?.id,
+        deliveryPartnerProfileId: undefined,
+        messAdminProfileId: undefined,
+        messId: undefined,
+        messIds: [],
+      };
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       select: {
         id: true,
         email: true,
         role: true,
-        customerProfile: { select: { id: true } },
         deliveryPartnerProfile: { select: { id: true, messId: true } },
         messAdminProfile: { select: { id: true, messes: { select: { id: true } } } },
       },
@@ -58,7 +87,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       id: user.id,
       email: user.email,
       role: user.role,
-      customerProfileId: user.customerProfile?.id,
+      customerProfileId: undefined,
       deliveryPartnerProfileId: user.deliveryPartnerProfile?.id,
       messAdminProfileId: user.messAdminProfile?.id,
       messId,

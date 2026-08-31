@@ -129,11 +129,11 @@ export class CustomerService {
             }
         }
 
-        // 3️⃣ Check if user exists. A phone/email already registered as a customer (role USER) is
-        // reused as-is — this is what lets a *different* mess admin register the same person for
-        // their own mess/plan: the existing User + CustomerProfile is shared, only a new
-        // UserSubscriptions row (scoped to plan.messId below) is created.
-        let user = await this.prisma.user.findFirst({
+        // 3️⃣ Check if a customer already exists. A phone/email already registered as a
+        // customer is reused as-is — this is what lets a *different* mess admin register
+        // the same person for their own mess/plan: the existing Customer + CustomerProfile
+        // is shared, only a new UserSubscriptions row (scoped to plan.messId below) is created.
+        let user = await this.prisma.customer.findFirst({
             where: {
                 OR: [
                     { email: email },
@@ -143,14 +143,21 @@ export class CustomerService {
         });
         const wasExistingUser = !!user;
 
-        if (user) {
-            const allowedRoles: Role[] = [
-                Role.DELIVERYAGENT,
-                Role.MESSADMIN,
-                Role.SUPERADMIN,
-            ];
+        // Not an existing customer — but the phone/email might already belong to a
+        // staff account (mess admin / superadmin / delivery agent), which all still
+        // live in the `User` table. Any hit there is a cross-role conflict.
+        if (!user) {
+            const conflictingStaffUser = await this.prisma.user.findFirst({
+                where: {
+                    OR: [
+                        { email: email },
+                        { phone: phone },
+                    ],
+                },
+                select: { id: true },
+            });
 
-            if (allowedRoles.includes(user.role)) {
+            if (conflictingStaffUser) {
                 throw new ForbiddenException(
                     "Email or Phone already registered for another role",
                 );
@@ -419,8 +426,8 @@ export class CustomerService {
             deliveryPartnerId,
         } = dto;
 
-        // 1️⃣ Check if user exists
-        const user = await this.prisma.user.findUnique({
+        // 1️⃣ Check if customer exists
+        const user = await this.prisma.customer.findUnique({
             where: { id: userId },
             include: { customerProfile: true },
         });
@@ -442,9 +449,9 @@ export class CustomerService {
 
         // 3️⃣ Run atomic transaction
         const result = await this.prisma.$transaction(async (tx) => {
-            // 🧩 Update user if needed
+            // 🧩 Update customer if needed
             if (Object.keys(userUpdateData).length > 0) {
-                await tx.user.update({
+                await tx.customer.update({
                     where: { id: userId },
                     data: userUpdateData,
                 });
@@ -477,8 +484,8 @@ export class CustomerService {
                 }
             }
 
-            // 🧩 Return updated user with relations
-            return tx.user.findUnique({
+            // 🧩 Return updated customer with relations
+            return tx.customer.findUnique({
                 where: { id: userId },
                 include: {
                     customerProfile: {
@@ -502,8 +509,13 @@ export class CustomerService {
         search?: string,
         messId?: string,
         isActive?: boolean, // ✅ NEW
+        subscriptionFilter?: string, // ✅ NEW — 'ending_soon' narrows to subscriptions ending within 7 days
     ) {
         const skip = (page - 1) * limit;
+
+        const now = new Date();
+        const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        const endingSoon = subscriptionFilter === 'ending_soon';
 
         const where: any = {
             ...(search
@@ -538,6 +550,19 @@ export class CustomerService {
                 ? {
                     userSubscriptions: {
                         some: { messId },
+                    },
+                }
+                : {}),
+
+            // ✅ subscription-ending-soon filter — active subscriptions ending within 7 days
+            ...(endingSoon
+                ? {
+                    userSubscriptions: {
+                        some: {
+                            ...(messId ? { messId } : {}),
+                            is_active: true,
+                            end_date: { gte: now, lte: in7Days },
+                        },
                     },
                 }
                 : {}),
@@ -670,6 +695,51 @@ export class CustomerService {
 
 
 
+    /**
+     * Summary stats for the Customers page header: how many customers currently have an
+     * active subscription, how many of those are ending within 7 days, and the total
+     * amount owed back to the mess (sum of negative wallet balances) — all optionally
+     * scoped to a single mess.
+     */
+    async getCustomerSummary(messId?: string) {
+        const now = new Date();
+        const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+        const activeWhere = {
+            is_active: true,
+            OR: [{ end_date: null }, { end_date: { gte: now } }],
+            ...(messId ? { messId } : {}),
+        };
+
+        const [activeSubs, endingSoonSubs, dueProfiles] = await Promise.all([
+            this.prisma.userSubscriptions.findMany({
+                where: activeWhere,
+                select: { customerProfileId: true },
+                distinct: ['customerProfileId'],
+            }),
+            this.prisma.userSubscriptions.findMany({
+                where: { ...activeWhere, end_date: { gte: now, lte: in7Days } },
+                select: { customerProfileId: true },
+                distinct: ['customerProfileId'],
+            }),
+            this.prisma.customerProfile.findMany({
+                where: {
+                    walletAmount: { lt: 0 },
+                    ...(messId ? { userSubscriptions: { some: { messId } } } : {}),
+                },
+                select: { walletAmount: true },
+            }),
+        ]);
+
+        const totalDue = dueProfiles.reduce((sum, p) => sum + Math.abs(Number(p.walletAmount)), 0);
+
+        return {
+            activeSubscriptionsCount: activeSubs.length,
+            endingSoonCount: endingSoonSubs.length,
+            totalDue,
+        };
+    }
+
     async findOne(id: string) {
         const customer = await this.prisma.customerProfile.findUnique({
             where: { userId: id }, // Assuming customerProfile is linked to User
@@ -771,8 +841,8 @@ export class CustomerService {
     }
 
     async deleteCustomer(userId: string) {
-        // 1️⃣ Check if user exists
-        const user = await this.prisma.user.findUnique({
+        // 1️⃣ Check if customer exists
+        const user = await this.prisma.customer.findUnique({
             where: { id: userId },
             include: {
                 customerProfile: {
@@ -785,7 +855,7 @@ export class CustomerService {
         });
 
         if (!user) throw new NotFoundException('User not found');
-        await this.prisma.user.delete({ where: { id: userId } });
+        await this.prisma.customer.delete({ where: { id: userId } });
         return {
             message: 'Customer and related data deleted successfully',
             deletedUserId: userId,
@@ -2557,14 +2627,13 @@ export class CustomerService {
      * address — it never overwrites existing addresses.
      */
     async completeProfile(userId: string, dto: CompleteProfileDto) {
-        const user = await this.prisma.user.findUnique({
+        // Guarded by @Roles(Role.USER) at the controller — only a customer JWT ever
+        // reaches this method, and customers only ever exist in the `Customer` table.
+        const user = await this.prisma.customer.findUnique({
             where: { id: userId },
             include: { customerProfile: { include: { addresses: true } } },
         });
         if (!user) throw new NotFoundException('User not found');
-        if (user.role !== Role.USER) {
-            throw new ForbiddenException('Only customer accounts can complete a customer profile');
-        }
 
         let customerProfile = user.customerProfile;
         if (!customerProfile) {
@@ -2575,7 +2644,7 @@ export class CustomerService {
         }
 
         if (dto.name || dto.email) {
-            await this.prisma.user.update({
+            await this.prisma.customer.update({
                 where: { id: userId },
                 data: {
                     ...(dto.name ? { name: dto.name } : {}),
@@ -2604,7 +2673,7 @@ export class CustomerService {
             });
         }
 
-        const updatedUser = await this.prisma.user.findUnique({
+        const updatedUser = await this.prisma.customer.findUnique({
             where: { id: userId },
             include: { customerProfile: { include: { addresses: true } } },
         });
