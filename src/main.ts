@@ -4,6 +4,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { VersioningType } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as bodyParser from 'body-parser';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -34,13 +35,6 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api-docs', app, document);
 
-  const port = process.env.PORT ?? 3000;
-  await app.listen(port);
-
-  const appUrl = await app.getUrl();
-  const swaggerUrl = `${appUrl}/api-docs`;
-  console.log(`Application URL: ${appUrl}`);
-  console.log(`Swagger URL: ${swaggerUrl}`);
   app.useGlobalPipes(new ValidationPipe({
     transform: true,
     whitelist: true,
@@ -50,5 +44,16 @@ async function bootstrap() {
     },
   }));
 
+  // Global error logger — logs every uncaught exception (console + logs/error.log)
+  // and returns a consistent JSON error response. See src/common/filters/http-exception.filter.ts
+  app.useGlobalFilters(new HttpExceptionFilter());
+
+  const port = process.env.PORT ?? 3000;
+  await app.listen(port);
+
+  const appUrl = await app.getUrl();
+  const swaggerUrl = `${appUrl}/api-docs`;
+  console.log(`Application URL: ${appUrl}`);
+  console.log(`Swagger URL: ${swaggerUrl}`);
 }
 bootstrap();
