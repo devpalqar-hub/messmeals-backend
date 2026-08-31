@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Transform, Type } from 'class-transformer';
-import { IsString, IsOptional, IsBoolean, IsEmail, IsObject, IsArray, IsUUID, IsEnum, ArrayNotEmpty, IsInt, ValidateNested, IsNotEmpty } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsEmail, IsObject, IsArray, IsUUID, IsEnum, IsInt, ValidateNested, IsNotEmpty } from 'class-validator';
 import { FoodType, Tags } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 
@@ -135,7 +135,6 @@ export class CreateMessDto {
     @ApiPropertyOptional({ example: ['wifi', 'parking', 'home-delivery'] })
     @IsOptional()
     @IsArray()
-    @ArrayNotEmpty()
     @IsString({ each: true })
     features?: string[];
 
@@ -274,7 +273,6 @@ export class UpdateMessDto {
     @ApiPropertyOptional({ example: ['wifi', 'parking', 'home-delivery'] })
     @IsOptional()
     @IsArray()
-    @ArrayNotEmpty()
     @IsString({ each: true })
     features?: string[];
 

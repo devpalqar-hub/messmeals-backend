@@ -13,34 +13,39 @@ export class CreateCustomerDto {
     @IsNotEmpty({ message: 'phone is required' })
     phone: string;
 
-    @ApiProperty({ example: 'john@example.com' })
+    @ApiPropertyOptional({ example: 'john@example.com' })
+    @IsOptional()
     @IsEmail()
-    email: string;
+    email?: string;
 
     @ApiProperty({ example: '123 Main Street' })
     @IsString()
     address: string
 
-    @ApiProperty({ example: '12.9716,77.5946' })
+    @ApiPropertyOptional({ example: '12.9716,77.5946' })
+    @IsOptional()
     @IsString()
-    latitude_logitude: string
+    latitude_logitude?: string
 
-    @ApiProperty({ example: 'Bangalore' })
+    @ApiPropertyOptional({ example: 'Bangalore' })
+    @IsOptional()
     @IsString()
-    currentLocation: string
+    currentLocation?: string
 
-    @ApiProperty({ example: true })
+    @ApiPropertyOptional({ example: true })
+    @IsOptional()
     @IsBoolean()
-    is_active: boolean
+    is_active?: boolean
 
     //customer profile model
     @ApiProperty({ example: '1000' })
     @IsString()
     walletAmount: string
 
-    @ApiProperty({ example: '50' })
+    @ApiPropertyOptional({ example: '50' })
+    @IsOptional()
     @IsString()
-    discount: string
+    discount?: string
 
     @ApiProperty({ example: '7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111' })
     @IsString()
@@ -65,9 +70,10 @@ export class CreateCustomerDto {
 
     //phase 2 changes:
 
-    @ApiProperty({ example: 'WEEKLY' })
+    @ApiPropertyOptional({ example: 'EVERYDAY', enum: ScheduleType })
+    @IsOptional()
     @IsEnum(ScheduleType)
-    scheduleType: ScheduleType;
+    scheduleType?: ScheduleType;
 
     @ApiPropertyOptional({ example: ['MONDAY', 'WEDNESDAY', 'FRIDAY'] })
     @IsOptional()
@@ -82,6 +88,41 @@ export class CreateCustomerDto {
     @IsOptional()
     @IsUUID()
     districtId?: string;
+
+    // ── Legacy / extra fields sent by the mobile app ──────────────────────────
+    // These were not originally in the DTO but the app sends them. Accepting
+    // them as optional prevents 400s from forbidNonWhitelisted=true.
+
+    @ApiPropertyOptional({ example: 'Bangalore', description: 'Legacy location field from the mobile app' })
+    @IsOptional()
+    @IsString()
+    location?: string;
+
+    @ApiPropertyOptional({ example: 'ae0c67f3-7dbb-45dd-a742-8702afd66fff', description: 'Mess ID sent by the mobile app' })
+    @IsOptional()
+    @IsString()
+    messId?: string;
+
+    @ApiPropertyOptional({ example: 100, description: 'Discount amount sent by the mobile app' })
+    @IsOptional()
+    @IsNumber()
+    discountAmount?: number;
+
+    @ApiPropertyOptional({ example: 'HOME', description: 'Delivery type sent by the mobile app' })
+    @IsOptional()
+    @IsString()
+    deliveryType?: string;
+
+    @ApiPropertyOptional({ example: '09:00', description: 'Preferred delivery time sent by the mobile app' })
+    @IsOptional()
+    @IsString()
+    preferredTime?: string;
+
+    @ApiPropertyOptional({ example: ['MONDAY', 'WEDNESDAY'], description: 'Delivery days sent by the mobile app' })
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    deliveryDays?: string[];
 
 }
 
