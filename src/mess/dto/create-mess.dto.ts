@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Transform, Type } from 'class-transformer';
-import { IsString, IsOptional, IsBoolean, IsEmail, IsObject, IsArray, IsUUID, IsEnum, ArrayNotEmpty, IsInt, ValidateNested, IsNotEmpty } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsEmail, IsObject, IsArray, IsUUID, IsEnum, IsInt, ValidateNested, IsNotEmpty } from 'class-validator';
 import { FoodType, Tags } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 
@@ -135,7 +135,6 @@ export class CreateMessDto {
     @ApiPropertyOptional({ example: ['wifi', 'parking', 'home-delivery'] })
     @IsOptional()
     @IsArray()
-    @ArrayNotEmpty()
     @IsString({ each: true })
     features?: string[];
 
@@ -143,6 +142,24 @@ export class CreateMessDto {
     @IsOptional()
     @IsString()
     zipcode?: string;
+
+    @ApiPropertyOptional({
+        example: 'https://cdn.example.com/mess/icon.png',
+        description: 'Optional icon/logo URL for the mess (upload via POST /s3/upload first).',
+    })
+    @IsOptional()
+    @IsString()
+    icon?: string;
+
+    @ApiPropertyOptional({ example: '9.9312', description: 'Optional latitude of the mess location.' })
+    @IsOptional()
+    @IsString()
+    latitude?: string;
+
+    @ApiPropertyOptional({ example: '76.2673', description: 'Optional longitude of the mess location.' })
+    @IsOptional()
+    @IsString()
+    longitude?: string;
 }
 
 export class UpdateMessImageDto {
@@ -256,7 +273,6 @@ export class UpdateMessDto {
     @ApiPropertyOptional({ example: ['wifi', 'parking', 'home-delivery'] })
     @IsOptional()
     @IsArray()
-    @ArrayNotEmpty()
     @IsString({ each: true })
     features?: string[];
 
@@ -264,6 +280,24 @@ export class UpdateMessDto {
     @IsOptional()
     @IsString()
     zipcode?: string;
+
+    @ApiPropertyOptional({
+        example: 'https://cdn.example.com/mess/icon.png',
+        description: 'Optional icon/logo URL for the mess (upload via POST /s3/upload first).',
+    })
+    @IsOptional()
+    @IsString()
+    icon?: string;
+
+    @ApiPropertyOptional({ example: '9.9312', description: 'Optional latitude of the mess location.' })
+    @IsOptional()
+    @IsString()
+    latitude?: string;
+
+    @ApiPropertyOptional({ example: '76.2673', description: 'Optional longitude of the mess location.' })
+    @IsOptional()
+    @IsString()
+    longitude?: string;
 
     @ApiPropertyOptional({
         example: [
@@ -295,4 +329,23 @@ export class CreateMessByAdminDto extends PartialType(CreateMessDto) {
     @IsString()
     @IsNotEmpty()
     zipcode!: string;
+}
+
+/// Superadmin-only: PATCH /mess/:id/listing
+export class UpdateMessListingDto {
+    @ApiPropertyOptional({
+        example: true,
+        description: 'Whether this mess is shown at all on the public website.',
+    })
+    @IsOptional()
+    @IsBoolean()
+    isListed?: boolean;
+
+    @ApiPropertyOptional({
+        example: false,
+        description: 'Whether this mess is eligible for the featured/nearby public section.',
+    })
+    @IsOptional()
+    @IsBoolean()
+    isFeatured?: boolean;
 }

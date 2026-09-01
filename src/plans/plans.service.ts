@@ -12,12 +12,30 @@ export class PlansService {
         private readonly s3Service: S3Service
     ) { }
 
+    /** Every linked menu must belong to the same mess as the plan itself. */
+    private async assertMenusBelongToMess(menuIds: string[], messId: string) {
+        if (menuIds.length === 0) return;
+
+        const menus = await this.prisma.menu.findMany({
+            where: { id: { in: menuIds } },
+            select: { id: true, messId: true },
+        });
+
+        if (menus.length !== menuIds.length) {
+            throw new BadRequestException('One or more menu IDs are invalid');
+        }
+        const foreignMenu = menus.find((m) => m.messId !== messId);
+        if (foreignMenu) {
+            throw new BadRequestException('A plan can only be linked to menus of the same mess');
+        }
+    }
+
     async createPlan(
         dto: PlansDto,
         images: { url: string }[] = [],
     ) {
 
-        const { planName, price, minPrice, description, variationIds, messId } = dto;
+        const { planName, price, minPrice, description, variationIds, menuIds, messId } = dto;
 
         if (dto.isMonthlyPlan === dto.isDailyPlan) {
             throw new BadRequestException(
@@ -34,6 +52,9 @@ export class PlansService {
             throw new BadRequestException('Mess not found');
         }
 
+        // 1️⃣b Validate menus (optional) belong to the same mess
+        await this.assertMenusBelongToMess(menuIds ?? [], messId);
+
         return this.prisma.$transaction(async (tx) => {
             // 2️⃣ Create Plan
             const plan = await tx.plans.create({
@@ -49,6 +70,11 @@ export class PlansService {
                     Variation: {
                         connect: variationIds?.map((id) => ({ id })) || [],
                     },
+                    ...(menuIds?.length && { menus: { connect: menuIds.map((id) => ({ id })) } }),
+                },
+                include: {
+                    Variation: true,
+                    menus: true,
                 },
             });
 
@@ -118,6 +144,13 @@ export class PlansService {
                             description: true
                         },
                     },
+                    menus: {
+                        select: {
+                            id: true,
+                            name: true,
+                            schedule: true,
+                        },
+                    },
                 },
                 orderBy: {
                     createdAt: 'desc', // newest first
@@ -157,6 +190,13 @@ export class PlansService {
                         id: true,
                         title: true,
                         description: true
+                    },
+                },
+                menus: {
+                    select: {
+                        id: true,
+                        name: true,
+                        schedule: true,
                     },
                 },
             },
@@ -220,6 +260,17 @@ export class PlansService {
                 };
             }
 
+            // Menu update — replaces the full set of linked menus; [] unlinks all
+            if (dto.menuIds !== undefined) {
+                const targetMessId = dto.messId ?? (await tx.plans.findUnique({ where: { id }, select: { messId: true } }))?.messId;
+                if (!targetMessId) throw new NotFoundException('Plan not found');
+                await this.assertMenusBelongToMess(dto.menuIds, targetMessId);
+
+                updateData.menus = {
+                    set: dto.menuIds.map((menuId) => ({ id: menuId })),
+                };
+            }
+
             // ✅ Add images without removing existing ones
             if (dto.planImages?.length) {
                 // fetch existing images
@@ -252,6 +303,7 @@ export class PlansService {
                 include: {
                     Variation: true,
                     images: true,
+                    menus: true,
                 },
             });
 

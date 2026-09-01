@@ -17,7 +17,7 @@ import {
     ValidationPipe,
 } from '@nestjs/common';
 import { MessService } from './mess.service';
-import { CreateMessDto, UpdateMessDto, CreateMessByAdminDto } from './dto/create-mess.dto';
+import { CreateMessDto, UpdateMessDto, CreateMessByAdminDto, UpdateMessListingDto } from './dto/create-mess.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
@@ -62,6 +62,9 @@ export class MessController {
                 tags: { type: 'array', items: { type: 'string' }, example: ['BREAKFAST', 'LUNCH'] },
                 districtId: { type: 'string', example: '5f6a1b2c-3d4e-5f60-7a8b-9c0d1e2f3a4b' },
                 features: { type: 'array', items: { type: 'string' }, example: ['wifi', 'parking', 'home-delivery'] },
+                icon: { type: 'string', example: 'https://cdn.example.com/mess/icon.png', description: 'Optional icon/logo URL (upload via POST /s3/upload first).' },
+                latitude: { type: 'string', example: '9.9312' },
+                longitude: { type: 'string', example: '76.2673' },
                 images: {
                     type: 'array',
                     example: [{ url: 'https://cdn.example.com/mess/gallery-1.jpg' }],
@@ -202,6 +205,9 @@ export class MessController {
                 tags: { type: 'array', items: { type: 'string' }, example: ['BREAKFAST', 'LUNCH'] },
                 districtId: { type: 'string', example: '5f6a1b2c-3d4e-5f60-7a8b-9c0d1e2f3a4b' },
                 features: { type: 'array', items: { type: 'string' }, example: ['wifi', 'parking', 'home-delivery'] },
+                icon: { type: 'string', example: 'https://cdn.example.com/mess/icon.png', description: 'Optional icon/logo URL (upload via POST /s3/upload first).' },
+                latitude: { type: 'string', example: '9.9312' },
+                longitude: { type: 'string', example: '76.2673' },
                 images: {
                     type: 'array',
                     example: [{ id: '7e6d5c4b-3a2f-1e0d-9c8b-7a6f5e4d3c2b', url: 'https://cdn.example.com/mess/gallery-1.jpg' }],
@@ -317,6 +323,42 @@ export class MessController {
     @Post('fix/coordinates')
     addMissingCoordinates() {
         return this.messService.addMissingCoordinates();
+    }
+
+    //Only for development/testing:
+    @ApiOperation({
+        summary: 'Backfill missing slugs',
+        description: 'Development-only endpoint: gives every mess created before slugs existed a slug.',
+    })
+    @Post('fix/slugs')
+    backfillMissingSlugs() {
+        return this.messService.backfillMissingSlugs();
+    }
+
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.SUPERADMIN)
+    @ApiOperation({
+        summary: 'Update mess public listing settings',
+        description:
+            'Superadmin-only. Controls whether a mess appears on the public website at all (isListed) ' +
+            'and whether it is eligible for the featured/nearby section (isFeatured).',
+    })
+    @ApiParam({ name: 'id', description: 'Mess UUID' })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                isListed: { type: 'boolean', example: true },
+                isFeatured: { type: 'boolean', example: false },
+            },
+        },
+    })
+    @Patch(':id/listing')
+    updateListing(
+        @Param('id', ParseUUIDPipe) id: string,
+        @Body() dto: UpdateMessListingDto,
+    ) {
+        return this.messService.updateListing(id, dto);
     }
 
 

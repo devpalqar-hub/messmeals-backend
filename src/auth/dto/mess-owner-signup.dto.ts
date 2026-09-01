@@ -42,6 +42,12 @@ export class MessOwnerSignupDto {
     @IsString()
     zipcode?: string;
 
+    /** Alias for zipcode — accepted if the client sends `postcode` instead of `zipcode`. */
+    @ApiPropertyOptional({ example: '682024', description: 'Alias for zipcode (sent by the mobile app as postcode).' })
+    @IsOptional()
+    @IsString()
+    postcode?: string;
+
     @ApiProperty({ example: 'Annapoorna Mess' })
     @IsString()
     messName!: string;
@@ -91,6 +97,12 @@ export class MessOwnerSendOtpDto {
     @IsOptional()
     @IsString()
     zipcode?: string;
+
+    /** Alias for zipcode — accepted if the client sends `postcode` instead of `zipcode`. */
+    @ApiPropertyOptional({ example: '682024', description: 'Alias for zipcode (sent by the mobile app as postcode).' })
+    @IsOptional()
+    @IsString()
+    postcode?: string;
 
     @ApiProperty({ example: 'Annapoorna Mess' })
     @IsString()

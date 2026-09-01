@@ -16,7 +16,7 @@ export class UserControllers {
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles("SUPERADMIN")
     @ApiBearerAuth()
-    @ApiOperation({ summary: 'List users', description: 'Returns users for superadmin with filters.' })
+    @ApiOperation({ summary: 'List users', description: 'Returns staff/admin users (MESSADMIN, SUPERADMIN, DELIVERYAGENT) for superadmin with filters. Customers live in their own table — see GET /customer for those.' })
     @Get("all")
     async getAllUsers(@Query() query: GetUsersQueryDto) {
         return this.service.getAllUsersForSuperAdmin(query);
@@ -25,7 +25,7 @@ export class UserControllers {
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles("SUPERADMIN")
     @ApiBearerAuth()
-    @ApiOperation({ summary: 'Get user by id', description: 'Returns a user by UUID for superadmin.' })
+    @ApiOperation({ summary: 'Get user by id', description: 'Returns a staff/admin user by UUID for superadmin. Customers live in their own table — see GET /customer/:id for those.' })
     @ApiParam({ name: 'id', description: 'User UUID' })
     @Get('all/:id')
     async getUserById(@Param('id') id: string) {
@@ -39,7 +39,7 @@ export class UserControllers {
     @ApiOperation({ summary: 'Get my profile', description: 'Returns the authenticated user profile.' })
     @Get('profile/')
     async getUserProfile(@Req() req) {
-        return await this.service.userProfile(req.user.id);
+        return await this.service.userProfile(req.user.id, req.user.role);
     }
 
 

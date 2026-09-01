@@ -31,15 +31,19 @@ export class DeliveriesService {
         return delivery;
     }
 
-    async findAll(
+    /**
+     * Shared where-clause builder for the deliveries list — role-based visibility plus
+     * status/date/messId/partnerId/variationId/search filters. Used by both findAll and
+     * getSummary so the two stay in sync.
+     */
+    private buildDeliveriesWhere(
         query: {
-            page?: number | string;
-            limit?: number | string;
             status?: DeliveryStatus;
             date?: string;
             messId?: string;
             partnerId?: string;
             variationId?: string;
+            search?: string;
         },
         user: {
             id: string;
@@ -49,10 +53,6 @@ export class DeliveriesService {
             messId?: string;
         },
     ) {
-        const page = Number(query.page) || 1;
-        const limit = Number(query.limit) || 10;
-        const skip = (page - 1) * limit;
-
         const { status, date } = query;
 
         const where: any = {};
@@ -107,6 +107,48 @@ export class DeliveriesService {
         if (query.variationId) {
             where.deliveryVariations = { some: { variationId: query.variationId } };
         }
+
+        // Search by customer name/phone
+        if (query.search && query.search.trim()) {
+            where.customer = {
+                user: {
+                    OR: [
+                        { name: { contains: query.search.trim() } },
+                        { phone: { contains: query.search.trim() } },
+                    ],
+                },
+            };
+        }
+
+        return where;
+    }
+
+    async findAll(
+        query: {
+            page?: number | string;
+            limit?: number | string;
+            status?: DeliveryStatus;
+            date?: string;
+            messId?: string;
+            partnerId?: string;
+            variationId?: string;
+            search?: string;
+        },
+        user: {
+            id: string;
+            role: Role;
+            customerProfileId?: string;
+            deliveryPartnerProfileId?: string;
+            messId?: string;
+        },
+    ) {
+        const page = Number(query.page) || 1;
+        const limit = Number(query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        const { status, date } = query;
+
+        const where = this.buildDeliveriesWhere(query, user);
 
         /* ================= QUERY ================= */
 
@@ -172,12 +214,102 @@ export class DeliveriesService {
                 variationId: query.variationId || null,
                 messId: user.role === Role.SUPERADMIN ? query.messId || null : null,
                 partnerId: user.role === Role.SUPERADMIN ? query.partnerId || null : null,
+                search: query.search || null,
             },
             data: deliveries,
         };
     }
 
+    /**
+     * Summary counts (total / pending / delivered / cancelled) for the same filter set
+     * findAll accepts, scoped by the same role-based visibility. Used to power a page
+     * header summary without paginating through the whole list.
+     */
+    async getSummary(
+        query: {
+            status?: DeliveryStatus;
+            date?: string;
+            messId?: string;
+            partnerId?: string;
+            variationId?: string;
+            search?: string;
+        },
+        user: {
+            id: string;
+            role: Role;
+            customerProfileId?: string;
+            deliveryPartnerProfileId?: string;
+            messId?: string;
+        },
+    ) {
+        const where = this.buildDeliveriesWhere(query, user);
 
+        const [totalDeliveries, pendingCount, deliveredCount, cancelledCount] = await this.prisma.$transaction([
+            this.prisma.deliveries.count({ where }),
+            this.prisma.deliveries.count({ where: { ...where, status: DeliveryStatus.PENDING } }),
+            this.prisma.deliveries.count({ where: { ...where, status: { in: [DeliveryStatus.DELIVERED, DeliveryStatus.COMPLETED] } } }),
+            this.prisma.deliveries.count({ where: { ...where, status: DeliveryStatus.CANCELLED } }),
+        ]);
+
+        return {
+            message: 'Delivery summary fetched successfully',
+            totalDeliveries,
+            pendingCount,
+            deliveredCount,
+            cancelledCount,
+            filters: {
+                status: query.status || 'ALL',
+                date: query.date || null,
+                variationId: query.variationId || null,
+                search: query.search || null,
+            },
+        };
+    }
+
+    /**
+     * Cancels a delivery (the whole day's food for that customer). Only allowed for
+     * MESSADMIN (of the owning mess) / SUPERADMIN, only for today-or-future dates, and
+     * only while the delivery hasn't already reached a terminal/cancelled state.
+     * Individual DeliveryVariation rows are left untouched.
+     */
+    async cancelDelivery(id: string, requestingUserId: string, requestingRole: Role) {
+        const delivery = await this.prisma.deliveries.findUnique({
+            where: { id },
+            include: { mess: { include: { messAdmins: true } } },
+        });
+        if (!delivery) throw new NotFoundException('Delivery not found');
+
+        if (requestingRole !== Role.SUPERADMIN) {
+            const isMessAdmin = delivery.mess?.messAdmins?.some(a => a.userId === requestingUserId);
+            if (!isMessAdmin) {
+                throw new BadRequestException('You are not an admin of the mess this delivery belongs to');
+            }
+        }
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const deliveryDate = new Date(delivery.date);
+        deliveryDate.setHours(0, 0, 0, 0);
+
+        if (deliveryDate < today) {
+            throw new BadRequestException('Cannot cancel a delivery for a past date');
+        }
+
+        const finalStatuses: DeliveryStatus[] = [DeliveryStatus.DELIVERED, DeliveryStatus.COMPLETED, DeliveryStatus.CANCELLED];
+        if (delivery.status && finalStatuses.includes(delivery.status)) {
+            throw new BadRequestException(`Delivery is already ${delivery.status.toLowerCase()} and cannot be cancelled`);
+        }
+
+        return this.prisma.deliveries.update({
+            where: { id },
+            data: { status: DeliveryStatus.CANCELLED },
+            include: {
+                plan: { select: { id: true, planName: true, Variation: { select: { id: true, title: true, description: true } } } },
+                partner: { include: { user: { select: { id: true, name: true, phone: true } } } },
+                deliveryVariations: { include: { variation: { select: { id: true, title: true, description: true } } } },
+            },
+        });
+    }
 
 
 
@@ -190,7 +322,7 @@ export class DeliveriesService {
                         user: {
                             select: {
                                 id: true, name: true, phone: true, email: true,
-                                is_verified: true, is_active: true, role: true,
+                                is_verified: true, is_active: true,
                                 createdAt: true, updatedAt: true,
                             },
                         },
@@ -322,16 +454,28 @@ export class DeliveriesService {
             select: { status: true },
         });
 
-        const terminalStatuses: VariationStatus[] = [VariationStatus.DELIVERED, VariationStatus.COMPLETED, VariationStatus.UNDELIVERED];
+        const terminalStatuses: VariationStatus[] = [
+            VariationStatus.DELIVERED,
+            VariationStatus.COMPLETED,
+            VariationStatus.UNDELIVERED,
+            VariationStatus.CANCELLED,
+        ];
         const allTerminal = allVariations.length > 0 && allVariations.every(v => terminalStatuses.includes(v.status));
 
         if (allTerminal) {
             // Determine the aggregate delivery status:
-            // COMPLETED if at least one variation is DELIVERED or COMPLETED, otherwise UNDELIVERED
+            // • CANCELLED if every single variation was individually cancelled (nothing left to deliver)
+            // • COMPLETED if at least one variation is DELIVERED or COMPLETED
+            // • UNDELIVERED otherwise
+            const allCancelled = allVariations.every(v => v.status === VariationStatus.CANCELLED);
             const hasDelivered = allVariations.some(
                 v => v.status === VariationStatus.DELIVERED || v.status === VariationStatus.COMPLETED,
             );
-            const newDeliveryStatus = hasDelivered ? DeliveryStatus.COMPLETED : DeliveryStatus.UNDELIVERED;
+            const newDeliveryStatus = allCancelled
+                ? DeliveryStatus.CANCELLED
+                : hasDelivered
+                    ? DeliveryStatus.COMPLETED
+                    : DeliveryStatus.UNDELIVERED;
 
             await this.prisma.deliveries.update({
                 where: { id: deliveryId },
@@ -856,6 +1000,7 @@ export class DeliveriesService {
             DELIVERED: 0,
             COMPLETED: 0,
             UNDELIVERED: 0,
+            CANCELLED: 0,
         });
 
         const dateStr = (d: Date) => d.toISOString().split('T')[0];

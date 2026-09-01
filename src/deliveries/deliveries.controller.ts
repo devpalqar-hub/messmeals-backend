@@ -47,6 +47,7 @@ export class DeliveriesController {
     @ApiQuery({ name: 'messId', required: false })
     @ApiQuery({ name: 'partnerId', required: false })
     @ApiQuery({ name: 'variationId', required: false, description: 'Filter deliveries that include this variation (e.g. Breakfast variation ID)' })
+    @ApiQuery({ name: 'search', required: false, description: 'Search by customer name or phone' })
     @Get()
     findAll(
         @Req() req: any,
@@ -57,9 +58,38 @@ export class DeliveriesController {
         @Query('messId') messId?: string,
         @Query('partnerId') partnerId?: string,
         @Query('variationId') variationId?: string,
+        @Query('search') search?: string,
     ) {
         return this.deliveriesService.findAll(
-            { page, limit, status, date, messId, partnerId, variationId },
+            { page, limit, status, date, messId, partnerId, variationId, search },
+            req.user,
+        );
+    }
+
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.DELIVERYAGENT, Role.MESSADMIN, Role.SUPERADMIN, Role.USER)
+    @ApiOperation({
+        summary: 'Delivery summary counts',
+        description: 'Returns total/pending/delivered/cancelled counts for the same filters findAll accepts, scoped by the same role-based visibility. Useful for a page header summary without paginating the whole list.',
+    })
+    @ApiQuery({ name: 'status', required: false })
+    @ApiQuery({ name: 'date', required: false, description: 'Filter by exact date (YYYY-MM-DD)' })
+    @ApiQuery({ name: 'messId', required: false })
+    @ApiQuery({ name: 'partnerId', required: false })
+    @ApiQuery({ name: 'variationId', required: false })
+    @ApiQuery({ name: 'search', required: false, description: 'Search by customer name or phone' })
+    @Get('summary')
+    getSummary(
+        @Req() req: any,
+        @Query('status') status?: DeliveryStatus,
+        @Query('date') date?: string,
+        @Query('messId') messId?: string,
+        @Query('partnerId') partnerId?: string,
+        @Query('variationId') variationId?: string,
+        @Query('search') search?: string,
+    ) {
+        return this.deliveriesService.getSummary(
+            { status, date, messId, partnerId, variationId, search },
             req.user,
         );
     }
@@ -122,13 +152,31 @@ export class DeliveriesController {
     }
 
     @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.MESSADMIN, Role.SUPERADMIN)
+    @ApiOperation({
+        summary: 'Cancel a delivery',
+        description:
+            'Cancels the whole delivery (that day\'s food) for a customer. Only allowed for today-or-future ' +
+            'dates, and only while the delivery hasn\'t already reached a terminal state (DELIVERED / COMPLETED ' +
+            '/ already CANCELLED). Mess admins can only cancel deliveries belonging to their mess. Individual ' +
+            'variation (meal) statuses are left unchanged.',
+    })
+    @ApiParam({ name: 'id', description: 'Delivery UUID' })
+    @Patch(':id/cancel')
+    cancelDelivery(@Param('id') id: string, @Req() req) {
+        return this.deliveriesService.cancelDelivery(id, req.user.id, req.user.role);
+    }
+
+    @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(Role.MESSADMIN, Role.SUPERADMIN, Role.DELIVERYAGENT)
     @ApiOperation({
         summary: 'Update a single variation status within a delivery',
         description:
             'Allows mess admin or the assigned delivery partner to update the status of one variation ' +
-            '(e.g. Breakfast, Lunch, Dinner) within a delivery. ' +
-            'Valid statuses: PENDING, DELIVERED, COMPLETED, UNDELIVERED.',
+            '(e.g. Breakfast, Lunch, Dinner) within a delivery, including cancelling just that one meal ' +
+            '(status = CANCELLED) without cancelling the rest of the day\'s delivery. ' +
+            'Valid statuses: PENDING, DELIVERED, COMPLETED, UNDELIVERED, CANCELLED. ' +
+            'If every variation on a delivery ends up CANCELLED, the parent delivery is automatically marked CANCELLED too.',
     })
     @ApiParam({ name: 'id', description: 'Delivery UUID' })
     @ApiParam({ name: 'variationId', description: 'Variation UUID (e.g. Breakfast variation ID)' })

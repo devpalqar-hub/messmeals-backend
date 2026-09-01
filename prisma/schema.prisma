@@ -15,6 +15,7 @@ enum DeliveryStatus {
   DELIVERED
   COMPLETED
   UNDELIVERED
+  CANCELLED
 }
 
 /// Status for a single variation within a delivery (e.g. Breakfast DELIVERED, Dinner UNDELIVERED)
@@ -23,6 +24,7 @@ enum VariationStatus {
   DELIVERED
   COMPLETED
   UNDELIVERED
+  CANCELLED
 }
 
 enum Role {
@@ -82,6 +84,10 @@ enum InvoiceStatus {
   OVERDUE
 }
 
+/// Staff/admin identity table — MESSADMIN, SUPERADMIN, and DELIVERYAGENT accounts.
+/// Customer (role=USER) accounts live in their own `Customer` table (see below); the
+/// `Role` enum is still used app-wide (JWT payload / `@Roles(Role.USER)` guards) even
+/// though no row here ever carries `role: USER` anymore.
 model User {
   id                     String                  @id @default(uuid())
   name                   String
@@ -93,10 +99,31 @@ model User {
   is_active              Boolean                 @default(true)
   role                   Role                    @default(USER)
   password               String?
-  customerProfile        CustomerProfile?
   deliveryPartnerProfile DeliveryPartnerProfile?
   messAdminProfile       MessAdminProfile?
   expenses               Expense[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Customer identity table — a structural twin of `User`'s account fields, scoped to
+/// role=USER accounts only. Split out from `User` so customer accounts don't share an
+/// identity table with mess-admin/superadmin/delivery-agent staff accounts. `phone`/
+/// `email` uniqueness here is enforced together with `User`'s at the application layer
+/// (see `isPhoneOrEmailTaken` in src/common/utility) since MySQL can't express a unique
+/// constraint spanning two tables.
+model Customer {
+  id              String           @id @default(uuid())
+  name            String
+  phone           String           @unique
+  email           String?          @unique
+  otp             String?
+  expiresAt       DateTime?
+  is_verified     Boolean          @default(false)
+  is_active       Boolean          @default(true)
+  password        String?
+  customerProfile CustomerProfile?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -111,7 +138,7 @@ model CustomerProfile {
   userId            String   @unique
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              Customer @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   deliveries        Deliveries[]
   userSubscriptions UserSubscriptions[]
@@ -196,6 +223,7 @@ model Plans {
   deliveries        Deliveries[]
   Variation         Variation[]
   Enquiry           Enquiry[]
+  menus             Menu[]
 }
 
 model PlanImages {
@@ -222,6 +250,31 @@ model Variation {
 
   isActive           Boolean             @default(true)
   deliveryVariations DeliveryVariation[]
+}
+
+/// A weekly menu for a mess: a name plus a per-weekday schedule. `schedule` is keyed by
+/// DayOfWeek (only days that have entries are present) and each day holds a list of
+/// { variationId, items } entries — e.g. Monday could have both a Breakfast and a Lunch entry.
+/// Shape:
+/// {
+///   "MONDAY": [ { "variationId": "...", "items": "Rice, Dal, Sabzi, Roti" } ],
+///   "TUESDAY": [ { "variationId": "...", "items": "Idli, Sambar" } ]
+/// }
+/// Optionally linked to one or more plans of the same mess via Plans.menuIds (a plan need not
+/// have a menu, and the same menu can be reused across several plans of that mess).
+model Menu {
+  id        String   @id @default(uuid())
+  messId    String
+  name      String // menu_name
+  schedule  Json // { [DayOfWeek]: { variationId: string; items: string }[] }
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  mess  Mess    @relation(fields: [messId], references: [id], onDelete: Cascade)
+  plans Plans[] // optional — the same menu can link to multiple plans of this mess
+
+  @@index([messId])
 }
 
 /// Tracks the status of each variation (Breakfast/Lunch/Dinner) within a single delivery.
@@ -272,11 +325,25 @@ model Mess {
   address     String? @db.LongText
   phone       String?
   email       String?
+  /// Optional icon/logo — a public URL (e.g. uploaded via POST /s3/upload) shown for the mess.
+  icon        String?
   isPremium   Boolean @default(false)
   is_active   Boolean @default(true)
   latitude    String?
   logitude    String?
   zipcode     String?
+
+  /// URL-friendly identifier auto-generated from the mess name on create — used by the
+  /// public GET /open/mess/:slug detail endpoint.
+  slug String? @unique
+
+  /// Superadmin-controlled: whether this mess is shown at all on the public website
+  /// (GET /open/messes and /open/mess/:slug only ever return listed messes).
+  isListed Boolean @default(false)
+
+  /// Superadmin-controlled: whether this mess is eligible for the "featured" public
+  /// listing (nearby-within-20km, shuffled order — see OpenMessService).
+  isFeatured Boolean @default(false)
 
   foodTypes MessFoodType[] // ✅ relation
   tags      MessTag[] // ✅ relation
@@ -305,6 +372,7 @@ model Mess {
   billingReactivatesAt DateTime?
   MessBillingConfig    MessBillingConfig?
   MessInvoice          MessInvoice[]
+  menus                Menu[]
 
   expenseCategories ExpenseCategory[]
   expenses          Expense[]

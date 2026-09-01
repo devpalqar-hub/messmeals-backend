@@ -7,20 +7,18 @@ import * as bcrypt from 'bcrypt';
 import { DeliveryStatus, Role } from '@prisma/client';
 import { contains } from 'class-validator';
 import { UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
+import { isPhoneOrEmailTaken } from 'src/common/utility/identity.util';
 @Injectable()
 export class DeliveryAgentService {
     constructor(private prisma: PrismaService) { }
 
     // Create Delivery Agent + Profile
     async create(dto: DeliveryAgentCreateDto) {
-        // ✅ Check email uniqueness only when email is provided
-        if (dto.email) {
-            const existingEmail = await this.prisma.user.findUnique({ where: { email: dto.email } });
-            if (existingEmail) throw new BadRequestException('Email already registered');
+        // Checks both the staff `User` table and the customer `Customer` table —
+        // a phone/email already used by a customer can't also become a delivery agent.
+        if (await isPhoneOrEmailTaken(this.prisma, { phone: dto.phone, email: dto.email })) {
+            throw new BadRequestException('Email or phone number already registered');
         }
-
-        const existingPhone = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
-        if (existingPhone) throw new BadRequestException('Phone number already registered');
 
         // ✅ Validate mess existence
         const messExists = await this.prisma.mess.findUnique({
@@ -203,10 +201,11 @@ export class DeliveryAgentService {
             throw new NotFoundException('Delivery agent not found');
         }
 
-        // 2️⃣ If phone is being updated, check it's not already taken
+        // 2️⃣ If phone is being updated, check it's not already taken (staff or customer)
         if (dto.phone && dto.phone !== user.phone) {
-            const phoneInUse = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
-            if (phoneInUse) throw new BadRequestException('Phone number already registered');
+            if (await isPhoneOrEmailTaken(this.prisma, { phone: dto.phone, excludeUserId: id })) {
+                throw new BadRequestException('Phone number already registered');
+            }
         }
 
         // 3️⃣ Prepare update objects

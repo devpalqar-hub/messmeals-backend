@@ -59,6 +59,34 @@ export class PlansDto {
     variationIds?: string[];
 
     @ApiPropertyOptional({
+        example: ['7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111'],
+        description: 'Optional — link this plan to one or more existing menus of the same mess.',
+    })
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    @Transform(({ value }) => {
+        if (!value) return undefined;
+
+        if (typeof value === 'string') {
+            try {
+                const parsed = JSON.parse(value);
+                if (!Array.isArray(parsed)) {
+                    throw new Error();
+                }
+                return parsed;
+            } catch {
+                throw new BadRequestException(
+                    'menuIds must be a valid JSON array of strings',
+                );
+            }
+        }
+
+        return value;
+    })
+    menuIds?: string[];
+
+    @ApiPropertyOptional({
         example: [
             'https://cdn.example.com/plans/plan-1.jpg',
             'https://cdn.example.com/plans/plan-2.jpg',

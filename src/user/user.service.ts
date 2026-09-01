@@ -9,10 +9,10 @@ import { GetUsersQueryDto } from './dto/list-users.query.dto';
 export class UserService {
     constructor(private readonly prisma: PrismaService) { }
 
-    // 🟢 Create a new user
-    async createUser(data: Prisma.UserCreateInput) {
+    // 🟢 Create a new customer (customers live in their own `Customer` table)
+    async createUser(data: Prisma.CustomerCreateInput) {
         const { name, phone, email } = data;
-        return this.prisma.user.create({ data: { name, phone, email, role: Role.USER } });
+        return this.prisma.customer.create({ data: { name, phone, email } });
     }
 
     // 🟢 Create a new user
@@ -26,22 +26,20 @@ export class UserService {
         return this.prisma.user.create({ data: { name, phone, email, role: Role.MESSADMIN } });
     }
 
-    // 🟡 List all users
+    // 🟡 List all staff/admin users (customers live in their own `Customer` table now)
     async findAll() {
         return this.prisma.user.findMany({
             include: {
-                customerProfile: true,
                 deliveryPartnerProfile: true,
             },
         });
     }
 
-    // 🟣 Get a single user by ID
+    // 🟣 Get a single staff/admin user by ID
     async findOne(id: string) {
         const user = await this.prisma.user.findUnique({
             where: { id },
             include: {
-                customerProfile: true,
                 deliveryPartnerProfile: true,
             },
         });
@@ -72,7 +70,19 @@ export class UserService {
 
     //phase 2.
 
-    async userProfile(userId: string) {
+    async userProfile(userId: string, role: Role) {
+        // Customers live in their own `Customer` table — `role` comes straight off the
+        // JWT (req.user.role), so we know which table to query before we've queried
+        // anything.
+        if (role === Role.USER) {
+            const customer = await this.prisma.customer.findUnique({
+                where: { id: userId },
+                include: { customerProfile: true },
+            });
+            if (!customer) throw new BadRequestException("User not found");
+            return customer;
+        }
+
         const user = await this.prisma.user.findUnique({
             where: { id: userId },
             select: { role: true }
@@ -80,10 +90,6 @@ export class UserService {
         if (!user) throw new BadRequestException("User not found");
         let includeOptions: any = {}
         switch (user.role) {
-            case Role.USER:
-                includeOptions = { customerProfile: true };
-                break;
-
             case Role.MESSADMIN:
                 includeOptions = { messAdminProfile: true };
                 break;
@@ -147,19 +153,12 @@ export class UserService {
         });
     }
 
+    // Staff/admin users only — customers live in their own `Customer` table and are
+    // not returned by this endpoint (see `GET /customer/:id` for customer detail).
     async getUserByIdForSuperAdmin(userId: string) {
         const user = await this.prisma.user.findUnique({
             where: { id: userId },
             include: {
-                customerProfile: {
-                    include: {
-                        deliveries: true,
-                        userSubscriptions: true,
-                        addresses: true,
-                        Wallet: true,
-                        Testimonials: true,
-                    },
-                },
                 deliveryPartnerProfile: {
                     include: {
                         mess: true,
