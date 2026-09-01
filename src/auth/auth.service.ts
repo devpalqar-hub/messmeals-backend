@@ -385,7 +385,7 @@ export class AuthService {
         const phone = dto.phone.trim();
         const email = dto.email.trim().toLowerCase();
         const districtName = dto.district?.trim() ?? null;
-        const zipcode = dto.zipcode?.trim() ?? null;
+        const zipcode = (dto.zipcode ?? dto.postcode)?.trim() ?? null;
 
         // Checks both the staff `User` table and the customer `Customer` table —
         // phone/email must stay globally unique across both.
@@ -490,7 +490,7 @@ export class AuthService {
         const email = dto.email.trim().toLowerCase();
         const address = dto.address.trim();
         const districtName = dto.district?.trim() ?? null;
-        const zipcode = dto.zipcode?.trim() ?? null;
+        const zipcode = (dto.zipcode ?? dto.postcode)?.trim() ?? null;
 
         // 1) Resolve OTP sessionId internally by phone (last 10 minutes)
         const sessionRow = await this.prisma.enquiry.findFirst({
