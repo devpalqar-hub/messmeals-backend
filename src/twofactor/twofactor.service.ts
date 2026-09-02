@@ -1,8 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
+import { randomUUID } from 'crypto';
 
 /** OTP to use as a fallback when the 2factor SMS gateway fails */
 export const DEFAULT_FALLBACK_OTP = '759409';
+
+/** Prefix used to identify fallback session IDs */
+const FALLBACK_SESSION_PREFIX = 'FALLBACK-';
 
 @Injectable()
 export class TwoFactorService {
@@ -20,9 +24,9 @@ export class TwoFactorService {
             this.logger.warn(
                 `2factor SMS failed for ${phone}: ${err?.message ?? err}. Falling back to default OTP.`,
             );
-            // Return a fallback sentinel so callers can surface the default OTP to the client
+            // Return a fallback with a UUID-style session ID so the client can use it normally
             return {
-                Details: 'FALLBACK',
+                Details: `${FALLBACK_SESSION_PREFIX}${randomUUID()}`,
                 Status: 'Error',
                 _fallback: true,
                 _fallbackOtp: DEFAULT_FALLBACK_OTP,
@@ -32,7 +36,7 @@ export class TwoFactorService {
 
     async verifyOtp(sessionId: string, otp: string): Promise<{ Status: string; Details?: string }> {
         // If this was a fallback session, verify against the known fallback OTP
-        if (sessionId === 'FALLBACK') {
+        if (sessionId.startsWith(FALLBACK_SESSION_PREFIX)) {
             return otp === DEFAULT_FALLBACK_OTP
                 ? { Status: 'Success', Details: 'Fallback OTP verified' }
                 : { Status: 'Error', Details: 'Invalid OTP' };
@@ -54,4 +58,4 @@ export class TwoFactorService {
             throw err;
         }
     }
-}
+}
