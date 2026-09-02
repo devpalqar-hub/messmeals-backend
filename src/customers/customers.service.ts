@@ -330,6 +330,12 @@ export class CustomerService {
             },
         });
 
+        // Increment popular-plan counter
+        await this.prisma.plans.update({
+            where: { id: planId },
+            data: { totalCustomers: { increment: 1 } },
+        });
+
         // 6️⃣ Create Deliveries based on scheduleType
         const deliveriesToCreate: any[] = [];
         const currentDate = new Date(startDate);
@@ -1690,6 +1696,12 @@ export class CustomerService {
             },
         });
 
+        // Increment popular-plan counter
+        await this.prisma.plans.update({
+            where: { id: planId },
+            data: { totalCustomers: { increment: 1 } },
+        });
+
         // Create a Razorpay order and return session URL so frontend can redirect user to payment
         const paymentResult = await this.paymentsService.createPaymentOrder(
             userSubscription.id,
@@ -2230,6 +2242,12 @@ export class CustomerService {
                 is_active: true,
                 ...(userAddressId ? { userAddressId } : {}),
             },
+        });
+
+        // Increment popular-plan counter
+        await this.prisma.plans.update({
+            where: { id: planId },
+            data: { totalCustomers: { increment: 1 } },
         });
 
         // ─── 10. Auto-create deliveries ─────────────────────────────────────────

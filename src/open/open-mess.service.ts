@@ -255,4 +255,74 @@ export class OpenMessService {
             })),
         };
     }
+
+    /// GET /open/popular-plans — public listing of plans ranked by subscription count.
+    async findPopularPlans(page: number = 1, limit: number = 10) {
+        const skip = (page - 1) * limit;
+
+        const where = {
+            isActive: true,
+            mess: { isListed: true, is_active: true },
+        };
+
+        const [plans, total] = await Promise.all([
+            this.prisma.plans.findMany({
+                where,
+                orderBy: { totalCustomers: 'desc' },
+                skip,
+                take: limit,
+                include: {
+                    images: true,
+                    Variation: { where: { isActive: true } },
+                    mess: {
+                        select: {
+                            id: true,
+                            name: true,
+                            slug: true,
+                            icon: true,
+                            address: true,
+                            location: true,
+                            images: { where: { isCover: true }, take: 1 },
+                        },
+                    },
+                },
+            }),
+            this.prisma.plans.count({ where }),
+        ]);
+
+        return {
+            message: 'Popular plans fetched successfully',
+            data: plans.map((plan) => ({
+                id: plan.id,
+                planName: plan.planName,
+                description: plan.description,
+                price: plan.price,
+                minPrice: plan.minPrice,
+                isMonthlyPlan: plan.isMonthlyPlan,
+                isDailyPlan: plan.isDailyPlan,
+                totalCustomers: plan.totalCustomers,
+                images: plan.images.map((img) => ({ id: img.id, url: img.url, altText: img.altText })),
+                variations: plan.Variation.map((v) => ({
+                    id: v.id,
+                    title: v.title,
+                    description: v.description,
+                })),
+                mess: {
+                    id: plan.mess.id,
+                    name: plan.mess.name,
+                    slug: plan.mess.slug,
+                    logo: plan.mess.icon ?? null,
+                    address: plan.mess.address,
+                    location: plan.mess.location,
+                    coverImage: plan.mess.images?.[0]?.url ?? null,
+                },
+            })),
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit),
+            },
+        };
+    }
 }

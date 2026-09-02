@@ -36,4 +36,22 @@ export class OpenMessController {
     findBySlug(@Param('slug') slug: string) {
         return this.openMessService.findBySlug(slug);
     }
+
+    @Get('popular-plans')
+    @ApiOperation({
+        summary: 'List popular plans',
+        description:
+            'Returns public plans sorted by total customer subscriptions (most popular first). ' +
+            'Only returns active plans from listed & active messes. Supports pagination via page/limit query params.',
+    })
+    @ApiResponse({ status: 200, description: 'Popular plans fetched successfully.' })
+    findPopularPlans(
+        @Query('page') page?: string,
+        @Query('limit') limit?: string,
+    ) {
+        return this.openMessService.findPopularPlans(
+            Number(page) || 1,
+            Number(limit) || 10,
+        );
+    }
 }
