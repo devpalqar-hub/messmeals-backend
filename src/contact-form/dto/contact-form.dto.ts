@@ -10,7 +10,7 @@ export class CreateContactFormDto {
     @ApiProperty({ example: '+919876543217' })
     @IsString()
     @IsNotEmpty()
-    phone_number: string;
+    phone: string;
 
     @ApiProperty({ example: 'john@example.com' })
     @IsString()
