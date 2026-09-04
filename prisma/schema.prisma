@@ -37,6 +37,7 @@ enum Role {
 enum ScheduleType {
   EVERYDAY
   CUSTOM
+  MONTHLY
 }
 
 enum DayOfWeek {

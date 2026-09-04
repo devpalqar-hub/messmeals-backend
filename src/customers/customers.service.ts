@@ -1570,9 +1570,11 @@ export class CustomerService {
         const { planId, start_date, end_date, scheduleType, selectedDays } = params;
 
         const normalizedScheduleType =
-            scheduleType === ScheduleType.CUSTOM || (Array.isArray(selectedDays) && selectedDays.length > 0)
-                ? ScheduleType.CUSTOM
-                : ScheduleType.EVERYDAY;
+            scheduleType === ScheduleType.MONTHLY 
+                ? ScheduleType.MONTHLY 
+                : (scheduleType === ScheduleType.CUSTOM || (Array.isArray(selectedDays) && selectedDays.length > 0))
+                    ? ScheduleType.CUSTOM
+                    : ScheduleType.EVERYDAY;
 
         const normalizedSelectedDays =
             normalizedScheduleType === ScheduleType.CUSTOM
