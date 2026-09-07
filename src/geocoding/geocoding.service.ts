@@ -14,6 +14,10 @@ interface CacheEntry {
 
 const MAPBOX_GEOCODING_URL = 'https://api.mapbox.com/geocoding/v5/mapbox.places';
 
+// Messmeals only operates in India — restrict Mapbox results to it (ISO 3166-1 alpha-2)
+// rather than returning global matches for common place-name queries.
+const MAPBOX_COUNTRY = 'IN';
+
 // Below this length a query is both the most repeated (e.g. "a", "ko") and the least
 // useful to autocomplete, so we skip the Mapbox call entirely rather than cache it.
 const MIN_QUERY_LENGTH = 3;
@@ -69,6 +73,7 @@ export class GeocodingService {
                     params: {
                         access_token: token,
                         autocomplete: true,
+                        country: MAPBOX_COUNTRY,
                         limit,
                     },
                     timeout: 5000,
