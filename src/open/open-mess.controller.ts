@@ -32,7 +32,7 @@ export class OpenMessController {
             'Combined autocomplete for the website search bar, returned as two groups. ' +
             '`messes` is matched straight from the database (id, slug, name) and never calls ' +
             'any external API. `locations` (name + latitude/longitude) comes from the Mapbox ' +
-            'Geocoding API, but only for queries of 3+ characters, and only when the normalized ' +
+            'Geocoding API restricted to India, but only for queries of 3+ characters, and only when the normalized ' +
             'query is not already served from a 7-day in-memory cache — clients should still ' +
             'debounce keystrokes (~300ms) before calling this, to keep geocoding calls to a minimum.',
     })
