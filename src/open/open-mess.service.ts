@@ -1,13 +1,18 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { GeocodingService } from 'src/geocoding/geocoding.service';
 import { ListOpenMessesDto } from './dto/list-open-messes.dto';
+import { SearchSuggestionsDto } from './dto/search-suggestions.dto';
 
 const FEATURED_RADIUS_KM = 20;
 
 @Injectable()
 export class OpenMessService {
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly geocodingService: GeocodingService,
+    ) { }
 
     private getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
         const R = 6371;
@@ -253,6 +258,38 @@ export class OpenMessService {
                     schedule: menu.schedule,
                 })),
             })),
+        };
+    }
+
+    /// GET /open/search-suggestions — autocomplete for the website's search bar. Returns two
+    /// groups in parallel: mess matches (id/slug/name, straight from the DB — never touches
+    /// the geocoding API) and location matches (name + coordinates, from GeocodingService,
+    /// which caches and rate-gates the underlying Mapbox calls — see its docstring).
+    async searchSuggestions(query: SearchSuggestionsDto) {
+        const q = (query.q ?? '').trim();
+        const limit = query.limit ? Math.max(1, Math.min(20, Number(query.limit) || 5)) : 5;
+
+        if (!q) {
+            return { messes: [], locations: [] };
+        }
+
+        const [messes, locations] = await Promise.all([
+            this.prisma.mess.findMany({
+                where: {
+                    isListed: true,
+                    is_active: true,
+                    name: { contains: q },
+                },
+                select: { id: true, slug: true, name: true },
+                take: limit,
+                orderBy: { name: 'asc' },
+            }),
+            this.geocodingService.suggestLocations(q, limit),
+        ]);
+
+        return {
+            messes: messes.map((m) => ({ id: m.id, slug: m.slug, name: m.name })),
+            locations,
         };
     }
 }
