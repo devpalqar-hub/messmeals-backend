@@ -37,6 +37,7 @@ enum Role {
 enum ScheduleType {
   EVERYDAY
   CUSTOM
+  MONTHLY
 }
 
 enum DayOfWeek {
@@ -217,6 +218,10 @@ model Plans {
   isMonthlyPlan Boolean @default(false)
   isDailyPlan   Boolean @default(true)
   isActive      Boolean @default(true)
+
+  /// Running count of customers who have subscribed to this plan — used by the
+  /// public "popular plans" listing (GET /open/popular-plans).
+  totalCustomers Int @default(0)
 
   images            PlanImages[]
   usersubscriptions UserSubscriptions[]

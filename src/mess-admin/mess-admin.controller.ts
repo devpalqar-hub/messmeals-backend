@@ -22,7 +22,7 @@ import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestj
 @Roles('SUPERADMIN')
 @ApiTags('Mess Admin')
 @ApiBearerAuth()
-@Controller('mess-admin')
+@Controller('protected/messmeals/mess-admin')
 export class MessAdminController {
     constructor(private readonly messAdminService: MessAdminService) { }
 

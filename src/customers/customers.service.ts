@@ -330,6 +330,12 @@ export class CustomerService {
             },
         });
 
+        // Increment popular-plan counter
+        await this.prisma.plans.update({
+            where: { id: planId },
+            data: { totalCustomers: { increment: 1 } },
+        });
+
         // 6️⃣ Create Deliveries based on scheduleType
         const deliveriesToCreate: any[] = [];
         const currentDate = new Date(startDate);
@@ -1564,9 +1570,11 @@ export class CustomerService {
         const { planId, start_date, end_date, scheduleType, selectedDays } = params;
 
         const normalizedScheduleType =
-            scheduleType === ScheduleType.CUSTOM || (Array.isArray(selectedDays) && selectedDays.length > 0)
-                ? ScheduleType.CUSTOM
-                : ScheduleType.EVERYDAY;
+            scheduleType === ScheduleType.MONTHLY 
+                ? ScheduleType.MONTHLY 
+                : (scheduleType === ScheduleType.CUSTOM || (Array.isArray(selectedDays) && selectedDays.length > 0))
+                    ? ScheduleType.CUSTOM
+                    : ScheduleType.EVERYDAY;
 
         const normalizedSelectedDays =
             normalizedScheduleType === ScheduleType.CUSTOM
@@ -1688,6 +1696,12 @@ export class CustomerService {
                 userAddressId: addressId,
                 is_active: false, // mark inactive until payment success
             },
+        });
+
+        // Increment popular-plan counter
+        await this.prisma.plans.update({
+            where: { id: planId },
+            data: { totalCustomers: { increment: 1 } },
         });
 
         // Create a Razorpay order and return session URL so frontend can redirect user to payment
@@ -2230,6 +2244,12 @@ export class CustomerService {
                 is_active: true,
                 ...(userAddressId ? { userAddressId } : {}),
             },
+        });
+
+        // Increment popular-plan counter
+        await this.prisma.plans.update({
+            where: { id: planId },
+            data: { totalCustomers: { increment: 1 } },
         });
 
         // ─── 10. Auto-create deliveries ─────────────────────────────────────────

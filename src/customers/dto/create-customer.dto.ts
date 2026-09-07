@@ -243,7 +243,7 @@ export class CreateSubscriptionForCustomerDto {
     @ApiProperty({
         enum: ScheduleType,
         example: 'EVERYDAY',
-        description: 'EVERYDAY or CUSTOM',
+        description: 'EVERYDAY, CUSTOM, or MONTHLY',
     })
     @IsEnum(ScheduleType)
     scheduleType: ScheduleType;
