@@ -18,6 +18,12 @@ import { CompleteProfileDto } from './dto/complete-profile.dto';
 import { ExtendSubscriptionDto } from './dto/extend-subscription.dto';
 import { SkipVariationDto } from './dto/skip-variation.dto';
 import { resolvePlanSchedule } from 'src/common/utility/plan-schedule.util';
+import * as XLSX from 'xlsx';
+import type {
+    BulkUploadCustomerRow,
+    BulkUploadCustomersResult,
+    BulkUploadRowResult,
+} from './dto/bulk-upload-customer.dto';
 
 
 @Injectable()
@@ -421,7 +427,267 @@ export class CustomerService {
         };
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // BULK CUSTOMER UPLOAD (Excel/CSV)
+    // ─────────────────────────────────────────────────────────────────────
 
+    /** Header aliases accepted in the uploaded sheet, normalized (lowercased, spaces/underscores stripped). */
+    private static readonly BULK_UPLOAD_HEADER_ALIASES: Record<string, keyof BulkUploadCustomerRow> = {
+        name: 'name',
+        customername: 'name',
+        phone: 'phone',
+        phonenumber: 'phone',
+        mobile: 'phone',
+        email: 'email',
+        address: 'address',
+        deliveryaddress: 'address',
+        planid: 'planId',
+        plan: 'planName',
+        planname: 'planName',
+        walletamount: 'walletAmount',
+        wallet: 'walletAmount',
+        discount: 'discount',
+        startdate: 'start_date',
+        start: 'start_date',
+        enddate: 'end_date',
+        end: 'end_date',
+        scheduletype: 'scheduleType',
+        schedule: 'scheduleType',
+        selecteddays: 'selectedDays',
+        days: 'selectedDays',
+        deliverypartnerid: 'deliveryPartnerId',
+        deliverypartner: 'deliveryPartnerId',
+    };
+
+    private normalizeBulkUploadHeader(header: string): string {
+        return String(header ?? '').trim().toLowerCase().replace(/[\s_-]/g, '');
+    }
+
+    /** Excel may hand back a Date object (when cellDates is on), a serial number, or a plain string. */
+    private normalizeBulkUploadDate(value: unknown): string | undefined {
+        if (value === undefined || value === null || value === '') return undefined;
+
+        if (value instanceof Date && !Number.isNaN(value.getTime())) {
+            return value.toISOString().split('T')[0];
+        }
+
+        if (typeof value === 'number') {
+            const parsed = XLSX.SSF.parse_date_code(value);
+            if (parsed) {
+                const mm = String(parsed.m).padStart(2, '0');
+                const dd = String(parsed.d).padStart(2, '0');
+                return `${parsed.y}-${mm}-${dd}`;
+            }
+        }
+
+        const str = String(value).trim();
+        const parsedDate = new Date(str);
+        if (!Number.isNaN(parsedDate.getTime())) {
+            return str.match(/^\d{4}-\d{2}-\d{2}/) ? str.slice(0, 10) : parsedDate.toISOString().split('T')[0];
+        }
+
+        return str;
+    }
+
+    /** Parses the uploaded workbook's first sheet into normalized row objects. */
+    private parseBulkUploadWorkbook(buffer: Buffer): BulkUploadCustomerRow[] {
+        let workbook: XLSX.WorkBook;
+        try {
+            workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+        } catch {
+            throw new BadRequestException('Could not read the uploaded file — please upload a valid .xlsx, .xls, or .csv file');
+        }
+
+        const sheetName = workbook.SheetNames[0];
+        if (!sheetName) {
+            throw new BadRequestException('The uploaded file has no sheets');
+        }
+
+        const sheet = workbook.Sheets[sheetName];
+        const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '', raw: true });
+
+        return rawRows.map((rawRow) => {
+            const row: BulkUploadCustomerRow = {};
+            for (const [rawHeader, rawValue] of Object.entries(rawRow)) {
+                const key = CustomerService.BULK_UPLOAD_HEADER_ALIASES[this.normalizeBulkUploadHeader(rawHeader)];
+                if (!key) continue;
+
+                if (key === 'start_date' || key === 'end_date') {
+                    (row as any)[key] = this.normalizeBulkUploadDate(rawValue);
+                } else {
+                    const strValue = typeof rawValue === 'string' ? rawValue.trim() : rawValue;
+                    (row as any)[key] = strValue === '' ? undefined : strValue;
+                }
+            }
+            return row;
+        });
+    }
+
+    /**
+     * Bulk-registers customers (and their plan subscriptions) from an uploaded Excel/CSV sheet.
+     * Each row is processed independently through the same logic as `CreateUser` (register-user) —
+     * a bad row is reported and skipped rather than failing the whole batch.
+     */
+    async bulkUploadCustomers(buffer: Buffer, messId?: string): Promise<BulkUploadCustomersResult> {
+        const rows = this.parseBulkUploadWorkbook(buffer);
+
+        if (rows.length === 0) {
+            throw new BadRequestException('The uploaded sheet has no data rows');
+        }
+        if (rows.length > 500) {
+            throw new BadRequestException('A single upload is limited to 500 rows — please split the sheet');
+        }
+
+        // Cache plan-name → plan lookups (scoped to messId when given) so repeated names in the
+        // sheet don't re-query the DB per row.
+        const planNameCache = new Map<string, { id: string; messId: string } | null>();
+
+        const results: BulkUploadRowResult[] = [];
+
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const rowNumber = i + 2; // header is row 1
+            const name = row.name?.trim();
+            const phone = row.phone?.toString().trim();
+
+            try {
+                if (!name) throw new BadRequestException('Missing required field: name');
+                if (!phone) throw new BadRequestException('Missing required field: phone');
+                if (!row.address?.trim()) throw new BadRequestException('Missing required field: address');
+                if (!row.start_date) throw new BadRequestException('Missing or unparseable field: start_date');
+
+                let planId = row.planId?.trim();
+                if (!planId) {
+                    const planName = row.planName?.trim();
+                    if (!planName) {
+                        throw new BadRequestException('Row must specify either planId or planName');
+                    }
+
+                    const cacheKey = `${messId ?? ''}::${planName.toLowerCase()}`;
+                    if (!planNameCache.has(cacheKey)) {
+                        const plan = await this.prisma.plans.findFirst({
+                            where: {
+                                planName: { equals: planName },
+                                ...(messId ? { messId } : {}),
+                            },
+                            select: { id: true, messId: true },
+                        });
+                        planNameCache.set(cacheKey, plan);
+                    }
+
+                    const cachedPlan = planNameCache.get(cacheKey);
+                    if (!cachedPlan) {
+                        throw new BadRequestException(
+                            `Plan named "${planName}" was not found${messId ? ' for this mess' : ''}`,
+                        );
+                    }
+                    planId = cachedPlan.id;
+                }
+
+                const selectedDays = row.selectedDays
+                    ? row.selectedDays
+                        .toString()
+                        .split(/[,/|]/)
+                        .map((d) => d.trim().toUpperCase())
+                        .filter(Boolean)
+                    : undefined;
+
+                const dto: CreateCustomerDto = {
+                    name,
+                    phone,
+                    email: row.email?.trim() || undefined,
+                    address: row.address!.trim(),
+                    walletAmount: row.walletAmount !== undefined ? String(row.walletAmount) : '0',
+                    discount: row.discount !== undefined ? String(row.discount) : undefined,
+                    planId,
+                    deliveryPartnerId: row.deliveryPartnerId?.trim() || undefined,
+                    start_date: row.start_date!,
+                    end_date: row.end_date || '',
+                    scheduleType: (row.scheduleType?.trim().toUpperCase() as ScheduleType) || undefined,
+                    selectedDays: selectedDays as any,
+                };
+
+                const created = await this.CreateUser(dto);
+
+                results.push({
+                    row: rowNumber,
+                    name,
+                    phone,
+                    status: 'success',
+                    message: created.message,
+                    isNewCustomer: created.data.isNewCustomer,
+                    subscriptionId: created.data.userSubscription.id,
+                });
+            } catch (err) {
+                const message =
+                    err instanceof BadRequestException || err instanceof ForbiddenException || err instanceof NotFoundException
+                        ? (err.getResponse() as any)?.message || err.message
+                        : err instanceof Error
+                            ? err.message
+                            : 'Unknown error';
+
+                results.push({
+                    row: rowNumber,
+                    name,
+                    phone,
+                    status: 'error',
+                    message: Array.isArray(message) ? message.join(', ') : String(message),
+                });
+            }
+        }
+
+        const succeeded = results.filter((r) => r.status === 'success').length;
+
+        return {
+            total: results.length,
+            succeeded,
+            failed: results.length - succeeded,
+            results,
+        };
+    }
+
+    /** Generates a blank .xlsx template (headers + one example row) for the bulk-upload flow. */
+    generateBulkUploadTemplate(): Buffer {
+        const headers = [
+            'name',
+            'phone',
+            'email',
+            'address',
+            'planId',
+            'planName',
+            'walletAmount',
+            'discount',
+            'start_date',
+            'end_date',
+            'scheduleType',
+            'selectedDays',
+            'deliveryPartnerId',
+        ];
+
+        const example = [
+            'John Doe',
+            '9876543210',
+            'john@example.com',
+            '123 Main Street, Bangalore',
+            '',
+            'Monthly Veg Plan',
+            '0',
+            '0',
+            '2026-06-01',
+            '2026-06-30',
+            'EVERYDAY',
+            '',
+            '',
+        ];
+
+        const worksheet = XLSX.utils.aoa_to_sheet([headers, example]);
+        worksheet['!cols'] = headers.map((h) => ({ wch: Math.max(h.length + 4, 16) }));
+
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Customers');
+
+        return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+    }
 
 
     async updateCustomerProfile(userId: string, dto: UpdateCustomerDto) {
