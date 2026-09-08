@@ -64,6 +64,7 @@ export class OpenMessService {
             logo: mess.icon ?? null,
             coverImage: cover?.url ?? null,
             startingPlanPrice: this.lowestActivePlanPrice(mess.plans ?? []),
+            totalSubscribers: mess._count?.UserSubscriptions ?? 0,
             address: {
                 address: mess.address,
                 location: mess.location,
@@ -134,6 +135,14 @@ export class OpenMessService {
                 images: true,
                 foodTypes: true,
                 plans: { select: { isActive: true, price: true, minPrice: true } },
+                // Total subscribers = customers with a currently-active subscription to any
+                // plan of this mess (UserSubscriptions.is_active — the flag every other
+                // subscription query in this codebase uses).
+                _count: {
+                    select: {
+                        UserSubscriptions: { where: { is_active: true } },
+                    },
+                },
             },
         });
 

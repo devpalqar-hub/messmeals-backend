@@ -20,7 +20,9 @@ export class OpenMessController {
             'When latitude/longitude are given (and featured is not), results are sorted by distance — ' +
             'shortest distance first, longest last — using each mess\'s stored coordinates. ' +
             'When featured=true and latitude/longitude are given, results are instead restricted to a ' +
-            '20km radius and shuffled (not always the same order) rather than distance-sorted.',
+            '20km radius and shuffled (not always the same order) rather than distance-sorted. ' +
+            'Each mess also carries totalSubscribers — the count of customers currently on an ' +
+            'active subscription to any of its plans.',
     })
     @ApiResponse({ status: 200, description: 'Messes fetched successfully.' })
     findAll(@Query() query: ListOpenMessesDto) {
