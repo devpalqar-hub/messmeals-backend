@@ -261,67 +261,115 @@ export class OpenMessService {
         };
     }
 
-    /// GET /open/popular-plans — public listing of plans ranked by subscription count.
-    async findPopularPlans(page: number = 1, limit: number = 10) {
-        const skip = (page - 1) * limit;
+    /// GET /open/popular-plans — public listing of plans. Ranked by subscription count by
+    /// default; when latitude/longitude are given, ranked by distance instead — nearest
+    /// mess first, farthest last (same haversine formula as GET /open/messes).
+    async findPopularPlans(page: number = 1, limit: number = 10, latitude?: string, longitude?: string) {
+        const lat = latitude !== undefined ? Number(latitude) : NaN;
+        const lng = longitude !== undefined ? Number(longitude) : NaN;
+        const hasCoords = !isNaN(lat) && !isNaN(lng);
 
         const where = {
             isActive: true,
             mess: { isListed: true, is_active: true },
         };
 
-        const [plans, total] = await Promise.all([
-            this.prisma.plans.findMany({
-                where,
-                orderBy: { totalCustomers: 'desc' },
-                skip,
-                take: limit,
-                include: {
-                    images: true,
-                    Variation: { where: { isActive: true } },
-                    mess: {
-                        select: {
-                            id: true,
-                            name: true,
-                            slug: true,
-                            icon: true,
-                            address: true,
-                            location: true,
-                            images: { where: { isCover: true }, take: 1 },
-                        },
-                    },
+        const include = {
+            images: true,
+            Variation: { where: { isActive: true } },
+            mess: {
+                select: {
+                    id: true,
+                    name: true,
+                    slug: true,
+                    icon: true,
+                    address: true,
+                    location: true,
+                    latitude: true,
+                    logitude: true,
+                    images: { where: { isCover: true }, take: 1 },
                 },
-            }),
-            this.prisma.plans.count({ where }),
-        ]);
+            },
+        } as const;
+
+        let plans: Prisma.PlansGetPayload<{ include: typeof include }>[];
+        let total: number;
+        let distanceByPlanId = new Map<string, number | null>();
+
+        if (hasCoords) {
+            // Distance can't be sorted at the DB level (lat/lng are free-text columns, not
+            // geo/decimal ones) — fetch every matching plan, compute distance in app code,
+            // sort nearest-first, then paginate in memory. Mirrors GET /open/messes.
+            const all = await this.prisma.plans.findMany({ where, include });
+
+            all.forEach((plan) => {
+                let distance: number | null = null;
+                if (plan.mess.latitude && plan.mess.logitude) {
+                    const messLat = Number(plan.mess.latitude);
+                    const messLng = Number(plan.mess.logitude);
+                    if (!isNaN(messLat) && !isNaN(messLng)) {
+                        distance = this.getDistanceKm(lat, lng, messLat, messLng);
+                    }
+                }
+                distanceByPlanId.set(plan.id, distance);
+            });
+
+            all.sort(
+                (a, b) =>
+                    (distanceByPlanId.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+                    (distanceByPlanId.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+            );
+
+            total = all.length;
+            const skip = (page - 1) * limit;
+            plans = all.slice(skip, skip + limit);
+        } else {
+            const skip = (page - 1) * limit;
+            [plans, total] = await Promise.all([
+                this.prisma.plans.findMany({
+                    where,
+                    orderBy: { totalCustomers: 'desc' },
+                    skip,
+                    take: limit,
+                    include,
+                }),
+                this.prisma.plans.count({ where }),
+            ]);
+        }
 
         return {
             message: 'Popular plans fetched successfully',
-            data: plans.map((plan) => ({
-                id: plan.id,
-                planName: plan.planName,
-                description: plan.description,
-                price: plan.price,
-                minPrice: plan.minPrice,
-                isMonthlyPlan: plan.isMonthlyPlan,
-                isDailyPlan: plan.isDailyPlan,
-                totalCustomers: plan.totalCustomers,
-                images: plan.images.map((img) => ({ id: img.id, url: img.url, altText: img.altText })),
-                variations: plan.Variation.map((v) => ({
-                    id: v.id,
-                    title: v.title,
-                    description: v.description,
-                })),
-                mess: {
-                    id: plan.mess.id,
-                    name: plan.mess.name,
-                    slug: plan.mess.slug,
-                    logo: plan.mess.icon ?? null,
-                    address: plan.mess.address,
-                    location: plan.mess.location,
-                    coverImage: plan.mess.images?.[0]?.url ?? null,
-                },
-            })),
+            data: plans.map((plan) => {
+                const distanceKm = distanceByPlanId.get(plan.id) ?? null;
+                return {
+                    id: plan.id,
+                    planName: plan.planName,
+                    description: plan.description,
+                    price: plan.price,
+                    minPrice: plan.minPrice,
+                    isMonthlyPlan: plan.isMonthlyPlan,
+                    isDailyPlan: plan.isDailyPlan,
+                    totalCustomers: plan.totalCustomers,
+                    images: plan.images.map((img) => ({ id: img.id, url: img.url, altText: img.altText })),
+                    variations: plan.Variation.map((v) => ({
+                        id: v.id,
+                        title: v.title,
+                        description: v.description,
+                    })),
+                    mess: {
+                        id: plan.mess.id,
+                        name: plan.mess.name,
+                        slug: plan.mess.slug,
+                        logo: plan.mess.icon ?? null,
+                        address: plan.mess.address,
+                        location: plan.mess.location,
+                        latitude: plan.mess.latitude,
+                        longitude: plan.mess.logitude,
+                        coverImage: plan.mess.images?.[0]?.url ?? null,
+                    },
+                    distanceKm: distanceKm !== null ? Number(distanceKm.toFixed(2)) : null,
+                };
+            }),
             meta: {
                 total,
                 page,

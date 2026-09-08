@@ -17,6 +17,7 @@ import { Subscription } from 'rxjs';
 import { CompleteProfileDto } from './dto/complete-profile.dto';
 import { ExtendSubscriptionDto } from './dto/extend-subscription.dto';
 import { SkipVariationDto } from './dto/skip-variation.dto';
+import { resolvePlanSchedule } from 'src/common/utility/plan-schedule.util';
 
 
 @Injectable()
@@ -257,15 +258,17 @@ export class CustomerService {
         const parsedDiscount = Number(discount);
         const numericDiscount = Number.isFinite(parsedDiscount) ? parsedDiscount : 0;
 
-        const normalizedScheduleType =
+        // The plan's own schedule (set by the mess owner) is applied as a default/limit —
+        // see resolvePlanSchedule's docstring.
+        const requestedScheduleType =
             scheduleType === ScheduleType.CUSTOM || (Array.isArray(selectedDays) && selectedDays.length > 0)
                 ? ScheduleType.CUSTOM
                 : ScheduleType.EVERYDAY;
 
-        const normalizedSelectedDays =
-            normalizedScheduleType === ScheduleType.CUSTOM
-                ? (Array.isArray(selectedDays) ? selectedDays : [])
-                : undefined;
+        const { scheduleType: normalizedScheduleType, selectedDays: normalizedSelectedDays } = resolvePlanSchedule(
+            plan,
+            { scheduleType: requestedScheduleType, selectedDays: Array.isArray(selectedDays) ? selectedDays : undefined },
+        );
 
         if (normalizedScheduleType === ScheduleType.CUSTOM && (!normalizedSelectedDays || normalizedSelectedDays.length === 0)) {
             throw new BadRequestException('Selected days are required for CUSTOM schedule type');
@@ -1569,27 +1572,29 @@ export class CustomerService {
     }) {
         const { planId, start_date, end_date, scheduleType, selectedDays } = params;
 
-        const normalizedScheduleType =
-            scheduleType === ScheduleType.MONTHLY 
-                ? ScheduleType.MONTHLY 
-                : (scheduleType === ScheduleType.CUSTOM || (Array.isArray(selectedDays) && selectedDays.length > 0))
-                    ? ScheduleType.CUSTOM
-                    : ScheduleType.EVERYDAY;
-
-        const normalizedSelectedDays =
-            normalizedScheduleType === ScheduleType.CUSTOM
-                ? (Array.isArray(selectedDays) ? selectedDays : [])
-                : undefined;
-
-        if (normalizedScheduleType === ScheduleType.CUSTOM && (!normalizedSelectedDays || normalizedSelectedDays.length === 0)) {
-            throw new BadRequestException('Selected days are required for CUSTOM schedule type');
-        }
-
         //Validate plan
         const plan = await this.prisma.plans.findUnique({
             where: { id: planId },
         });
         if (!plan) throw new BadRequestException('Plan not found');
+
+        const requestedScheduleType =
+            scheduleType === ScheduleType.MONTHLY
+                ? ScheduleType.MONTHLY
+                : (scheduleType === ScheduleType.CUSTOM || (Array.isArray(selectedDays) && selectedDays.length > 0))
+                    ? ScheduleType.CUSTOM
+                    : ScheduleType.EVERYDAY;
+
+        // The plan's own schedule (set by the mess owner) is applied as a default/limit —
+        // see resolvePlanSchedule's docstring.
+        const { scheduleType: normalizedScheduleType, selectedDays: normalizedSelectedDays } = resolvePlanSchedule(
+            plan,
+            { scheduleType: requestedScheduleType, selectedDays: Array.isArray(selectedDays) ? selectedDays : undefined },
+        );
+
+        if (normalizedScheduleType === ScheduleType.CUSTOM && (!normalizedSelectedDays || normalizedSelectedDays.length === 0)) {
+            throw new BadRequestException('Selected days are required for CUSTOM schedule type');
+        }
 
         // Calculate duration and price
         const startDate = new Date(start_date);
@@ -2167,16 +2172,18 @@ export class CustomerService {
         if (endDate < startDate) throw new BadRequestException('end_date must be >= start_date');
 
         // ─── 6. Normalize schedule ──────────────────────────────────────────────
-        const normalizedScheduleType =
+        // The plan's own schedule (set by the mess owner) is applied as a default/limit —
+        // see resolvePlanSchedule's docstring.
+        const requestedScheduleType =
             scheduleType === ScheduleType.CUSTOM ||
             (Array.isArray(selectedDays) && selectedDays.length > 0)
                 ? ScheduleType.CUSTOM
                 : ScheduleType.EVERYDAY;
 
-        const normalizedSelectedDays =
-            normalizedScheduleType === ScheduleType.CUSTOM
-                ? (Array.isArray(selectedDays) ? selectedDays : [])
-                : undefined;
+        const { scheduleType: normalizedScheduleType, selectedDays: normalizedSelectedDays } = resolvePlanSchedule(
+            plan,
+            { scheduleType: requestedScheduleType, selectedDays: Array.isArray(selectedDays) ? selectedDays : undefined },
+        );
 
         if (
             normalizedScheduleType === ScheduleType.CUSTOM &&

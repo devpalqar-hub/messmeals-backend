@@ -1,7 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNumber, IsOptional, IsArray, ValidateNested, IsBoolean } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsArray, ValidateNested, IsBoolean, IsEnum } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { BadRequestException } from '@nestjs/common';
+import { DayOfWeek, ScheduleType } from '@prisma/client';
 
 export class PlansDto {
     @ApiProperty({ example: 'Weekly Lunch Plan' })
@@ -129,6 +130,47 @@ export class PlansDto {
     @IsBoolean()
     @Transform(({ value }) => value === 'true' || value === true)
     isDailyPlan?: boolean
+
+    @ApiPropertyOptional({
+        enum: ScheduleType,
+        example: ScheduleType.EVERYDAY,
+        description:
+            'The plan\'s own weekly schedule. EVERYDAY (default) runs every day and places no ' +
+            'restriction on a subscriber\'s chosen days. CUSTOM restricts the plan to ' +
+            '`availableDays` — a subscriber\'s own day selection then defaults to (and must be ' +
+            'a subset of) those days.',
+    })
+    @IsOptional()
+    @IsEnum(ScheduleType)
+    scheduleType?: ScheduleType;
+
+    @ApiPropertyOptional({
+        example: ['MONDAY', 'WEDNESDAY', 'FRIDAY'],
+        description: 'Required when scheduleType is CUSTOM — the weekdays this plan runs on.',
+    })
+    @IsOptional()
+    @IsArray()
+    @IsEnum(DayOfWeek, { each: true })
+    @Transform(({ value }) => {
+        if (!value) return undefined;
+
+        if (typeof value === 'string') {
+            try {
+                const parsed = JSON.parse(value);
+                if (!Array.isArray(parsed)) {
+                    throw new Error();
+                }
+                return parsed;
+            } catch {
+                throw new BadRequestException(
+                    'availableDays must be a valid JSON array of DayOfWeek strings',
+                );
+            }
+        }
+
+        return value;
+    })
+    availableDays?: string[];
 
     @IsOptional()
     @IsArray()

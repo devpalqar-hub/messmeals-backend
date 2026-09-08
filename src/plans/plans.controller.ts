@@ -102,6 +102,20 @@ export class PlansController {
                 menuIds: { type: 'array', example: ['7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111'], items: { type: 'string' }, description: 'Optional — existing menus of the same mess to link to this plan.' },
                 isMonthlyPlan: { type: 'boolean', example: true },
                 isDailyPlan: { type: 'boolean', example: false },
+                scheduleType: {
+                    type: 'string',
+                    enum: ['EVERYDAY', 'CUSTOM', 'MONTHLY'],
+                    example: 'EVERYDAY',
+                    description:
+                        'The plan\'s own weekly schedule. Defaults to EVERYDAY (no day restriction). ' +
+                        'CUSTOM restricts the plan to availableDays.',
+                },
+                availableDays: {
+                    type: 'array',
+                    example: ['MONDAY', 'WEDNESDAY', 'FRIDAY'],
+                    items: { type: 'string' },
+                    description: 'Required when scheduleType is CUSTOM.',
+                },
                 planImages: {
                     type: 'array',
                     example: [
@@ -196,6 +210,8 @@ export class PlansController {
             type: 'object',
             properties: {
                 menuIds: { type: 'array', example: ['7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111'], items: { type: 'string' }, description: 'Optional — replaces all linked menus. Pass [] to unlink all.' },
+                scheduleType: { type: 'string', enum: ['EVERYDAY', 'CUSTOM', 'MONTHLY'], example: 'CUSTOM' },
+                availableDays: { type: 'array', example: ['MONDAY', 'WEDNESDAY', 'FRIDAY'], items: { type: 'string' }, description: 'Required when scheduleType is CUSTOM.' },
             },
         },
     })
@@ -226,6 +242,14 @@ export class PlansController {
                 dto.planImages = JSON.parse(dto.planImages);
             } catch {
                 dto.planImages = [];
+            }
+        }
+
+        if (dto.availableDays && typeof dto.availableDays === 'string') {
+            try {
+                dto.availableDays = JSON.parse(dto.availableDays);
+            } catch {
+                dto.availableDays = [];
             }
         }
 
