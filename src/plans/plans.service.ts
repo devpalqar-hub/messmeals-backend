@@ -5,6 +5,7 @@ import { UpdatePlanDto } from './dto/update-plan.dto';
 import * as path from 'path';
 import { pl, tr } from '@faker-js/faker';
 import { S3Service } from 'src/s3/s3.service';
+import { ScheduleType } from '@prisma/client';
 
 @Injectable()
 export class PlansService {
@@ -30,6 +31,13 @@ export class PlansService {
         }
     }
 
+    /** CUSTOM requires at least one day; EVERYDAY/MONTHLY carry no day restriction. */
+    private assertScheduleValid(scheduleType: ScheduleType, availableDays?: string[]) {
+        if (scheduleType === ScheduleType.CUSTOM && (!availableDays || availableDays.length === 0)) {
+            throw new BadRequestException('availableDays is required when scheduleType is CUSTOM');
+        }
+    }
+
     async createPlan(
         dto: PlansDto,
         images: { url: string }[] = [],
@@ -42,6 +50,9 @@ export class PlansService {
                 'Invalid plan type: exactly one of isMonthlyPlan or isDailyPlan must be true',
             );
         }
+
+        const scheduleType = dto.scheduleType ?? ScheduleType.EVERYDAY;
+        this.assertScheduleValid(scheduleType, dto.availableDays);
 
         // 1️⃣ Validate mess exists
         const mess = await this.prisma.mess.findUnique({
@@ -67,6 +78,8 @@ export class PlansService {
                     isActive: true,
                     isDailyPlan: dto.isDailyPlan,
                     isMonthlyPlan: dto.isMonthlyPlan,
+                    scheduleType,
+                    availableDays: scheduleType === ScheduleType.CUSTOM ? dto.availableDays : undefined,
                     Variation: {
                         connect: variationIds?.map((id) => ({ id })) || [],
                     },
@@ -239,6 +252,23 @@ export class PlansService {
 
             if (dto.isDailyPlan !== undefined)
                 updateData.isDailyPlan = dto.isDailyPlan;
+
+            if (dto.scheduleType !== undefined || dto.availableDays !== undefined) {
+                const existing = await tx.plans.findUnique({
+                    where: { id },
+                    select: { scheduleType: true, availableDays: true },
+                });
+                if (!existing) throw new NotFoundException('Plan not found');
+
+                const nextScheduleType = dto.scheduleType ?? existing.scheduleType;
+                const nextAvailableDays =
+                    dto.availableDays ?? (Array.isArray(existing.availableDays) ? (existing.availableDays as string[]) : undefined);
+
+                this.assertScheduleValid(nextScheduleType, nextAvailableDays);
+
+                updateData.scheduleType = nextScheduleType;
+                updateData.availableDays = nextScheduleType === ScheduleType.CUSTOM ? nextAvailableDays : null;
+            }
 
             if (dto.lunch !== undefined)
                 updateData.lunch = dto.lunch;

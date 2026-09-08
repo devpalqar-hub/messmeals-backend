@@ -2,11 +2,13 @@ import { Transform, Type } from 'class-transformer';
 import {
     IsArray,
     IsBoolean,
+    IsEnum,
     IsNumber,
     IsOptional,
     IsString,
     ValidateNested,
 } from 'class-validator';
+import { DayOfWeek, ScheduleType } from '@prisma/client';
 
 class PlanImagesDto {
     @IsString()
@@ -77,5 +79,15 @@ export class UpdatePlanDto {
     @Transform(({ value }) => value === 'true' || value === true)
     isDailyPlan: boolean
 
+    // The plan's own weekly schedule — see PlansDto.scheduleType for the full description.
+    @IsOptional()
+    @IsEnum(ScheduleType)
+    scheduleType?: ScheduleType;
+
+    // Required when scheduleType is CUSTOM — the weekdays this plan runs on.
+    @IsOptional()
+    @IsArray()
+    @IsEnum(DayOfWeek, { each: true })
+    availableDays?: string[];
 
 }

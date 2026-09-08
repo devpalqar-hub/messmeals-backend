@@ -570,7 +570,26 @@ export class MessService {
                 DeliveryPartnerProfile: {
                     include: { user: true },
                 },
-                UserSubscriptions: true,
+                UserSubscriptions: {
+                    include: {
+                        CustomerProfile: {
+                            include: {
+                                user: {
+                                    select: { id: true, name: true, phone: true, email: true },
+                                },
+                            },
+                        },
+                        plan: {
+                            select: { id: true, planName: true, price: true },
+                        },
+                        DeliveryPartnerProfile: {
+                            include: {
+                                user: { select: { id: true, name: true, phone: true } },
+                            },
+                        },
+                    },
+                    orderBy: { createdAt: 'desc' },
+                },
                 images: true,
             },
         });

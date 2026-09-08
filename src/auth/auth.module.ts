@@ -10,6 +10,7 @@ import { ConfigModule } from '@nestjs/config';
 import { TwoFactorModule } from 'src/twofactor/twofactor.module';
 import { TwoFactorService } from 'src/twofactor/twofactor.service';
 import { BillingModule } from 'src/billing/billing.module';
+import { MessModule } from 'src/mess/mess.module';
 
 @Module({
     imports: [
@@ -17,6 +18,7 @@ import { BillingModule } from 'src/billing/billing.module';
         ConfigModule,
         TwoFactorModule,
         BillingModule,
+        MessModule,
         PassportModule.register({ defaultStrategy: 'jwt' }), // 👈 register jwt
         JwtModule.register({
             secret: process.env.JWT_SECRET || 'super-secret-key',
