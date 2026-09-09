@@ -85,4 +85,16 @@ export class OpenMessController {
             longitude,
         );
     }
+
+    @Get('seo/messes')
+    @ApiOperation({
+        summary: 'List lightweight messes for SEO',
+        description:
+            'Unpaginated, lightweight list of all active and listed messes. ' +
+            'Returns only id, name, slug, and updatedAt, intended primarily for sitemap generation.',
+    })
+    @ApiResponse({ status: 200, description: 'SEO messes fetched successfully.' })
+    findSeoMesses() {
+        return this.openMessService.findSeoMesses();
+    }
 }
