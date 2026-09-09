@@ -419,4 +419,22 @@ export class OpenMessService {
             locations,
         };
     }
+
+    /// GET /open/seo/messes — lightweight unpaginated list of all public messes for sitemap generation
+    async findSeoMesses() {
+        const messes = await this.prisma.mess.findMany({
+            where: {
+                isListed: true,
+                is_active: true,
+            },
+            select: {
+                id: true,
+                name: true,
+                slug: true,
+                updatedAt: true,
+            },
+        });
+
+        return { data: messes };
+    }
 }
