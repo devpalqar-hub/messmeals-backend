@@ -780,12 +780,13 @@ export class CustomerService {
 
     async findAll(
         page: number = 1,
-        limit: number = 200,
+        limit: number = 10,
         search?: string,
         messId?: string,
         isActive?: boolean, // ✅ NEW
         subscriptionFilter?: string, // ✅ NEW — 'ending_soon' narrows to subscriptions ending within 7 days
     ) {
+        limit = 250;
         const skip = (page - 1) * limit;
 
         const now = new Date();
