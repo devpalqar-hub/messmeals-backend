@@ -30,13 +30,14 @@ import { MenuModule } from './menu/menu.module';
 import { ExpenseCategoriesModule } from './expense-categories/expense-categories.module';
 import { ExpensesModule } from './expenses/expenses.module';
 import { OpenModule } from './open/open.module';
+import { CustomerAuthModule } from './customer-auth/customer-auth.module';
 
 
 @Module({
   imports: [AuthModule, CustomerModule, DeliveriesModule, DeliveryAgentModule, UserSubscriptionsModule,
     PlansModule, PrismaModule, UserModule, VariationModule, ContactFormModule, DistrictModule,
     MessModule, MessAdminModule, AddressModule, CategoryModule, TestimonialsModule, PaymentsModule, AnalyticsModule,
-    BillingModule, MenuModule, ExpenseCategoriesModule, ExpensesModule, OpenModule,
+    BillingModule, MenuModule, ExpenseCategoriesModule, ExpensesModule, OpenModule, CustomerAuthModule,
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'uploads'),
       serveRoot: "/uploads",

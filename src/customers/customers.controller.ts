@@ -2,7 +2,10 @@ import {
     Body, Controller, Post, Get, Query, Patch, Param,
     DefaultValuePipe, ParseIntPipe, Delete, UseGuards, Req,
     NotFoundException, BadRequestException,
+    UseInterceptors, UploadedFile, Res, StreamableFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { CustomerService } from './customers.service';
 import { choosePlanDto, CreateCustomerDto, CreateSubscriptionForCustomerDto, UpdateCustomerDto } from './dto/create-customer.dto';
 import { RenewSubscriptionDto } from './dto/renew-Subscription.dto';
@@ -14,11 +17,20 @@ import { PauseSubDto } from './dto/pause-sub.dto';
 import { CompleteProfileDto } from './dto/complete-profile.dto';
 import { ExtendSubscriptionDto } from './dto/extend-subscription.dto';
 import { SkipVariationDto } from './dto/skip-variation.dto';
+import { BulkUploadCustomersQueryDto } from './dto/bulk-upload-customer.dto';
 import { Role } from '@prisma/client';
 import {
-    ApiBearerAuth, ApiBody, ApiOperation, ApiParam,
+    ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam,
     ApiQuery, ApiTags,
 } from '@nestjs/swagger';
+
+const BULK_UPLOAD_MAX_SIZE = 5 * 1024 * 1024; // 5MB
+const BULK_UPLOAD_ALLOWED_MIMETYPES = new Set([
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+    'application/vnd.ms-excel', // .xls
+    'text/csv',
+    'application/csv',
+]);
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('MESSADMIN', 'SUPERADMIN')
@@ -43,6 +55,64 @@ export class CustomerController {
     })
     async register(@Body() dto: CreateCustomerDto) {
         return this.cusomerservice.CreateUser(dto);
+    }
+
+    @Get('bulk-upload/template')
+    @ApiOperation({
+        summary: 'Download bulk-upload template',
+        description:
+            'Downloads a blank .xlsx template (with an example row) for the bulk customer upload — ' +
+            'columns: name, phone, email, address, planId, planName, walletAmount, discount, start_date, ' +
+            'end_date, scheduleType, selectedDays, deliveryPartnerId. Either planId or planName is required per row.',
+    })
+    downloadBulkUploadTemplate(@Res({ passthrough: true }) res: Response): StreamableFile {
+        const buffer = this.cusomerservice.generateBulkUploadTemplate();
+        res.set({
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition': 'attachment; filename="customer-bulk-upload-template.xlsx"',
+        });
+        return new StreamableFile(buffer);
+    }
+
+    @Post('bulk-upload')
+    @ApiOperation({
+        summary: 'Bulk-upload customers from Excel/CSV',
+        description:
+            'Registers many customers (and their plan subscriptions) at once from an uploaded .xlsx/.xls/.csv ' +
+            'sheet — download GET /customer/bulk-upload/template for the expected columns. Each row is processed ' +
+            'independently through the same logic as POST /customer/register-user, so one bad row (invalid plan, ' +
+            'duplicate active subscription, etc.) is reported per-row rather than failing the whole batch. ' +
+            'Optional `messId` query param scopes "planName" lookups (rows without a planId) to one mess.',
+    })
+    @ApiConsumes('multipart/form-data')
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: { file: { type: 'string', format: 'binary' } },
+            required: ['file'],
+        },
+    })
+    @ApiQuery({ name: 'messId', required: false, description: 'Optional — scopes planName lookups to this mess' })
+    @UseInterceptors(
+        FileInterceptor('file', {
+            limits: { fileSize: BULK_UPLOAD_MAX_SIZE },
+            fileFilter: (_req, file, cb) => {
+                const nameLooksRight = /\.(xlsx|xls|csv)$/i.test(file?.originalname || '');
+                if (!BULK_UPLOAD_ALLOWED_MIMETYPES.has(file?.mimetype) && !nameLooksRight) {
+                    return cb(new BadRequestException('Only .xlsx, .xls, or .csv files are allowed') as any, false);
+                }
+                cb(null, true);
+            },
+        }),
+    )
+    async bulkUpload(
+        @UploadedFile() file: any,
+        @Query() query: BulkUploadCustomersQueryDto,
+    ) {
+        if (!file) {
+            throw new BadRequestException('File is required (field name: "file")');
+        }
+        return this.cusomerservice.bulkUploadCustomers(file.buffer, query.messId);
     }
 
     @Patch(':id')
