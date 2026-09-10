@@ -780,7 +780,7 @@ export class CustomerService {
 
     async findAll(
         page: number = 1,
-        limit: number = 10,
+        limit: number = 200,
         search?: string,
         messId?: string,
         isActive?: boolean, // ✅ NEW
@@ -2442,7 +2442,7 @@ export class CustomerService {
         // see resolvePlanSchedule's docstring.
         const requestedScheduleType =
             scheduleType === ScheduleType.CUSTOM ||
-            (Array.isArray(selectedDays) && selectedDays.length > 0)
+                (Array.isArray(selectedDays) && selectedDays.length > 0)
                 ? ScheduleType.CUSTOM
                 : ScheduleType.EVERYDAY;
 
