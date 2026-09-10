@@ -136,7 +136,7 @@ export class CustomerController {
     @ApiQuery({ name: 'subscriptionFilter', required: false, description: '"ending_soon" narrows to customers with an active subscription ending within 7 days' })
     async findAll(
         @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
-        @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+        @Query('limit', new DefaultValuePipe(200), ParseIntPipe) limit: number,
         @Query('search') search?: string,
         @Query('messId') messId?: string,
         @Query('isActive') isActive?: string,
