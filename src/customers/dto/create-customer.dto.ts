@@ -1,6 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsNumber, IsOptional, IsPhoneNumber, IsString, IsBoolean, IsEnum, IsJSON, IsArray, IsUUID, ValidateNested } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsEmail, IsNotEmpty, IsNumber, IsOptional, IsPhoneNumber, IsString, IsBoolean, IsEnum, IsJSON, IsArray, IsUUID } from 'class-validator';
 import { ScheduleType, DayOfWeek } from '@prisma/client';
 
 export class CreateCustomerDto {
@@ -212,55 +211,6 @@ export class choosePlanDto {
 
 }
 
-export class SubscriptionAddressDto {
-    @ApiPropertyOptional({ example: 'John Doe' })
-    @IsOptional()
-    @IsString()
-    name?: string;
-
-    @ApiProperty({ example: '221B Baker Street' })
-    @IsString()
-    street: string;
-
-    @ApiProperty({ example: 'Bangalore' })
-    @IsString()
-    townOrcity: string;
-
-    @ApiProperty({ example: '560001' })
-    @IsString()
-    postcode: string;
-
-    @ApiPropertyOptional({ example: 'India' })
-    @IsOptional()
-    @IsString()
-    country?: string;
-
-    @ApiPropertyOptional({ example: 'Near City Mall' })
-    @IsOptional()
-    @IsString()
-    landmark?: string;
-
-    @ApiPropertyOptional({ example: '12.9716,77.5946' })
-    @IsOptional()
-    @IsString()
-    latitudeLogitude?: string;
-
-    @ApiPropertyOptional({ example: 'https://maps.google.com/?q=12.9716,77.5946' })
-    @IsOptional()
-    @IsString()
-    locationLink?: string;
-
-    @ApiPropertyOptional({ example: '+919876543218' })
-    @IsOptional()
-    @IsString()
-    phone?: string;
-
-    @ApiPropertyOptional({ example: 'john@example.com' })
-    @IsOptional()
-    @IsEmail()
-    email?: string;
-}
-
 export class CreateSubscriptionForCustomerDto {
     @ApiProperty({
         example: '9b8c7d6e-1234-5678-90ab-cdef12345678',
@@ -325,13 +275,12 @@ export class CreateSubscriptionForCustomerDto {
     userAddressId?: string;
 
     @ApiPropertyOptional({
-        type: SubscriptionAddressDto,
+        example: '221B Baker Street, Bangalore, 560001',
         description:
-            'Optional new delivery address to create for this customer. If provided, this takes ' +
-            'precedence over userAddressId — a new UserAddress is created and linked to the subscription.',
+            'Optional new delivery address as a plain string. If provided, this takes precedence over ' +
+            'userAddressId — a new UserAddress is created and linked to the subscription.',
     })
     @IsOptional()
-    @ValidateNested()
-    @Type(() => SubscriptionAddressDto)
-    address?: SubscriptionAddressDto;
+    @IsString()
+    address?: string;
 }

@@ -2130,23 +2130,19 @@ export class CustomerService {
         }
 
         // ─── 4. Resolve optional delivery address ───────────────────────────────
-        // "address" (full details) takes precedence over "userAddressId" (existing address) —
-        // if both are sent, a new address is created and userAddressId is ignored.
+        // "address" (plain string) takes precedence over "userAddressId" (existing address) —
+        // if both are sent, a new address is created from the string and userAddressId is ignored.
         let resolvedAddressId: string | undefined = userAddressId;
         if (address) {
             const newAddress = await this.prisma.userAddress.create({
                 data: {
-                    name: address.name || customerProfile.user?.name || 'Customer',
-                    street: address.street,
-                    townOrcity: address.townOrcity,
-                    postcode: address.postcode,
-                    phone: address.phone || customerProfile.user?.phone || undefined,
-                    email: address.email || customerProfile.user?.email || undefined,
+                    name: customerProfile.user?.name || 'Customer',
+                    street: address,
+                    townOrcity: '',
+                    postcode: '',
+                    phone: customerProfile.user?.phone || undefined,
+                    email: customerProfile.user?.email || undefined,
                     profileId: customerProfile.id,
-                    ...(address.country ? { country: address.country } : {}),
-                    ...(address.landmark ? { landmark: address.landmark } : {}),
-                    ...(address.latitudeLogitude ? { latitudeLogitude: address.latitudeLogitude } : {}),
-                    ...(address.locationLink ? { locationLink: address.locationLink } : {}),
                 },
             });
             resolvedAddressId = newAddress.id;
