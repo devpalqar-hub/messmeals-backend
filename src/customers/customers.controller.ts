@@ -34,10 +34,10 @@ export class CustomerController {
         description:
             'Creates a new customer and subscription for the mess that owns `planId`. deliveryPartnerId is optional — ' +
             'a customer can be registered without one and assigned a delivery partner later. If the phone/email is ' +
-            'already registered as a customer (e.g. by another mess admin, for a different mess), the existing ' +
-            'user/profile is reused and just a new subscription is created for this mess — the same phone number ' +
-            'can be a customer of multiple messes. Fails only if the customer already has an active subscription ' +
-            'for this exact plan. ' +
+            'already registered as a customer (e.g. by another mess admin, for a different mess, or even for the ' +
+            'same plan again), the existing user/profile is reused and a new subscription is simply created — the ' +
+            'same phone number can be a customer of multiple messes, and can hold multiple subscriptions for the ' +
+            'same plan (e.g. renewals/top-ups). ' +
             'Monthly plans: totalPrice = number of months (derived from start/end date) × plan.price. ' +
             'Daily plans: totalPrice = chargeable delivery days × plan.price.',
     })

@@ -207,20 +207,10 @@ export class CustomerService {
             }
         }
 
-        // Guard against literally double-registering the same customer for the same plan.
-        // Different messes/plans for the same phone number remain fully allowed — that's the point.
-        if (wasExistingUser) {
-            const duplicateActiveSub = await this.prisma.userSubscriptions.findFirst({
-                where: {
-                    customerProfileId: customerProfile.id,
-                    planId,
-                    is_active: true,
-                },
-            });
-            if (duplicateActiveSub) {
-                throw new BadRequestException('This customer already has an active subscription for this plan');
-            }
-        }
+        // Note: an existing customer is always allowed to get a new subscription here —
+        // for the same plan/mess (renewal/top-up) or a different one. We no longer block
+        // on an already-active subscription for the same plan; a new UserSubscriptions
+        // row is simply created below, same as for a brand-new customer.
 
         // 4️⃣ Calculate duration and price
         const startDate = new Date(start_date);
@@ -2106,6 +2096,7 @@ export class CustomerService {
             selectedDays,
             discount,
             userAddressId,
+            address,
         } = dto;
 
         // ─── 1. Resolve customer profile (accept CustomerProfile.id OR User.id) ───
@@ -2116,6 +2107,7 @@ export class CustomerService {
                     { userId: rawCustomerProfileId },
                 ],
             },
+            include: { user: true },
         });
         if (!customerProfile) {
             throw new BadRequestException(
@@ -2137,8 +2129,28 @@ export class CustomerService {
             throw new BadRequestException('Plan does not belong to the delivery partner\'s mess');
         }
 
-        // ─── 4. Validate optional address ───────────────────────────────────────
-        if (userAddressId) {
+        // ─── 4. Resolve optional delivery address ───────────────────────────────
+        // "address" (full details) takes precedence over "userAddressId" (existing address) —
+        // if both are sent, a new address is created and userAddressId is ignored.
+        let resolvedAddressId: string | undefined = userAddressId;
+        if (address) {
+            const newAddress = await this.prisma.userAddress.create({
+                data: {
+                    name: address.name || customerProfile.user?.name || 'Customer',
+                    street: address.street,
+                    townOrcity: address.townOrcity,
+                    postcode: address.postcode,
+                    phone: address.phone || customerProfile.user?.phone || undefined,
+                    email: address.email || customerProfile.user?.email || undefined,
+                    profileId: customerProfile.id,
+                    ...(address.country ? { country: address.country } : {}),
+                    ...(address.landmark ? { landmark: address.landmark } : {}),
+                    ...(address.latitudeLogitude ? { latitudeLogitude: address.latitudeLogitude } : {}),
+                    ...(address.locationLink ? { locationLink: address.locationLink } : {}),
+                },
+            });
+            resolvedAddressId = newAddress.id;
+        } else if (userAddressId) {
             const addr = await this.prisma.userAddress.findUnique({ where: { id: userAddressId } });
             if (!addr) throw new BadRequestException('User address not found');
         }
@@ -2242,7 +2254,7 @@ export class CustomerService {
                 discount: appliedDiscount,
                 discountedPrice,
                 is_active: true,
-                ...(userAddressId ? { userAddressId } : {}),
+                ...(resolvedAddressId ? { userAddressId: resolvedAddressId } : {}),
             },
         });
 
