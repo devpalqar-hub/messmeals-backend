@@ -45,6 +45,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
     "date-fns": "^4.1.0",
+    "exceljs": "^4.4.0",
     "helmet": "^8.3.0",
     "mapped-types": "^0.0.1",
     "multer": "^2.0.2",
@@ -95,6 +96,9 @@
     ],
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
+    "moduleNameMapper": {
+      "^src/(.*)$": "<rootDir>/$1"
+    },
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },

@@ -5,6 +5,7 @@ import { S3Service } from 'src/s3/s3.service';
 import { FoodType, Role } from '@prisma/client';
 import { CreateMessImageDto } from './dto/create-mess-image.dto';
 import { BillingService } from 'src/billing/billing.service';
+import { generateUniqueMessSlug } from 'src/common/utility/slug.util';
 
 @Injectable()
 export class MessService {
@@ -173,29 +174,9 @@ export class MessService {
 
     }
 
-    /// Lowercase, hyphenated, alnum-only slug base from a mess name (e.g. "Super Meals!" -> "super-meals").
-    private slugify(text: string): string {
-        const base = text
-            .toString()
-            .trim()
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-+|-+$/g, '');
-        return base || 'mess';
-    }
-
     /// Generates a slug for a new mess, appending -2, -3, ... on collision so it stays unique.
-    private async generateUniqueSlug(name: string): Promise<string> {
-        const base = this.slugify(name);
-        let slug = base;
-        let attempt = 2;
-
-        while (await this.prisma.mess.findUnique({ where: { slug }, select: { id: true } })) {
-            slug = `${base}-${attempt}`;
-            attempt++;
-        }
-
-        return slug;
+    private generateUniqueSlug(name: string): Promise<string> {
+        return generateUniqueMessSlug(this.prisma, name);
     }
 
     private getDistanceKm(

@@ -31,13 +31,14 @@ import { ExpenseCategoriesModule } from './expense-categories/expense-categories
 import { ExpensesModule } from './expenses/expenses.module';
 import { OpenModule } from './open/open.module';
 import { CustomerAuthModule } from './customer-auth/customer-auth.module';
+import { MessBulkUploadModule } from './mess-bulk-upload/mess-bulk-upload.module';
 
 
 @Module({
   imports: [AuthModule, CustomerModule, DeliveriesModule, DeliveryAgentModule, UserSubscriptionsModule,
     PlansModule, PrismaModule, UserModule, VariationModule, ContactFormModule, DistrictModule,
     MessModule, MessAdminModule, AddressModule, CategoryModule, TestimonialsModule, PaymentsModule, AnalyticsModule,
-    BillingModule, MenuModule, ExpenseCategoriesModule, ExpensesModule, OpenModule, CustomerAuthModule,
+    BillingModule, MenuModule, ExpenseCategoriesModule, ExpensesModule, OpenModule, CustomerAuthModule, MessBulkUploadModule,
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'uploads'),
       serveRoot: "/uploads",
