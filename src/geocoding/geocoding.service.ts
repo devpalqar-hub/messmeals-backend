@@ -29,7 +29,12 @@ const CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 // Simple cap so the in-memory cache can't grow unbounded over a long-running process.
 const MAX_CACHE_ENTRIES = 500;
 
-/// Wraps the Mapbox Geocoding API for location-autocomplete suggestions.
+/// Wraps Mapbox's classic Geocoding API (v5) for location-autocomplete suggestions — not
+/// the separate, session-token-based Search Box API. This call is made in Mapbox's default
+/// **temporary geocoding** mode (no `permanent` param is set), which needs no special
+/// Mapbox agreement — it just means results may only be cached/stored temporarily, never
+/// persisted permanently. The 7-day in-memory cache below respects that: it's an ordinary
+/// process-local TTL cache, not a permanent store.
 ///
 /// This is the only place in the codebase that calls a geocoding API, and it is built to
 /// call it as little as possible:

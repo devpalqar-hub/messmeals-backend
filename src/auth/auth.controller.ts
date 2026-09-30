@@ -12,6 +12,7 @@ import { SuperAdminLoginDto } from './dto/superadmin-login.dto';
 import { CreateMessAdminBySuperAdminDto, MessAdminListQueryDto, UpdateMessAdminBySuperAdminDto } from './dto/messadmin-admin.dto';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { MessOwnerSendOtpDto, MessOwnerSignupDto } from './dto/mess-owner-signup.dto';
+import { CreateMessWithOwnerDto } from './dto/create-mess-with-owner.dto';
 
 
 @ApiTags('Auth')
@@ -127,6 +128,23 @@ export class AuthController {
         @Body() dto: UpdateMessAdminBySuperAdminDto,
     ) {
         return this.authService.updateMessAdminBySuperAdmin(id, dto);
+    }
+
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.SUPERADMIN)
+    @Post('superadmin/mess')
+    @ApiBearerAuth()
+    @ApiOperation({
+        summary: 'Create mess owner + mess (direct)',
+        description:
+            'Superadmin one-call flow: creates the mess owner (MESSADMIN) account first, then creates the mess ' +
+            'linked to that owner — no OTP, password login, verified/active immediately. Equivalent to calling ' +
+            'POST /auth/mess-admins followed by POST /mess with messAdminIds set to the new owner, done atomically ' +
+            'in sequence in one request.',
+    })
+    @ApiResponse({ status: 201, description: 'Mess owner and mess created successfully.' })
+    createMessWithOwner(@Body() dto: CreateMessWithOwnerDto) {
+        return this.authService.createMessWithOwnerBySuperAdmin(dto);
     }
 
 

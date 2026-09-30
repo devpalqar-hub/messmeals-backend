@@ -223,6 +223,17 @@ model Plans {
   /// public "popular plans" listing (GET /open/popular-plans).
   totalCustomers Int @default(0)
 
+  /// The plan's own weekly schedule, set by the mess owner. EVERYDAY (default) means the
+  /// plan runs every day and places no restriction on a subscriber's chosen days. CUSTOM
+  /// means the plan only runs on `availableDays` — a subscriber's own scheduleType/
+  /// selectedDays then default to these when omitted, and must be a subset of these when
+  /// provided (see CustomersService.computePlanPricing).
+  scheduleType ScheduleType @default(EVERYDAY)
+
+  /// Weekdays the plan is available on — only meaningful when scheduleType = CUSTOM.
+  /// Stored as a JSON array of DayOfWeek strings, e.g. ["MONDAY", "WEDNESDAY", "FRIDAY"].
+  availableDays Json?
+
   images            PlanImages[]
   usersubscriptions UserSubscriptions[]
   deliveries        Deliveries[]

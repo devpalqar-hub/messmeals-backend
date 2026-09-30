@@ -20,7 +20,9 @@ import { SuperAdminLoginDto } from './dto/superadmin-login.dto';
 import { SuperAdminRegisterDto } from './dto/superadmin-register.dto';
 import { CreateMessAdminBySuperAdminDto, UpdateMessAdminBySuperAdminDto, MessAdminListQueryDto } from './dto/messadmin-admin.dto';
 import { MessOwnerSendOtpDto, MessOwnerSignupDto } from './dto/mess-owner-signup.dto';
+import { CreateMessWithOwnerDto } from './dto/create-mess-with-owner.dto';
 import { isPhoneOrEmailTaken } from 'src/common/utility/identity.util';
+import { MessService } from 'src/mess/mess.service';
 import * as bcrypt from 'bcrypt';
 
 
@@ -31,6 +33,7 @@ export class AuthService {
         private readonly jwtService: JwtService,
         private readonly otpservice: TwoFactorService,
         private readonly mailerService: MailerService,
+        private readonly messService: MessService,
     ) { }
     async sendOtpForRegistration(dto: RegisterDto) {
         const { email, name, phone, messId } = dto;
@@ -1175,6 +1178,83 @@ export class AuthService {
         return {
             message: 'Mess admin updated successfully',
             data: updated,
+        };
+    }
+
+    /**
+     * Superadmin direct-create flow: create the mess owner (MESSADMIN) account first,
+     * then create the mess itself linked to that owner — in one request. No OTP; the
+     * owner account is created verified/active immediately (password login).
+     *
+     * If mess creation fails after the owner was created, the owner still exists
+     * (unlinked) — resolvable via PATCH /auth/mess-admins/:id { messIds: [...] } once
+     * the mess is created separately, same as the two-step flow.
+     */
+    async createMessWithOwnerBySuperAdmin(dto: CreateMessWithOwnerDto) {
+        const { owner, mess, images } = dto;
+
+        if (await isPhoneOrEmailTaken(this.prisma, { phone: owner.phone, email: owner.email })) {
+            throw new BadRequestException('A user already exists with this owner phone or email');
+        }
+
+        if (mess.districtId) {
+            const district = await this.prisma.district.findUnique({ where: { id: mess.districtId } });
+            if (!district) throw new BadRequestException('District not found');
+        }
+
+        // 1) Create the mess owner (User + MessAdminProfile), no mess linked yet.
+        const hashedPassword = await bcrypt.hash(owner.password, 10);
+        const ownerUser = await this.prisma.user.create({
+            data: {
+                name: owner.name,
+                email: owner.email,
+                phone: owner.phone,
+                password: hashedPassword,
+                role: Role.MESSADMIN,
+                is_verified: true,
+                is_active: owner.is_active ?? true,
+                messAdminProfile: { create: {} },
+            },
+            include: { messAdminProfile: true },
+        });
+
+        const adminProfileId = ownerUser.messAdminProfile!.id;
+
+        // 2) Create the mess, linked to that owner (reuses MessService.create so mess
+        // creation stays identical to POST /mess — slug generation, food types, tags, images, etc.).
+        let createdMess;
+        try {
+            createdMess = await this.messService.create(
+                { ...mess, messAdminIds: [adminProfileId] } as any,
+                images || [],
+            );
+        } catch (err) {
+            throw new BadRequestException(
+                `Mess owner "${owner.name}" was created, but mess creation failed: ${err instanceof Error ? err.message : 'unknown error'
+                }. The owner (id: ${ownerUser.id}) has no mess linked yet — create the mess separately and link via PATCH /auth/mess-admins/${ownerUser.id}.`,
+            );
+        }
+
+        const accessToken = await this.jwtService.signAsync({
+            sub: ownerUser.id,
+            phone: ownerUser.phone,
+            email: ownerUser.email,
+            role: ownerUser.role,
+        });
+
+        return {
+            message: 'Mess owner and mess created successfully',
+            accessToken,
+            owner: {
+                id: ownerUser.id,
+                name: ownerUser.name,
+                phone: ownerUser.phone,
+                email: ownerUser.email,
+                role: ownerUser.role,
+                is_active: ownerUser.is_active,
+            },
+            mess: createdMess,
+            status: 201,
         };
     }
 
