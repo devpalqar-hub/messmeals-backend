@@ -1,5 +1,5 @@
 -- AlterTable
-ALTER TABLE `variation` ADD COLUMN `deliveryAssignmentId` VARCHAR(191) NULL;
+ALTER TABLE `Variation` ADD COLUMN `deliveryAssignmentId` VARCHAR(191) NULL;
 
 -- CreateTable
 CREATE TABLE `DeliveryAssignment` (
