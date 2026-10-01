@@ -1,2 +1,2 @@
 -- AlterTable
-ALTER TABLE `deliveries` ADD COLUMN `sequence` INTEGER NULL DEFAULT 0;
+ALTER TABLE `Deliveries` ADD COLUMN `sequence` INTEGER NULL DEFAULT 0;
