@@ -324,6 +324,7 @@ model Deliveries {
   updatedAt      DateTime        @updatedAt
 
   isActive Boolean @default(true)
+  sequence Int?    @default(0)
 
   customer           CustomerProfile         @relation(fields: [customerId], references: [id], onDelete: Cascade)
   plan               Plans                   @relation(fields: [planId], references: [id], onDelete: Cascade)
