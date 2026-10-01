@@ -1,0 +1,186 @@
+[33m6a21512[m[33m ([m[1;31morigin/develop[m[33m, [m[1;31morigin/HEAD[m[33m)[m Merge pull request #10 from devpalqar-hub/main
+[33m3609065[m Merge remote-tracking branch 'origin/main'
+[33mb5b5dd9[m subscription/create: address as plain string, take precedence over userAddressId
+[33m0958ea9[m Merge pull request #9 from devpalqar-hub/develop
+[33m84bf73f[m issue fixed
+[33m445de3d[m customer adding second plan completed
+[33m341c0cd[m customer list
+[33mdc890ae[m customer list
+[33m8b320a8[m customer list
+[33mf1d7626[m[33m ([m[1;32mdevelop[m[33m)[m Merge branch 'develop' of https://github.com/devpalqar-hub/messmeals-backend into develop
+[33ma01fe09[m  cross branch adjustment
+[33m8ebdc1a[m Merge pull request #8 from devpalqar-hub/develop
+[33m7f6cba7[m seo api
+[33m08d973c[m Merge pull request #7 from devpalqar-hub/develop
+[33m8dffdb7[m files
+[33m267d7ec[m api issue fixed
+[33m74532d7[m mess plan added
+[33m9ccb8ce[m changes added
+[33m3139750[m Merge pull request #6 from devpalqar-hub/main
+[33m46e0034[m location customer flow added
+[33m6076732[m Merge branch 'develop' into main
+[33m0b85eef[m Merge branch 'main' into develop
+[33me1d90ce[m api added
+[33m4752e1f[m added monthily shedule enum
+[33m9f62f9e[m added throttiling
+[33m971bd86[m added throttiling
+[33m745221c[m added migration
+[33m9493ca7[m plan list
+[33m23349fb[m Merge pull request #5 from devpalqar-hub/develop
+[33mf84cdfa[m login fix
+[33macbf899[m login fix
+[33m435c146[m Merge pull request #4 from devpalqar-hub/main
+[33m52ce840[m mess detailed
+[33md354e80[m dto issue fixed
+[33m1dc6ed7[m server log filter applied
+[33m486a422[m migration added
+[33m0455161[m new apis are added
+[33mec19c5e[m mess open flow added
+[33mb72ace0[m menu plan model updated
+[33m1462383[m mess plan added
+[33mfff9267[m Merge branch 'main' of https://github.com/devpalqar-hub/messmeals-backend
+[33m3d166aa[m mess plan updated
+[33m28c4967[m Merge pull request #3 from devpalqar-hub/develop
+[33m7f8b28c[m expense payment added
+[33ma20c4c9[m expense paemtn added
+[33m5929b6d[m issue fixed
+[33m883eca3[m new endpoint added
+[33m2ab8bf3[m issue fixed
+[33m75831ea[m user mode added
+[33m3cec4ad[m Merge pull request #2 from devpalqar-hub/develop
+[33m6ac86d3[m add pending migrations
+[33m2fe939b[m otp issue fixed
+[33m3b59c0c[m otp issue fixed
+[33m83a633e[m Merge pull request #1 from devpalqar-hub/develop
+[33m4fa0379[m mess admin to add mess api created
+[33m96e5f77[m mess plan overdue
+[33m1164e18[m issue fixed
+[33m1645690[m billing tire issue fixed
+[33m64ac55b[m billing tire issue fixed
+[33m658cce1[m issue fixed
+[33m733c5d6[m mess plan created mocking
+[33m0ba0a67[m history added
+[33m07bc570[m login fix
+[33m3310714[m final changes are done
+[33me90a509[m zipcode adding
+[33m2181d15[m changed for the flow
+[33m457e03c[m create customer flow implemented
+[33m4df519e[m migration created
+[33mf7fd4d2[m build error fix
+[33mc248585[m build error fix
+[33mfe41302[m issue fixed
+[33md0b5214[m create delivery parter fixed
+[33m6872bbc[m mess plan adding isue
+[33m920529f[m plan create issue
+[33m96324c8[m create customer issue fixed
+[33me5cddf3[m issues fixed
+[33mcbb36ad[m fix: upgrade @nestjs-modules/mailer to 2.3.6 and fix PugAdapter import path
+[33m324576b[m issue fixed
+[33m4529ebf[m payment migration adedd
+[33m92c03eb[m issue fixed
+[33m4f22afa[m template issue fixed
+[33mcc7eb76[m migration genreated
+[33m6727a6d[m billing module added
+[33m2b39303[m new mess creation flow  implemented
+[33me3b3c18[m data added on delivery findone
+[33md53a73c[m cover image to application/json2
+[33mecc2537[m cover image to application/json
+[33me96490b[m swagger edited
+[33m3d20e2a[m pagination added
+[33m23cc136[m plan and mess edited
+[33mf403538[m swgger doc added
+[33m4ad82dd[m swagger docs added
+[33m50bc112[m variations role changed 3
+[33m87ce99a[m variations role changed 2
+[33m402d2da[m variations role changed
+[33m33a4e27[m messadmin apis added according to the checklist
+[33m8d6ad48[m getmess-api-edited
+[33me80ab81[m ownermessed edited
+[33m2e469ae[m filters added on get mess
+[33mb75ac4a[m create mess api edited
+[33mf9da421[m cover image added
+[33m8d83c83[m update edited 3
+[33m1914300[m update edited2
+[33m839572d[m update edited'
+[33mf0d1754[m patch and delete added
+[33m9dc17cc[m bug 1222 puse already paused solve
+[33m7688bc5[m patch mess corrected
+[33m2baaf42[m plan update api corrected
+[33mecaac15[m get api edteid 4
+[33mc243042[m update api corrected
+[33md900ce3[m create mess edited 2
+[33m08fa193[m create mess edited
+[33mb4759d4[m createuser function edite 4
+[33medf3835[m createuser function edite 3
+[33m8cdc6f7[m createuser function edite 2
+[33m3c17a08[m createuser function edited
+[33m85be45d[m mess findall completed
+[33m7caf780[m mess fetch edited
+[33m1fa330e[m date filter added on stats
+[33mc313c38[m delieries listing filter added
+[33mb414e58[m price calculation edited
+[33m63ed50e[m stats edited
+[33me89d3e7[m amount not showing bug cleared 3
+[33mcbe35ae[m field added on mess
+[33m79876e7[m seeder added
+[33m321ee22[m authguard added 2
+[33m16a8058[m authguard added
+[33m44cfe8e[m updation feb 4-2
+[33me0432ae[m updation feb 4
+[33m2ae7349[m image dded
+[33mb4186a9[m response changed
+[33m9a9af69[m registration changed
+[33mbc8bcf2[m delivery priority setup completed
+[33ma207725[m super admin login and reg added
+[33mc8405cf[m Merge pull request #7 from Magnolia-Touch/main
+[33m4976a3e[m Merge pull request #6 from Magnolia-Touch/develop
+[33mee65d33[m seeder added
+[33m8d68920[m dashboard stats edited
+[33mcbbb72f[m response added
+[33m74a1ae2[m testing completed
+[33m51c5b4f[m dependency issue resolved
+[33m87d1d94[m phase 4 completed
+[33m2a67a74[m Merge pull request #5 from Magnolia-Touch/develop
+[33m10ba6bc[m default otp added 2
+[33md674c88[m Merge pull request #4 from Magnolia-Touch/develop
+[33m7cedfe6[m default otp added
+[33m8046e4e[m phone added
+[33m64bca0b[m otp made 6
+[33m8e35dbe[m seeder with new num added
+[33mf7964a0[m Merge pull request #3 from Magnolia-Touch/staging-update-2
+[33m09cfc7e[m new seeder added
+[33mfb3cf13[m delete user bug 2
+[33m369e54e[m delete user bug cleared
+[33ma4ae37b[m phone added
+[33me5f11dc[m testing complted
+[33m05e643e[m added seeder
+[33m73cd44c[m staging-update-2
+[33mcb837e6[m staging code added
+[33m2dd4ae9[m phase 3 delivery and user api added
+[33m4fd1396[m two factor setup completed
+[33m879a038[m customer response edited
+[33m3f2df08[m phase2: wallet reset
+[33mc559277[m refund option added
+[33m8d6641f[m phase-2 completed
+[33mba2c743[m serveroot added
+[33m0a798b7[m mess specific
+[33m117c71c[m messes listing api added
+[33md598a3b[m enable cors
+[33me8527ad[m log added
+[33m6e2dd69[m config added
+[33medc6b59[m mess corrections updated
+[33m48f5abc[m fix: imge fix
+[33m7b8dbc8[m feat:multi mess support added
+[33m2aab0bd[m feat:multi mess support added
+[33mdbe24cd[m feat:multi mess support added
+[33mb162ead[m image limit added
+[33m1dc21ba[m variation count api added
+[33me22790f[m respones altered customer
+[33m26d1337[m get susbscription changed
+[33m4dced91[m cancel subscription added
+[33ma141a99[m customerid added
+[33mcd5b75d[m contact form added
+[33mb7afe1b[m ticket 166
+[33m86ba5ed[m all updated
+[33m5edd3ab[m latest changes updated
+[33m3de22fb[m first commit

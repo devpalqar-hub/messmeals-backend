@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, InternalServerErrorException, NotFound
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { UpdateDeliveryDto } from './dto/update-delivery.dto';
+import { UpdateDeliverySequenceDto } from './dto/update-delivery-sequence.dto';
 import { UpdateDeliveryOwnerStatusDto, UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
 import { UpdateVariationStatusDto } from './dto/update-variation-status.dto';
 import { AssignDeliveryPartnerDto, AssignDeliveryPartnerPhs2Dto, AssignDeliveryPartnerToDeliveriesDto } from './dto/assign-partner.dto';
@@ -143,7 +144,7 @@ export class DeliveriesService {
         },
     ) {
         const page = Number(query.page) || 1;
-        const limit = Number(query.limit) || 10;
+        const limit = Number(query.limit) || 100;
         const skip = (page - 1) * limit;
 
         const { status, date } = query;
@@ -190,6 +191,7 @@ export class DeliveriesService {
                     },
                 },
                 orderBy: [
+                    { sequence: 'asc' },
                     { UserSubscriptions: { deliveryPriority: 'asc' } },
                     { date: 'desc' },
                 ],
@@ -1149,4 +1151,14 @@ export class DeliveriesService {
         };
     }
 
+    async updateDeliverySequences(dto: UpdateDeliverySequenceDto, user: any) {
+        for (const { delivery_id, new_sequence } of dto.deliveries) {
+            await this.prisma.deliveries.update({
+                where: { id: delivery_id },
+                data: { sequence: new_sequence },
+            });
+        }
+        
+        return { message: 'Sequence updated successfully' };
+    }
 }

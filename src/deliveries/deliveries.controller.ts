@@ -13,6 +13,7 @@ import {
 import { DeliveriesService } from './deliveries.service';
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { UpdateDeliveryDto } from './dto/update-delivery.dto';
+import { UpdateDeliverySequenceDto } from './dto/update-delivery-sequence.dto';
 import { UpdateDeliveryStatusDto, UpdateDeliveryOwnerStatusDto } from './dto/update-delivery-status.dto';
 import { UpdateVariationStatusDto } from './dto/update-variation-status.dto';
 import { AssignDeliveryPartnerDto, AssignDeliveryPartnerPhs2Dto, AssignDeliveryPartnerToDeliveriesDto } from './dto/assign-partner.dto';
@@ -127,6 +128,14 @@ export class DeliveriesController {
     @Patch(':id/status')
     updateStatus(@Param('id') id: string, @Body() updatestatusdto: UpdateDeliveryStatusDto) {
         return this.deliveriesService.updateStatus(id, updatestatusdto);
+    }
+
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.MESSADMIN, Role.SUPERADMIN)
+    @ApiOperation({ summary: 'Bulk update delivery sequence numbers', description: 'Allows admins to sort deliveries in a specific order.' })
+    @Patch('sequence/update')
+    updateSequence(@Body() dto: UpdateDeliverySequenceDto, @Req() req: any) {
+        return this.deliveriesService.updateDeliverySequences(dto, req.user);
     }
 
     @UseGuards(JwtAuthGuard, RolesGuard)
