@@ -132,10 +132,14 @@ export class DeliveriesController {
 
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles(Role.MESSADMIN, Role.SUPERADMIN)
-    @ApiOperation({ summary: 'Bulk update delivery sequence numbers', description: 'Allows admins to sort deliveries in a specific order.' })
-    @Patch('sequence/update')
-    updateSequence(@Body() dto: UpdateDeliverySequenceDto, @Req() req: any) {
-        return this.deliveriesService.updateDeliverySequences(dto, req.user);
+    @ApiOperation({ summary: 'Bulk update delivery sequence numbers for a partner', description: 'Allows admins to sort deliveries in a specific order for a given delivery partner.' })
+    @Patch('delivery-sequence/:partnerId')
+    updatePartnerSequence(
+        @Param('partnerId') partnerId: string,
+        @Body() dto: UpdateDeliverySequenceDto, 
+        @Req() req: any
+    ) {
+        return this.deliveriesService.updatePartnerDeliverySequences(partnerId, dto, req.user);
     }
 
     @UseGuards(JwtAuthGuard, RolesGuard)

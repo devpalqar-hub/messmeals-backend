@@ -191,6 +191,7 @@ export class DeliveriesService {
                     },
                 },
                 orderBy: [
+                    { partnerId: 'asc' },
                     { sequence: 'asc' },
                     { UserSubscriptions: { deliveryPriority: 'asc' } },
                     { date: 'desc' },
@@ -1151,11 +1152,27 @@ export class DeliveriesService {
         };
     }
 
-    async updateDeliverySequences(dto: UpdateDeliverySequenceDto, user: any) {
+    async updatePartnerDeliverySequences(partnerId: string, dto: UpdateDeliverySequenceDto, user: any) {
         for (const { delivery_id, new_sequence } of dto.deliveries) {
+            await this.prisma.deliveryAssignment.upsert({
+                where: { deliveryId: delivery_id },
+                update: {
+                    deliveryPartnerId: partnerId,
+                    sequence: new_sequence,
+                },
+                create: {
+                    deliveryPartnerId: partnerId,
+                    deliveryId: delivery_id,
+                    sequence: new_sequence,
+                },
+            });
+
             await this.prisma.deliveries.update({
                 where: { id: delivery_id },
-                data: { sequence: new_sequence },
+                data: {
+                    partnerId: partnerId,
+                    sequence: new_sequence,
+                },
             });
         }
         
