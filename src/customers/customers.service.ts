@@ -1106,28 +1106,83 @@ export class CustomerService {
         };
     }
 
-    async deleteCustomer(userId: string) {
-        // 1️⃣ Check if customer exists
-        const user = await this.prisma.customer.findUnique({
-            where: { id: userId },
+    async deleteCustomer(customerId: string) {
+        // The id received by this endpoint is Customer.id, NOT CustomerProfile.id.
+        // Deliveries.customerId points to CustomerProfile.id, so we first resolve
+        // the customer's profile before touching deliveries.
+        const customer = await this.prisma.customer.findUnique({
+            where: { id: customerId },
             include: {
-                customerProfile: {
-                    include: {
-                        userSubscriptions: true,
-                        deliveries: true,
-                    },
-                },
+                customerProfile: true,
             },
         });
 
-        if (!user) throw new NotFoundException('User not found');
-        await this.prisma.customer.delete({ where: { id: userId } });
+        if (!customer) {
+            throw new NotFoundException('Customer not found');
+        }
+
+        const customerProfileId = customer.customerProfile?.id;
+
+        if (!customerProfileId) {
+            // There is no profile/delivery data to clean up. The Customer row can
+            // safely be deleted directly.
+            await this.prisma.customer.delete({
+                where: { id: customerId },
+            });
+
+            return {
+                message: 'Customer deleted successfully',
+                deletedCustomerId: customerId,
+                pendingDeliveriesDeleted: 0,
+            };
+        }
+
+        await this.prisma.$transaction(async (tx) => {
+            // Deliveries.customerId references CustomerProfile.id.
+            // Only remove pending deliveries as requested. Historical delivered,
+            // completed, cancelled, or undelivered deliveries are kept for records.
+            // Because those historical deliveries still reference the profile,
+            // the Customer/Profile itself must be deactivated instead of physically
+            // deleting it.
+            await tx.deliveries.updateMany({
+                where: {
+                    customerId: customerProfileId,
+                    status: DeliveryStatus.PENDING,
+                    isActive: true,
+                },
+                data: {
+                    status: DeliveryStatus.CANCELLED,
+                    isActive: false,
+                },
+            });
+
+            // Deactivate the customer rather than deleting the Customer row.
+            // This preserves historical deliveries, subscriptions, wallet history,
+            // and other customer-related records while preventing the customer from
+            // appearing as an active customer.
+            await tx.customer.update({
+                where: { id: customerId },
+                data: {
+                    is_active: false,
+                },
+            });
+        });
+
+        const pendingDeliveries = await this.prisma.deliveries.count({
+            where: {
+                customerId: customerProfileId,
+                status: DeliveryStatus.CANCELLED,
+                isActive: false,
+            },
+        });
+
         return {
-            message: 'Customer and related data deleted successfully',
-            deletedUserId: userId,
+            message: 'Customer deactivated and pending deliveries cancelled successfully',
+            deletedCustomerId: customerId,
+            customerProfileId,
+            pendingDeliveriesDeleted: pendingDeliveries,
         };
     }
-
 
     async RenewSubscription(dto: RenewSubscriptionDto) {
         const {
