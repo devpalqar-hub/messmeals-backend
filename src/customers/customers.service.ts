@@ -1107,9 +1107,9 @@ export class CustomerService {
     }
 
     async deleteCustomer(customerId: string) {
-        // The id received by this endpoint is Customer.id, NOT CustomerProfile.id.
-        // Deliveries.customerId points to CustomerProfile.id, so we first resolve
-        // the customer's profile before touching deliveries.
+        // The API receives Customer.id.
+        // CustomerProfile.userId -> Customer.id
+        // Deliveries.customerId -> CustomerProfile.id
         const customer = await this.prisma.customer.findUnique({
             where: { id: customerId },
             include: {
@@ -1123,64 +1123,91 @@ export class CustomerService {
 
         const customerProfileId = customer.customerProfile?.id;
 
-        if (!customerProfileId) {
-            // There is no profile/delivery data to clean up. The Customer row can
-            // safely be deleted directly.
-            await this.prisma.customer.delete({
-                where: { id: customerId },
-            });
-
-            return {
-                message: 'Customer deleted successfully',
-                deletedCustomerId: customerId,
-                pendingDeliveriesDeleted: 0,
-            };
-        }
-
         await this.prisma.$transaction(async (tx) => {
-            // Deliveries.customerId references CustomerProfile.id.
-            // Only remove pending deliveries as requested. Historical delivered,
-            // completed, cancelled, or undelivered deliveries are kept for records.
-            // Because those historical deliveries still reference the profile,
-            // the Customer/Profile itself must be deactivated instead of physically
-            // deleting it.
-            await tx.deliveries.updateMany({
+            // If a profile exists, remove all records that depend on it first.
+            // We intentionally delete ALL deliveries here because the requirement
+            // is a permanent customer deletion. Keeping historical deliveries
+            // would prevent deleting CustomerProfile due to its foreign key.
+            if (customerProfileId) {
+                // DeliveryVariation has onDelete: Cascade from Deliveries,
+                // so deleting deliveries also removes their variations.
+                const deletedDeliveries = await tx.deliveries.deleteMany({
+                    where: {
+                        customerId: customerProfileId,
+                    },
+                });
+
+                // Payments cascade from UserSubscriptions, so deleting subscriptions
+                // will also remove their payment records.
+                await tx.userSubscriptions.deleteMany({
+                    where: {
+                        customerProfileId,
+                    },
+                });
+
+                // Remove addresses linked to this customer profile.
+                await tx.userAddress.deleteMany({
+                    where: {
+                        profileId: customerProfileId,
+                    },
+                });
+
+                // Remove testimonials linked to this customer profile.
+                await tx.testimonials.deleteMany({
+                    where: {
+                        customerId: customerProfileId,
+                    },
+                });
+
+                // Wallet has Transaction -> Wallet dependency, so transactions
+                // must be deleted before the wallet itself.
+                const wallet = await tx.wallet.findUnique({
+                    where: {
+                        userId: customerProfileId,
+                    },
+                    select: {
+                        id: true,
+                    },
+                });
+
+                if (wallet) {
+                    await tx.transaction.deleteMany({
+                        where: {
+                            walletId: wallet.id,
+                        },
+                    });
+
+                    await tx.wallet.delete({
+                        where: {
+                            id: wallet.id,
+                        },
+                    });
+                }
+
+                // CustomerProfile.userId references Customer.id.
+                await tx.customerProfile.delete({
+                    where: {
+                        id: customerProfileId,
+                    },
+                });
+
+                // Keep the variable used so the delete operation is explicit in
+                // the transaction and easy to extend later if needed.
+                void deletedDeliveries;
+            }
+
+            // Finally delete the actual Customer row.
+            await tx.customer.delete({
                 where: {
-                    customerId: customerProfileId,
-                    status: DeliveryStatus.PENDING,
-                    isActive: true,
-                },
-                data: {
-                    status: DeliveryStatus.CANCELLED,
-                    isActive: false,
+                    id: customerId,
                 },
             });
-
-            // Deactivate the customer rather than deleting the Customer row.
-            // This preserves historical deliveries, subscriptions, wallet history,
-            // and other customer-related records while preventing the customer from
-            // appearing as an active customer.
-            await tx.customer.update({
-                where: { id: customerId },
-                data: {
-                    is_active: false,
-                },
-            });
-        });
-
-        const pendingDeliveries = await this.prisma.deliveries.count({
-            where: {
-                customerId: customerProfileId,
-                status: DeliveryStatus.CANCELLED,
-                isActive: false,
-            },
         });
 
         return {
-            message: 'Customer deactivated and pending deliveries cancelled successfully',
+            message: 'Customer and all related data deleted successfully',
             deletedCustomerId: customerId,
-            customerProfileId,
-            pendingDeliveriesDeleted: pendingDeliveries,
+            customerProfileId: customerProfileId ?? null,
         };
     }
 
