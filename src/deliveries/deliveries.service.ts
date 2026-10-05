@@ -42,6 +42,7 @@ export class DeliveriesService {
             status?: DeliveryStatus;
             date?: string;
             messId?: string;
+            messIds?: string[];
             partnerId?: string;
             variationId?: string;
             search?: string;
@@ -52,6 +53,7 @@ export class DeliveriesService {
             customerProfileId?: string;
             deliveryPartnerProfileId?: string;
             messId?: string;
+            messIds?: string[];
         },
     ) {
         const { status, date } = query;
@@ -71,8 +73,14 @@ export class DeliveriesService {
         }
 
         if (user.role === Role.MESSADMIN) {
-            // Mess admin → only their mess
-            where.messId = user.messId;
+            // Mess admin → only their mess(es)
+            if (user.messIds && user.messIds.length > 0) {
+                where.messId = { in: user.messIds };
+            } else if (user.messId) {
+                where.messId = user.messId;
+            } else {
+                where.messId = 'unauthorized';
+            }
         }
 
         // SUPERADMIN → no restriction
@@ -131,6 +139,7 @@ export class DeliveriesService {
             status?: DeliveryStatus;
             date?: string;
             messId?: string;
+            messIds?: string[];
             partnerId?: string;
             variationId?: string;
             search?: string;
@@ -141,6 +150,7 @@ export class DeliveriesService {
             customerProfileId?: string;
             deliveryPartnerProfileId?: string;
             messId?: string;
+            messIds?: string[];
         },
     ) {
         const page = Number(query.page) || 1;
@@ -233,6 +243,7 @@ export class DeliveriesService {
             status?: DeliveryStatus;
             date?: string;
             messId?: string;
+            messIds?: string[];
             partnerId?: string;
             variationId?: string;
             search?: string;
@@ -243,6 +254,7 @@ export class DeliveriesService {
             customerProfileId?: string;
             deliveryPartnerProfileId?: string;
             messId?: string;
+            messIds?: string[];
         },
     ) {
         const where = this.buildDeliveriesWhere(query, user);
