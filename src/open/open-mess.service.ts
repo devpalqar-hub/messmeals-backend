@@ -141,6 +141,9 @@ export class OpenMessService {
                 _count: {
                     select: {
                         UserSubscriptions: { where: { is_active: true } },
+                        menus: true,
+                        plans: true,
+                        images: true,
                     },
                 },
             },
@@ -161,21 +164,54 @@ export class OpenMessService {
         });
 
         if (featured && hasCoords) {
-            // Featured + location: restrict to a 20km radius, then shuffle rather than sort by
+            // Featured + location: restrict to a 15km radius, then shuffle rather than sort by
             // distance — so the same set of nearby featured messes doesn't always come back in
             // the same order.
             withDistance = withDistance.filter(
-                (m) => m.distance !== null && m.distance <= FEATURED_RADIUS_KM,
+                (m) => m.distance !== null && m.distance <= 15,
             );
             withDistance = this.shuffle(withDistance);
         } else if (hasCoords) {
-            withDistance.sort(
-                (a, b) => (a.distance ?? Number.MAX_SAFE_INTEGER) - (b.distance ?? Number.MAX_SAFE_INTEGER),
+            withDistance = withDistance.filter(
+                (m) => m.distance !== null && m.distance <= 15,
             );
+            withDistance.sort((a, b) => {
+                const countA = (a.mess as any)._count;
+                const countB = (b.mess as any)._count;
+
+                const menusA = countA?.menus ?? 0;
+                const menusB = countB?.menus ?? 0;
+                if (menusA !== menusB) return menusB - menusA;
+
+                const plansA = countA?.plans ?? 0;
+                const plansB = countB?.plans ?? 0;
+                if (plansA !== plansB) return plansB - plansA;
+
+                const imagesA = countA?.images ?? 0;
+                const imagesB = countB?.images ?? 0;
+                if (imagesA !== imagesB) return imagesB - imagesA;
+
+                return (a.distance ?? Number.MAX_SAFE_INTEGER) - (b.distance ?? Number.MAX_SAFE_INTEGER);
+            });
         } else {
-            withDistance.sort(
-                (a, b) => b.mess.createdAt.getTime() - a.mess.createdAt.getTime(),
-            );
+            withDistance.sort((a, b) => {
+                const countA = (a.mess as any)._count;
+                const countB = (b.mess as any)._count;
+
+                const menusA = countA?.menus ?? 0;
+                const menusB = countB?.menus ?? 0;
+                if (menusA !== menusB) return menusB - menusA;
+
+                const plansA = countA?.plans ?? 0;
+                const plansB = countB?.plans ?? 0;
+                if (plansA !== plansB) return plansB - plansA;
+
+                const imagesA = countA?.images ?? 0;
+                const imagesB = countB?.images ?? 0;
+                if (imagesA !== imagesB) return imagesB - imagesA;
+
+                return b.mess.createdAt.getTime() - a.mess.createdAt.getTime();
+            });
         }
 
         const total = withDistance.length;

@@ -11,8 +11,8 @@ async function main() {
         data: {
             name: 'Suresh Mess Admin',
             phone: '9895728129',
-            email: 'admin@messmea',
-            password: "",
+            email: 'admin@messmeals.com',
+            password: "DevPalqar@2026",
             role: Role.SUPERADMIN,
             is_verified: true,
         },
