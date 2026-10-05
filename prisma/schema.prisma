@@ -141,11 +141,12 @@ model CustomerProfile {
   updatedAt         DateTime @updatedAt
   user              Customer @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  deliveries        Deliveries[]
-  userSubscriptions UserSubscriptions[]
-  addresses         UserAddress[]
-  Wallet            Wallet?
-  Testimonials      Testimonials[]
+  deliveries          Deliveries[]
+  userSubscriptions   UserSubscriptions[]
+  addresses           UserAddress[]
+  Wallet              Wallet?
+  Testimonials        Testimonials[]
+  deliveryAssignments DeliveryAssignment[]
 }
 
 model UserSubscriptions {
@@ -197,11 +198,12 @@ model DeliveryPartnerProfile {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  mess              Mess                @relation(fields: [messId], references: [id], onDelete: Cascade)
-  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  deliveries        Deliveries[]
-  userSubscriptions UserSubscriptions[]
-  Testimonials      Testimonials[]
+  mess                Mess                 @relation(fields: [messId], references: [id], onDelete: Cascade)
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries          Deliveries[]
+  userSubscriptions   UserSubscriptions[]
+  Testimonials        Testimonials[]
+  deliveryAssignments DeliveryAssignment[]
 }
 
 model Plans {
@@ -264,8 +266,10 @@ model Variation {
   updatedAt   DateTime @updatedAt
   plans       Plans[]
 
-  isActive           Boolean             @default(true)
-  deliveryVariations DeliveryVariation[]
+  isActive             Boolean             @default(true)
+  deliveryVariations   DeliveryVariation[]
+  deliveryAssignment   DeliveryAssignment? @relation(fields: [deliveryAssignmentId], references: [id])
+  deliveryAssignmentId String?
 }
 
 /// A weekly menu for a mess: a name plus a per-weekday schedule. `schedule` is keyed by
@@ -332,6 +336,7 @@ model Deliveries {
   mess               Mess                    @relation(fields: [messId], references: [id], onDelete: Cascade)
   UserSubscriptions  UserSubscriptions?      @relation(fields: [subscriptionId], references: [id])
   deliveryVariations DeliveryVariation[]
+  deliveryAssignment DeliveryAssignment?
 }
 
 model Mess {
@@ -682,4 +687,20 @@ model MessTag {
   mess Mess @relation(fields: [messId], references: [id])
 
   @@unique([messId, tag])
+}
+
+model DeliveryAssignment {
+  id                String   @id @default(uuid())
+  deliveryPartnerId String
+  deliveryId        String   @unique
+  sequence          Int      @default(0)
+  assignedAt        DateTime @default(now())
+
+  deliveryPartner   DeliveryPartnerProfile @relation(fields: [deliveryPartnerId], references: [id], onDelete: Cascade)
+  delivery          Deliveries             @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  customerProfile   CustomerProfile?       @relation(fields: [customerProfileId], references: [id])
+  customerProfileId String?
+  variations        Variation[]
+
+  @@index([deliveryPartnerId])
 }

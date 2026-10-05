@@ -42,6 +42,7 @@ export class DeliveriesService {
             status?: DeliveryStatus;
             date?: string;
             messId?: string;
+            messIds?: string[];
             partnerId?: string;
             variationId?: string;
             search?: string;
@@ -52,6 +53,7 @@ export class DeliveriesService {
             customerProfileId?: string;
             deliveryPartnerProfileId?: string;
             messId?: string;
+            messIds?: string[];
         },
     ) {
         const { status, date } = query;
@@ -71,8 +73,14 @@ export class DeliveriesService {
         }
 
         if (user.role === Role.MESSADMIN) {
-            // Mess admin → only their mess
-            where.messId = user.messId;
+            // Mess admin → only their mess(es)
+            if (user.messIds && user.messIds.length > 0) {
+                where.messId = { in: user.messIds };
+            } else if (user.messId) {
+                where.messId = user.messId;
+            } else {
+                where.messId = 'unauthorized';
+            }
         }
 
         // SUPERADMIN → no restriction
@@ -131,6 +139,7 @@ export class DeliveriesService {
             status?: DeliveryStatus;
             date?: string;
             messId?: string;
+            messIds?: string[];
             partnerId?: string;
             variationId?: string;
             search?: string;
@@ -141,6 +150,7 @@ export class DeliveriesService {
             customerProfileId?: string;
             deliveryPartnerProfileId?: string;
             messId?: string;
+            messIds?: string[];
         },
     ) {
         const page = Number(query.page) || 1;
@@ -191,6 +201,7 @@ export class DeliveriesService {
                     },
                 },
                 orderBy: [
+                    { partnerId: 'asc' },
                     { sequence: 'asc' },
                     { UserSubscriptions: { deliveryPriority: 'asc' } },
                     { date: 'desc' },
@@ -232,6 +243,7 @@ export class DeliveriesService {
             status?: DeliveryStatus;
             date?: string;
             messId?: string;
+            messIds?: string[];
             partnerId?: string;
             variationId?: string;
             search?: string;
@@ -242,6 +254,7 @@ export class DeliveriesService {
             customerProfileId?: string;
             deliveryPartnerProfileId?: string;
             messId?: string;
+            messIds?: string[];
         },
     ) {
         const where = this.buildDeliveriesWhere(query, user);
@@ -1151,11 +1164,27 @@ export class DeliveriesService {
         };
     }
 
-    async updateDeliverySequences(dto: UpdateDeliverySequenceDto, user: any) {
+    async updatePartnerDeliverySequences(partnerId: string, dto: UpdateDeliverySequenceDto, user: any) {
         for (const { delivery_id, new_sequence } of dto.deliveries) {
+            await this.prisma.deliveryAssignment.upsert({
+                where: { deliveryId: delivery_id },
+                update: {
+                    deliveryPartnerId: partnerId,
+                    sequence: new_sequence,
+                },
+                create: {
+                    deliveryPartnerId: partnerId,
+                    deliveryId: delivery_id,
+                    sequence: new_sequence,
+                },
+            });
+
             await this.prisma.deliveries.update({
                 where: { id: delivery_id },
-                data: { sequence: new_sequence },
+                data: {
+                    partnerId: partnerId,
+                    sequence: new_sequence,
+                },
             });
         }
         
