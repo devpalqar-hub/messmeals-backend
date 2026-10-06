@@ -347,5 +347,18 @@ export class UserSubscriptionsService {
         };
     }
 
+    async bulkUpdateDeliveryPriority(dto: { subscriptions: { subscriptionId: string, deliveryPriority: number }[] }) {
+        const updatePromises = dto.subscriptions.map((sub) =>
+            this.prisma.userSubscriptions.update({
+                where: { id: sub.subscriptionId },
+                data: { deliveryPriority: sub.deliveryPriority },
+            })
+        );
+        
+        await this.prisma.$transaction(updatePromises);
+        
+        return { message: 'Delivery priorities updated successfully' };
+    }
+
 
 }
