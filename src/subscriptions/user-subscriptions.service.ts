@@ -14,6 +14,7 @@ export class UserSubscriptionsService {
     async updateDeliveryPriority(
         subscriptionId: string,
         dto: UpdateDeliveryPriorityDto,
+        user: any,
     ) {
         const newPriority = dto.deliveryPriority;
         const PRIORITY_OFFSET = 1000000;
@@ -28,6 +29,16 @@ export class UserSubscriptionsService {
             }
 
             const { messId, deliveryPriority: oldPriority } = subscription;
+
+            if (user.role === Role.MESSADMIN) {
+                const messAdmin = await tx.messAdminProfile.findUnique({
+                    where: { userId: user.id },
+                    select: { messes: { select: { id: true } } },
+                });
+                if (!messAdmin || !messAdmin.messes.some(m => m.id === messId)) {
+                    throw new ForbiddenException('You do not have access to update this subscription');
+                }
+            }
 
             // CASE 1: priority was NULL → assigning first time
             if (oldPriority == null) {
@@ -347,7 +358,35 @@ export class UserSubscriptionsService {
         };
     }
 
-    async bulkUpdateDeliveryPriority(dto: { subscriptions: { subscriptionId: string, deliveryPriority: number }[] }) {
+    async bulkUpdateDeliveryPriority(dto: { subscriptions: { subscriptionId: string, deliveryPriority: number }[] }, user: any) {
+        if (dto.subscriptions.length === 0) return { message: 'No subscriptions provided' };
+
+        // Fetch subscriptions to check mess ownership
+        const subIds = dto.subscriptions.map(s => s.subscriptionId);
+        const subscriptions = await this.prisma.userSubscriptions.findMany({
+            where: { id: { in: subIds } },
+            select: { id: true, messId: true }
+        });
+
+        if (subscriptions.length !== subIds.length) {
+            throw new NotFoundException('One or more subscriptions not found');
+        }
+
+        if (user.role === Role.MESSADMIN) {
+            const messAdmin = await this.prisma.messAdminProfile.findUnique({
+                where: { userId: user.id },
+                select: { messes: { select: { id: true } } },
+            });
+            if (!messAdmin) {
+                throw new ForbiddenException('Not a mess admin');
+            }
+            const allowedMessIds = messAdmin.messes.map(m => m.id);
+            const hasAccess = subscriptions.every(sub => allowedMessIds.includes(sub.messId));
+            if (!hasAccess) {
+                throw new ForbiddenException('You do not have access to update one or more of these subscriptions');
+            }
+        }
+
         const updatePromises = dto.subscriptions.map((sub) =>
             this.prisma.userSubscriptions.update({
                 where: { id: sub.subscriptionId },

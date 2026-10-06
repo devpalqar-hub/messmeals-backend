@@ -17,22 +17,30 @@ export class UserSubscriptionsController {
     ) { }
 
 
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.SUPERADMIN, Role.MESSADMIN)
+    @ApiBearerAuth()
     @Patch(':id/delivery-priority')
     @ApiOperation({ summary: 'Update delivery priority', description: 'Updates delivery priority for a subscription.' })
     @ApiParam({ name: 'id', description: 'Subscription UUID' })
     updateDeliveryPriority(
         @Param('id') id: string,
         @Body() dto: UpdateDeliveryPriorityDto,
+        @Req() req: any,
     ) {
-        return this.userSubscriptionsService.updateDeliveryPriority(id, dto);
+        return this.userSubscriptionsService.updateDeliveryPriority(id, dto, req.user);
     }
 
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.SUPERADMIN, Role.MESSADMIN)
+    @ApiBearerAuth()
     @Patch('bulk/delivery-priority')
     @ApiOperation({ summary: 'Bulk update delivery priority', description: 'Updates delivery priority for multiple subscriptions.' })
     bulkUpdateDeliveryPriority(
         @Body() dto: UpdateBulkDeliveryPriorityDto,
+        @Req() req: any,
     ) {
-        return this.userSubscriptionsService.bulkUpdateDeliveryPriority(dto);
+        return this.userSubscriptionsService.bulkUpdateDeliveryPriority(dto, req.user);
     }
 
 
@@ -64,6 +72,9 @@ export class UserSubscriptionsController {
     /**
      * GET /user-subscriptions/:id
      */
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.SUPERADMIN, Role.MESSADMIN, Role.USER)
+    @ApiBearerAuth()
     @ApiOperation({ summary: 'Get subscription by id', description: 'Fetches a subscription by UUID.' })
     @ApiParam({ name: 'id', description: 'Subscription UUID' })
     @Get(':id')
@@ -88,6 +99,9 @@ export class UserSubscriptionsController {
     /**
      * Admin delete subscription (soft delete)
      */
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(Role.SUPERADMIN)
+    @ApiBearerAuth()
     @ApiOperation({ summary: 'Delete subscription', description: 'Deletes a subscription by UUID.' })
     @ApiParam({ name: 'id', description: 'Subscription UUID' })
     @Delete(':id')
