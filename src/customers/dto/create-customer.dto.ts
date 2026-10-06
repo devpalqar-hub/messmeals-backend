@@ -223,9 +223,10 @@ export class CreateSubscriptionForCustomerDto {
     @IsString()
     planId: string;
 
-    @ApiProperty({ example: 'b3f4fb3e-0e61-43c3-8b3b-b833f18b2f55' })
+    @ApiPropertyOptional({ example: 'b3f4fb3e-0e61-43c3-8b3b-b833f18b2f55' })
     @IsString()
-    deliveryPartnerId: string;
+    @IsOptional()
+    deliveryPartnerId?: string;
 
     @ApiProperty({ example: '2026-06-01' })
     @IsString()
