@@ -150,38 +150,21 @@ export class CustomerService {
         });
         const wasExistingUser = !!user;
 
-        // Not an existing customer — but the phone/email might already belong to a
-        // staff account (mess admin / superadmin / delivery agent), which all still
-        // live in the `User` table. Any hit there is a cross-role conflict.
-        if (!user) {
-            const conflictingStaffUser = await this.prisma.user.findFirst({
-                where: {
-                    OR: [
-                        { email: email },
-                        { phone: phone },
-                    ],
-                },
-                select: { id: true },
-            });
 
-            if (conflictingStaffUser) {
-                throw new ForbiddenException(
-                    "Email or Phone already registered for another role",
-                );
-            }
-        }
         console.log("user found: ", user)
 
         let customerProfile;
 
         if (!user) {
             console.log("helloooo - 2")
-            // 🆕 Create user
-            user = await this.userService.createUser({
-                name,
-                email,
-                phone,
-                is_active,
+            // 🆕 Create customer
+            user = await this.prisma.customer.create({
+                data: {
+                    name,
+                    email,
+                    phone,
+                    is_active,
+                }
             });
 
             // 🆕 Create customer profile
@@ -1761,16 +1744,7 @@ export class CustomerService {
 
         const pauseStart = new Date(pause_start_date);
         const pauseEnd = new Date(pause_end_date);
-        const currentDate = new Date();
 
-        // 2️⃣ Ensure pause start is at least 2 days from now
-        const diffFromNowDays = Math.ceil(
-            (pauseStart.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
-        );
-
-        if (diffFromNowDays < 2) {
-            throw new BadRequestException('Pause can only be scheduled at least 2 days in advance.');
-        }
 
         // 2️⃣ Fetch subscription
         const subscription = await this.prisma.userSubscriptions.findUnique({
