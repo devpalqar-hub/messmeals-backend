@@ -6,6 +6,7 @@ import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
 import { UpdateUserSubscriptionDto } from './dto/update-user-subscription.dto';
+import { UpdateBulkDeliveryPriorityDto } from './dto/update-bulk-delivery-priority.dto';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 
 @ApiTags('User Subscriptions')
@@ -24,6 +25,14 @@ export class UserSubscriptionsController {
         @Body() dto: UpdateDeliveryPriorityDto,
     ) {
         return this.userSubscriptionsService.updateDeliveryPriority(id, dto);
+    }
+
+    @Patch('bulk/delivery-priority')
+    @ApiOperation({ summary: 'Bulk update delivery priority', description: 'Updates delivery priority for multiple subscriptions.' })
+    bulkUpdateDeliveryPriority(
+        @Body() dto: UpdateBulkDeliveryPriorityDto,
+    ) {
+        return this.userSubscriptionsService.bulkUpdateDeliveryPriority(dto);
     }
 
 

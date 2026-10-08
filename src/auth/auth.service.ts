@@ -844,36 +844,49 @@ export class AuthService {
         );
 
         /**
-         * pendingRevenue – subscriptions that are still active AND whose
-         *                  end_date is in the future (service not yet fully delivered).
-         *                  Money is received but the service period is ongoing.
+         * pendingRevenue – calculated using the value of PENDING deliveries.
+         *                  (Pending Deliveries / Total Deliveries) * Subscription Price
          */
-        const pendingRevenue = allSubscriptions
-            .filter(s =>
-                s.is_active &&
-                !s.cancelled_on &&
-                s.end_date !== null &&
-                new Date(s.end_date) > today,
-            )
-            .reduce(
-                (sum, s) => sum + Number(s.discountedPrice || s.totalPrice),
-                0,
-            );
+        const activeSubIds = allSubscriptions
+            .filter(s => s.is_active && !s.cancelled_on)
+            .map(s => s.id);
+
+        let pendingRevenue = 0;
+
+        if (activeSubIds.length > 0) {
+            const deliveryStats = await this.prisma.deliveries.groupBy({
+                by: ['subscriptionId', 'status'],
+                where: { subscriptionId: { in: activeSubIds } },
+                _count: { _all: true },
+            });
+
+            const subDeliveries: Record<string, { total: number; pending: number }> = {};
+            for (const stat of deliveryStats) {
+                if (!stat.subscriptionId) continue;
+                if (!subDeliveries[stat.subscriptionId]) {
+                    subDeliveries[stat.subscriptionId] = { total: 0, pending: 0 };
+                }
+                subDeliveries[stat.subscriptionId].total += stat._count._all;
+                if (stat.status === 'PENDING') {
+                    subDeliveries[stat.subscriptionId].pending += stat._count._all;
+                }
+            }
+
+            for (const s of allSubscriptions) {
+                if (!subDeliveries[s.id]) continue;
+                const stats = subDeliveries[s.id];
+                if (stats.total > 0 && stats.pending > 0) {
+                    const price = Number(s.discountedPrice || s.totalPrice);
+                    pendingRevenue += (stats.pending / stats.total) * price;
+                }
+            }
+        }
 
         /**
-         * collectedRevenue – subscriptions that are either expired (end_date passed)
-         *                    or cancelled (fully served / completed).
+         * collectedRevenue – the portion of total revenue that has been earned 
+         *                    (i.e., not pending).
          */
-        const collectedRevenue = allSubscriptions
-            .filter(s =>
-                !s.is_active ||
-                s.cancelled_on !== null ||
-                (s.end_date !== null && new Date(s.end_date) <= today),
-            )
-            .reduce(
-                (sum, s) => sum + Number(s.discountedPrice || s.totalPrice),
-                0,
-            );
+        const collectedRevenue = totalRevenue - pendingRevenue;
 
         // Current calendar month boundaries
         const monthStart = startOfMonth(today);

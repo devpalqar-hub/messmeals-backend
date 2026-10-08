@@ -46,6 +46,7 @@ export class DeliveriesService {
             partnerId?: string;
             variationId?: string;
             search?: string;
+            subscriptionId?: string;
         },
         user: {
             id: string;
@@ -129,6 +130,10 @@ export class DeliveriesService {
             };
         }
 
+        if (query.subscriptionId) {
+            where.subscriptionId = query.subscriptionId;
+        }
+
         return where;
     }
 
@@ -143,6 +148,7 @@ export class DeliveriesService {
             partnerId?: string;
             variationId?: string;
             search?: string;
+            subscriptionId?: string;
         },
         user: {
             id: string;
@@ -228,6 +234,7 @@ export class DeliveriesService {
                 messId: user.role === Role.SUPERADMIN ? query.messId || null : null,
                 partnerId: user.role === Role.SUPERADMIN ? query.partnerId || null : null,
                 search: query.search || null,
+                subscriptionId: query.subscriptionId || null,
             },
             data: deliveries,
         };
@@ -247,6 +254,7 @@ export class DeliveriesService {
             partnerId?: string;
             variationId?: string;
             search?: string;
+            subscriptionId?: string;
         },
         user: {
             id: string;

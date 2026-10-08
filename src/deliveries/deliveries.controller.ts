@@ -49,6 +49,7 @@ export class DeliveriesController {
     @ApiQuery({ name: 'partnerId', required: false })
     @ApiQuery({ name: 'variationId', required: false, description: 'Filter deliveries that include this variation (e.g. Breakfast variation ID)' })
     @ApiQuery({ name: 'search', required: false, description: 'Search by customer name or phone' })
+    @ApiQuery({ name: 'subscriptionId', required: false, description: 'Filter by subscription ID' })
     @Get()
     findAll(
         @Req() req: any,
@@ -60,9 +61,10 @@ export class DeliveriesController {
         @Query('partnerId') partnerId?: string,
         @Query('variationId') variationId?: string,
         @Query('search') search?: string,
+        @Query('subscriptionId') subscriptionId?: string,
     ) {
         return this.deliveriesService.findAll(
-            { page, limit, status, date, messId, partnerId, variationId, search },
+            { page, limit, status, date, messId, partnerId, variationId, search, subscriptionId },
             req.user,
         );
     }
@@ -79,6 +81,7 @@ export class DeliveriesController {
     @ApiQuery({ name: 'partnerId', required: false })
     @ApiQuery({ name: 'variationId', required: false })
     @ApiQuery({ name: 'search', required: false, description: 'Search by customer name or phone' })
+    @ApiQuery({ name: 'subscriptionId', required: false })
     @Get('summary')
     getSummary(
         @Req() req: any,
@@ -88,9 +91,10 @@ export class DeliveriesController {
         @Query('partnerId') partnerId?: string,
         @Query('variationId') variationId?: string,
         @Query('search') search?: string,
+        @Query('subscriptionId') subscriptionId?: string,
     ) {
         return this.deliveriesService.getSummary(
-            { status, date, messId, partnerId, variationId, search },
+            { status, date, messId, partnerId, variationId, search, subscriptionId },
             req.user,
         );
     }
