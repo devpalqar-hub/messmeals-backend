@@ -1,31 +1,31 @@
 import { IsDateString, IsOptional, IsString } from 'class-validator';
 
 export class AnalyticsQueryDto {
-    @IsDateString()
-    date1!: string;
+  @IsDateString()
+  date1!: string;
 
-    @IsOptional()
-    @IsDateString()
-    date2?: string;
+  @IsOptional()
+  @IsDateString()
+  date2?: string;
 
-    @IsOptional()
-    @IsString()
-    messId?: string;
+  @IsOptional()
+  @IsString()
+  messId?: string;
 
-    @IsOptional()
-    @IsString()
-    ownerId?: string;
+  @IsOptional()
+  @IsString()
+  ownerId?: string;
 
-    @IsOptional()
-    @IsString()
-    variationId?: string;
+  @IsOptional()
+  @IsString()
+  variationId?: string;
 
-    // alias support
-    @IsOptional()
-    @IsString()
-    restaurantId?: string;
+  // alias support
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
 
-    @IsOptional()
-    @IsString()
-    agentId?: string;
+  @IsOptional()
+  @IsString()
+  agentId?: string;
 }

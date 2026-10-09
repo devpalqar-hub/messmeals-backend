@@ -5,8 +5,8 @@ import { OpenMessController } from './open-mess.controller';
 import { OpenMessService } from './open-mess.service';
 
 @Module({
-    imports: [PrismaModule, GeocodingModule],
-    controllers: [OpenMessController],
-    providers: [OpenMessService],
+  imports: [PrismaModule, GeocodingModule],
+  controllers: [OpenMessController],
+  providers: [OpenMessService],
 })
-export class OpenModule { }
+export class OpenModule {}

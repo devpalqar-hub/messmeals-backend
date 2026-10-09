@@ -5,8 +5,8 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { S3Module } from 'src/s3/s3.module';
 
 @Module({
-    imports: [S3Module],
-    controllers: [PlansController],
-    providers: [PlansService, PrismaService],
+  imports: [S3Module],
+  controllers: [PlansController],
+  providers: [PlansService, PrismaService],
 })
-export class PlansModule { }
+export class PlansModule {}

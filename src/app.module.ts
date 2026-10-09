@@ -33,32 +33,55 @@ import { OpenModule } from './open/open.module';
 import { CustomerAuthModule } from './customer-auth/customer-auth.module';
 import { MessBulkUploadModule } from './mess-bulk-upload/mess-bulk-upload.module';
 
-
 @Module({
-  imports: [AuthModule, CustomerModule, DeliveriesModule, DeliveryAgentModule, UserSubscriptionsModule,
-    PlansModule, PrismaModule, UserModule, VariationModule, ContactFormModule, DistrictModule,
-    MessModule, MessAdminModule, AddressModule, CategoryModule, TestimonialsModule, PaymentsModule, AnalyticsModule,
-    BillingModule, MenuModule, ExpenseCategoriesModule, ExpensesModule, OpenModule, CustomerAuthModule, MessBulkUploadModule,
+  imports: [
+    AuthModule,
+    CustomerModule,
+    DeliveriesModule,
+    DeliveryAgentModule,
+    UserSubscriptionsModule,
+    PlansModule,
+    PrismaModule,
+    UserModule,
+    VariationModule,
+    ContactFormModule,
+    DistrictModule,
+    MessModule,
+    MessAdminModule,
+    AddressModule,
+    CategoryModule,
+    TestimonialsModule,
+    PaymentsModule,
+    AnalyticsModule,
+    BillingModule,
+    MenuModule,
+    ExpenseCategoriesModule,
+    ExpensesModule,
+    OpenModule,
+    CustomerAuthModule,
+    MessBulkUploadModule,
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'uploads'),
-      serveRoot: "/uploads",
+      serveRoot: '/uploads',
       serveStaticOptions: {
         index: false,
-      }
+      },
     }),
 
-    ThrottlerModule.forRoot([{
-      ttl: 60000,
-      limit: 100,
-    }]),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 100,
+      },
+    ]),
 
     ConfigModule.forRoot({
-      isGlobal: true,  // ✅ ensures available everywhere
+      isGlobal: true, // ✅ ensures available everywhere
     }),
 
     MailerModule.forRoot({
       transport: {
-        host: 'smtp.gmail.com',       // your SMTP host
+        host: 'smtp.gmail.com', // your SMTP host
         port: 587,
         secure: false,
         auth: {
@@ -75,12 +98,10 @@ import { MessBulkUploadModule } from './mess-bulk-upload/mess-bulk-upload.module
         options: {
           strict: true,
         },
-      }
-    }),],
+      },
+    }),
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule { }
-
-
-
+export class AppModule {}

@@ -20,35 +20,47 @@ import { ScheduleType } from '@prisma/client';
  * CustomersService.computePlanPricing for the main call site.
  */
 export function resolvePlanSchedule(
-    plan: { scheduleType: ScheduleType; availableDays: unknown },
-    requested: { scheduleType?: ScheduleType; selectedDays?: string[] },
+  plan: { scheduleType: ScheduleType; availableDays: unknown },
+  requested: { scheduleType?: ScheduleType; selectedDays?: string[] },
 ): { scheduleType: ScheduleType; selectedDays?: string[] } {
-    const planDays = Array.isArray(plan.availableDays) ? (plan.availableDays as string[]) : [];
-    const planRestrictsDays = plan.scheduleType === ScheduleType.CUSTOM && planDays.length > 0;
+  const planDays = Array.isArray(plan.availableDays)
+    ? (plan.availableDays as string[])
+    : [];
+  const planRestrictsDays =
+    plan.scheduleType === ScheduleType.CUSTOM && planDays.length > 0;
 
-    if (!planRestrictsDays) {
-        return { scheduleType: requested.scheduleType ?? ScheduleType.EVERYDAY, selectedDays: requested.selectedDays };
-    }
+  if (!planRestrictsDays) {
+    return {
+      scheduleType: requested.scheduleType ?? ScheduleType.EVERYDAY,
+      selectedDays: requested.selectedDays,
+    };
+  }
 
-    const planDaysUpper = planDays.map((d) => String(d).toUpperCase());
+  const planDaysUpper = planDays.map((d) => String(d).toUpperCase());
 
-    const requestedCustomDays =
-        requested.scheduleType === ScheduleType.CUSTOM && (requested.selectedDays?.length ?? 0) > 0
-            ? requested.selectedDays!
-            : null;
+  const requestedCustomDays =
+    requested.scheduleType === ScheduleType.CUSTOM &&
+    (requested.selectedDays?.length ?? 0) > 0
+      ? requested.selectedDays!
+      : null;
 
-    // No matching CUSTOM request from the subscriber — default to the plan's own days.
-    if (!requestedCustomDays) {
-        return { scheduleType: ScheduleType.CUSTOM, selectedDays: planDays };
-    }
+  // No matching CUSTOM request from the subscriber — default to the plan's own days.
+  if (!requestedCustomDays) {
+    return { scheduleType: ScheduleType.CUSTOM, selectedDays: planDays };
+  }
 
-    // Subscriber picked their own days — must all fall within what the plan actually runs on.
-    const invalid = requestedCustomDays.filter((d) => !planDaysUpper.includes(String(d).toUpperCase()));
-    if (invalid.length > 0) {
-        throw new BadRequestException(
-            `This plan only delivers on: ${planDaysUpper.join(', ')}. Invalid day(s): ${invalid.join(', ')}`,
-        );
-    }
+  // Subscriber picked their own days — must all fall within what the plan actually runs on.
+  const invalid = requestedCustomDays.filter(
+    (d) => !planDaysUpper.includes(String(d).toUpperCase()),
+  );
+  if (invalid.length > 0) {
+    throw new BadRequestException(
+      `This plan only delivers on: ${planDaysUpper.join(', ')}. Invalid day(s): ${invalid.join(', ')}`,
+    );
+  }
 
-    return { scheduleType: ScheduleType.CUSTOM, selectedDays: requestedCustomDays };
+  return {
+    scheduleType: ScheduleType.CUSTOM,
+    selectedDays: requestedCustomDays,
+  };
 }

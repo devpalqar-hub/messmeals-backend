@@ -6,9 +6,9 @@ import { S3Module } from 'src/s3/s3.module';
 import { BillingModule } from 'src/billing/billing.module';
 
 @Module({
-    imports: [PrismaModule, S3Module, BillingModule],
-    controllers: [MessController],
-    providers: [MessService],
-    exports: [MessService],
+  imports: [PrismaModule, S3Module, BillingModule],
+  controllers: [MessController],
+  providers: [MessService],
+  exports: [MessService],
 })
-export class MessModule { }
+export class MessModule {}

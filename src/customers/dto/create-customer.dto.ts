@@ -1,287 +1,313 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsNumber, IsOptional, IsPhoneNumber, IsString, IsBoolean, IsEnum, IsJSON, IsArray, IsUUID } from 'class-validator';
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsPhoneNumber,
+  IsString,
+  IsBoolean,
+  IsEnum,
+  IsJSON,
+  IsArray,
+  IsUUID,
+} from 'class-validator';
 import { ScheduleType, DayOfWeek } from '@prisma/client';
 
 export class CreateCustomerDto {
-    //user model
-    @ApiProperty({ example: 'John Doe' })
-    @IsString()
-    name: string;
+  //user model
+  @ApiProperty({ example: 'John Doe' })
+  @IsString()
+  name: string;
 
-    @ApiProperty({ example: '+919876543218' })
-    @IsString()
-    @IsNotEmpty({ message: 'phone is required' })
-    phone: string;
+  @ApiProperty({ example: '+919876543218' })
+  @IsString()
+  @IsNotEmpty({ message: 'phone is required' })
+  phone: string;
 
-    @ApiPropertyOptional({ example: 'john@example.com' })
-    @IsOptional()
-    @IsEmail()
-    email?: string;
+  @ApiPropertyOptional({ example: 'john@example.com' })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
 
-    @ApiProperty({ example: '123 Main Street' })
-    @IsString()
-    address: string
+  @ApiProperty({ example: '123 Main Street' })
+  @IsString()
+  address: string;
 
-    @ApiPropertyOptional({ example: '12.9716,77.5946' })
-    @IsOptional()
-    @IsString()
-    latitude_logitude?: string
+  @ApiPropertyOptional({ example: '12.9716,77.5946' })
+  @IsOptional()
+  @IsString()
+  latitude_logitude?: string;
 
-    @ApiPropertyOptional({ example: 'Bangalore' })
-    @IsOptional()
-    @IsString()
-    currentLocation?: string
+  @ApiPropertyOptional({ example: 'Bangalore' })
+  @IsOptional()
+  @IsString()
+  currentLocation?: string;
 
-    @ApiPropertyOptional({ example: true })
-    @IsOptional()
-    @IsBoolean()
-    is_active?: boolean
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  is_active?: boolean;
 
-    //customer profile model
-    @ApiProperty({ example: '1000' })
-    @IsString()
-    walletAmount: string
+  //customer profile model
+  @ApiProperty({ example: '1000' })
+  @IsString()
+  walletAmount: string;
 
-    @ApiPropertyOptional({ example: '50' })
-    @IsOptional()
-    @IsString()
-    discount?: string
+  @ApiPropertyOptional({ example: '50' })
+  @IsOptional()
+  @IsString()
+  discount?: string;
 
-    @ApiProperty({ example: '7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111' })
-    @IsString()
-    planId: string
+  @ApiProperty({ example: '7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111' })
+  @IsString()
+  planId: string;
 
-    @ApiPropertyOptional({
-        example: 'b3f4fb3e-0e61-43c3-8b3b-b833f18b2f55',
-        description: 'Optional. A customer can be registered without a delivery partner and assigned one later.',
-    })
-    @IsOptional()
-    @IsString()
-    deliveryPartnerId?: string
+  @ApiPropertyOptional({
+    example: 'b3f4fb3e-0e61-43c3-8b3b-b833f18b2f55',
+    description:
+      'Optional. A customer can be registered without a delivery partner and assigned one later.',
+  })
+  @IsOptional()
+  @IsString()
+  deliveryPartnerId?: string;
 
-    @ApiProperty({ example: '2026-05-07' })
-    @IsString()
-    start_date: string
+  @ApiProperty({ example: '2026-05-07' })
+  @IsString()
+  start_date: string;
 
-    @ApiPropertyOptional({ example: '2026-06-07' })
-    @IsString()
-    @IsOptional()
-    end_date: string
+  @ApiPropertyOptional({ example: '2026-06-07' })
+  @IsString()
+  @IsOptional()
+  end_date: string;
 
-    //phase 2 changes:
+  //phase 2 changes:
 
-    @ApiPropertyOptional({ example: 'EVERYDAY', enum: ScheduleType })
-    @IsOptional()
-    @IsEnum(ScheduleType)
-    scheduleType?: ScheduleType;
+  @ApiPropertyOptional({ example: 'EVERYDAY', enum: ScheduleType })
+  @IsOptional()
+  @IsEnum(ScheduleType)
+  scheduleType?: ScheduleType;
 
-    @ApiPropertyOptional({ example: ['MONDAY', 'WEDNESDAY', 'FRIDAY'] })
-    @IsOptional()
-    @IsArray()
-    @IsEnum(DayOfWeek, { each: true }) // optional if you have enum
-    selectedDays: string[];
+  @ApiPropertyOptional({ example: ['MONDAY', 'WEDNESDAY', 'FRIDAY'] })
+  @IsOptional()
+  @IsArray()
+  @IsEnum(DayOfWeek, { each: true }) // optional if you have enum
+  selectedDays: string[];
 
-    @ApiPropertyOptional({
-        example: '5f6a1b2c-3d4e-5f60-7a8b-9c0d1e2f3a4b',
-        description: 'Optional district the customer belongs to',
-    })
-    @IsOptional()
-    @IsUUID()
-    districtId?: string;
+  @ApiPropertyOptional({
+    example: '5f6a1b2c-3d4e-5f60-7a8b-9c0d1e2f3a4b',
+    description: 'Optional district the customer belongs to',
+  })
+  @IsOptional()
+  @IsUUID()
+  districtId?: string;
 
-    // ── Legacy / extra fields sent by the mobile app ──────────────────────────
-    // These were not originally in the DTO but the app sends them. Accepting
-    // them as optional prevents 400s from forbidNonWhitelisted=true.
+  // ── Legacy / extra fields sent by the mobile app ──────────────────────────
+  // These were not originally in the DTO but the app sends them. Accepting
+  // them as optional prevents 400s from forbidNonWhitelisted=true.
 
-    @ApiPropertyOptional({ example: 'Bangalore', description: 'Legacy location field from the mobile app' })
-    @IsOptional()
-    @IsString()
-    location?: string;
+  @ApiPropertyOptional({
+    example: 'Bangalore',
+    description: 'Legacy location field from the mobile app',
+  })
+  @IsOptional()
+  @IsString()
+  location?: string;
 
-    @ApiPropertyOptional({ example: 'ae0c67f3-7dbb-45dd-a742-8702afd66fff', description: 'Mess ID sent by the mobile app' })
-    @IsOptional()
-    @IsString()
-    messId?: string;
+  @ApiPropertyOptional({
+    example: 'ae0c67f3-7dbb-45dd-a742-8702afd66fff',
+    description: 'Mess ID sent by the mobile app',
+  })
+  @IsOptional()
+  @IsString()
+  messId?: string;
 
-    @ApiPropertyOptional({ example: 100, description: 'Discount amount sent by the mobile app' })
-    @IsOptional()
-    @IsNumber()
-    discountAmount?: number;
+  @ApiPropertyOptional({
+    example: 100,
+    description: 'Discount amount sent by the mobile app',
+  })
+  @IsOptional()
+  @IsNumber()
+  discountAmount?: number;
 
-    @ApiPropertyOptional({ example: 'HOME', description: 'Delivery type sent by the mobile app' })
-    @IsOptional()
-    @IsString()
-    deliveryType?: string;
+  @ApiPropertyOptional({
+    example: 'HOME',
+    description: 'Delivery type sent by the mobile app',
+  })
+  @IsOptional()
+  @IsString()
+  deliveryType?: string;
 
-    @ApiPropertyOptional({ example: '09:00', description: 'Preferred delivery time sent by the mobile app' })
-    @IsOptional()
-    @IsString()
-    preferredTime?: string;
+  @ApiPropertyOptional({
+    example: '09:00',
+    description: 'Preferred delivery time sent by the mobile app',
+  })
+  @IsOptional()
+  @IsString()
+  preferredTime?: string;
 
-    @ApiPropertyOptional({ example: ['MONDAY', 'WEDNESDAY'], description: 'Delivery days sent by the mobile app' })
-    @IsOptional()
-    @IsArray()
-    @IsString({ each: true })
-    deliveryDays?: string[];
-
+  @ApiPropertyOptional({
+    example: ['MONDAY', 'WEDNESDAY'],
+    description: 'Delivery days sent by the mobile app',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  deliveryDays?: string[];
 }
 
 export class UpdateCustomerDto {
-    //user model
-    @ApiPropertyOptional({ example: 'John Doe' })
-    @IsString()
-    @IsOptional()
-    name: string;
+  //user model
+  @ApiPropertyOptional({ example: 'John Doe' })
+  @IsString()
+  @IsOptional()
+  name: string;
 
-    @ApiPropertyOptional({ example: '123 Main Street' })
-    @IsString()
-    @IsOptional()
-    address: string
+  @ApiPropertyOptional({ example: '123 Main Street' })
+  @IsString()
+  @IsOptional()
+  address: string;
 
-    @ApiPropertyOptional({ example: '12.9716,77.5946' })
-    @IsString()
-    @IsOptional()
-    latitude_logitude: string
+  @ApiPropertyOptional({ example: '12.9716,77.5946' })
+  @IsString()
+  @IsOptional()
+  latitude_logitude: string;
 
-    @ApiPropertyOptional({ example: 'Bangalore' })
-    @IsString()
-    @IsOptional()
-    currentLocation: string
+  @ApiPropertyOptional({ example: 'Bangalore' })
+  @IsString()
+  @IsOptional()
+  currentLocation: string;
 
-    //customer profile model
-    @ApiPropertyOptional({ example: 1200 })
-    @IsNumber()
-    @IsOptional()
-    walletAmount: number
+  //customer profile model
+  @ApiPropertyOptional({ example: 1200 })
+  @IsNumber()
+  @IsOptional()
+  walletAmount: number;
 
-    @ApiPropertyOptional({ example: '7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111' })
-    @IsString()
-    @IsOptional()
-    planId: string
+  @ApiPropertyOptional({ example: '7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111' })
+  @IsString()
+  @IsOptional()
+  planId: string;
 
-    @ApiPropertyOptional({ example: 'b3f4fb3e-0e61-43c3-8b3b-b833f18b2f55' })
-    @IsString()
-    @IsOptional()
-    deliveryPartnerId: string
-
+  @ApiPropertyOptional({ example: 'b3f4fb3e-0e61-43c3-8b3b-b833f18b2f55' })
+  @IsString()
+  @IsOptional()
+  deliveryPartnerId: string;
 }
 
-
-
 export class choosePlanDto {
+  @ApiProperty({ example: 'a1c2e3f4-1111-2222-3333-444455556666' })
+  @IsString()
+  addressId: string;
 
-    @ApiProperty({ example: 'a1c2e3f4-1111-2222-3333-444455556666' })
-    @IsString()
-    addressId: string
+  @ApiProperty({ example: '7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111' })
+  @IsString()
+  planId: string;
 
-    @ApiProperty({ example: '7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111' })
-    @IsString()
-    planId: string
+  @ApiProperty({ example: '2026-05-07' })
+  @IsString()
+  start_date: string;
 
-    @ApiProperty({ example: '2026-05-07' })
-    @IsString()
-    start_date: string
+  @ApiPropertyOptional({ example: '2026-06-07' })
+  @IsString()
+  @IsOptional()
+  end_date: string;
 
-    @ApiPropertyOptional({ example: '2026-06-07' })
-    @IsString()
-    @IsOptional()
-    end_date: string
+  //phase 2 changes:
 
-    //phase 2 changes:
+  @ApiProperty({ example: 'WEEKLY' })
+  @IsEnum(ScheduleType)
+  scheduleType: ScheduleType;
 
-    @ApiProperty({ example: 'WEEKLY' })
-    @IsEnum(ScheduleType)
-    scheduleType: ScheduleType;
+  @ApiPropertyOptional({ example: ['MONDAY', 'WEDNESDAY', 'FRIDAY'] })
+  @IsOptional()
+  @IsArray()
+  @IsEnum(DayOfWeek, { each: true }) // optional if you have enum
+  selectedDays: string[];
 
-    @ApiPropertyOptional({ example: ['MONDAY', 'WEDNESDAY', 'FRIDAY'] })
-    @IsOptional()
-    @IsArray()
-    @IsEnum(DayOfWeek, { each: true }) // optional if you have enum
-    selectedDays: string[];
+  @ApiPropertyOptional({ example: 'https://example.com/success' })
+  @IsOptional()
+  @IsString()
+  successUrl: string;
 
-    @ApiPropertyOptional({ example: 'https://example.com/success' })
-    @IsOptional()
-    @IsString()
-    successUrl: string;
-
-    @ApiPropertyOptional({ example: 'https://example.com/cancel' })
-    @IsOptional()
-    @IsString()
-    cancelUrl: string;
-
+  @ApiPropertyOptional({ example: 'https://example.com/cancel' })
+  @IsOptional()
+  @IsString()
+  cancelUrl: string;
 }
 
 export class CreateSubscriptionForCustomerDto {
-    @ApiProperty({
-        example: '9b8c7d6e-1234-5678-90ab-cdef12345678',
-        description: 'CustomerProfile.id (preferred) or User.id of the existing customer',
-    })
-    @IsString()
-    customerProfileId: string;
+  @ApiProperty({
+    example: '9b8c7d6e-1234-5678-90ab-cdef12345678',
+    description:
+      'CustomerProfile.id (preferred) or User.id of the existing customer',
+  })
+  @IsString()
+  customerProfileId: string;
 
-    @ApiProperty({ example: '7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111' })
-    @IsString()
-    planId: string;
+  @ApiProperty({ example: '7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111' })
+  @IsString()
+  planId: string;
 
-    @ApiPropertyOptional({ example: 'b3f4fb3e-0e61-43c3-8b3b-b833f18b2f55' })
-    @IsString()
-    @IsOptional()
-    deliveryPartnerId?: string;
+  @ApiPropertyOptional({ example: 'b3f4fb3e-0e61-43c3-8b3b-b833f18b2f55' })
+  @IsString()
+  @IsOptional()
+  deliveryPartnerId?: string;
 
-    @ApiProperty({ example: '2026-06-01' })
-    @IsString()
-    start_date: string;
+  @ApiProperty({ example: '2026-06-01' })
+  @IsString()
+  start_date: string;
 
-    @ApiPropertyOptional({
-        example: '2026-08-31',
-        description:
-            'Optional. For monthly plans defaults to startDate + 1 month - 1 day. For daily plans defaults to startDate.',
-    })
-    @IsOptional()
-    @IsString()
-    end_date?: string;
+  @ApiPropertyOptional({
+    example: '2026-08-31',
+    description:
+      'Optional. For monthly plans defaults to startDate + 1 month - 1 day. For daily plans defaults to startDate.',
+  })
+  @IsOptional()
+  @IsString()
+  end_date?: string;
 
-    @ApiProperty({
-        enum: ScheduleType,
-        example: 'EVERYDAY',
-        description: 'EVERYDAY, CUSTOM, or MONTHLY',
-    })
-    @IsEnum(ScheduleType)
-    scheduleType: ScheduleType;
+  @ApiProperty({
+    enum: ScheduleType,
+    example: 'EVERYDAY',
+    description: 'EVERYDAY, CUSTOM, or MONTHLY',
+  })
+  @IsEnum(ScheduleType)
+  scheduleType: ScheduleType;
 
-    @ApiPropertyOptional({
-        example: ['MONDAY', 'WEDNESDAY', 'FRIDAY'],
-        description: 'Required when scheduleType is CUSTOM',
-    })
-    @IsOptional()
-    @IsArray()
-    @IsEnum(DayOfWeek, { each: true })
-    selectedDays?: string[];
+  @ApiPropertyOptional({
+    example: ['MONDAY', 'WEDNESDAY', 'FRIDAY'],
+    description: 'Required when scheduleType is CUSTOM',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsEnum(DayOfWeek, { each: true })
+  selectedDays?: string[];
 
-    @ApiPropertyOptional({
-        example: 100,
-        description: 'Flat discount amount to deduct from totalPrice (default 0)',
-    })
-    @IsOptional()
-    @IsNumber()
-    discount?: number;
+  @ApiPropertyOptional({
+    example: 100,
+    description: 'Flat discount amount to deduct from totalPrice (default 0)',
+  })
+  @IsOptional()
+  @IsNumber()
+  discount?: number;
 
-    @ApiPropertyOptional({
-        example: 'a1c2e3f4-1111-2222-3333-444455556666',
-        description:
-            'Optional delivery address (existing UserAddress.id). Ignored if "address" is also provided.',
-    })
-    @IsOptional()
-    @IsString()
-    userAddressId?: string;
+  @ApiPropertyOptional({
+    example: 'a1c2e3f4-1111-2222-3333-444455556666',
+    description:
+      'Optional delivery address (existing UserAddress.id). Ignored if "address" is also provided.',
+  })
+  @IsOptional()
+  @IsString()
+  userAddressId?: string;
 
-    @ApiPropertyOptional({
-        example: '221B Baker Street, Bangalore, 560001',
-        description:
-            'Optional new delivery address as a plain string. If provided, this takes precedence over ' +
-            'userAddressId — a new UserAddress is created and linked to the subscription.',
-    })
-    @IsOptional()
-    @IsString()
-    address?: string;
+  @ApiPropertyOptional({
+    example: '221B Baker Street, Bangalore, 560001',
+    description:
+      'Optional new delivery address as a plain string. If provided, this takes precedence over ' +
+      'userAddressId — a new UserAddress is created and linked to the subscription.',
+  })
+  @IsOptional()
+  @IsString()
+  address?: string;
 }

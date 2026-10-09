@@ -1,6 +1,6 @@
-import { DeliveryStatus } from "@prisma/client";
+import { DeliveryStatus } from '@prisma/client';
 
 export class UpdateDeliveryStatusDto {
-    deliveryId: string;
-    status: DeliveryStatus; // PENDING | PROGRESS | DELIVERED
+  deliveryId: string;
+  status: DeliveryStatus; // PENDING | PROGRESS | DELIVERED
 }

@@ -5,65 +5,65 @@ import { UpdateVariationDto } from './dto/update-variation.dto';
 
 @Injectable()
 export class VariationService {
-    constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
-    // ➕ Create
-    async create(dto: CreateVariationDto) {
-        const { title, description } = dto
-        const variation = await this.prisma.variation.create({
-            data: { title: title, description: description }
-        });
-        return {
-            message: 'Variation created successfully',
-            variation,
-        };
+  // ➕ Create
+  async create(dto: CreateVariationDto) {
+    const { title, description } = dto;
+    const variation = await this.prisma.variation.create({
+      data: { title: title, description: description },
+    });
+    return {
+      message: 'Variation created successfully',
+      variation,
+    };
+  }
+
+  // 📜 Get all
+  async findAll() {
+    const variations = await this.prisma.variation.findMany({
+      include: { plans: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    return variations;
+  }
+
+  // 🔍 Get by ID
+  async findById(id: string) {
+    const variation = await this.prisma.variation.findUnique({
+      where: { id },
+      include: { plans: true },
+    });
+
+    if (!variation) {
+      throw new NotFoundException('Variation not found');
     }
 
-    // 📜 Get all
-    async findAll() {
-        const variations = await this.prisma.variation.findMany({
-            include: { plans: true },
-            orderBy: { createdAt: 'desc' },
-        });
-        return variations;
-    }
+    return variation;
+  }
 
-    // 🔍 Get by ID
-    async findById(id: string) {
-        const variation = await this.prisma.variation.findUnique({
-            where: { id },
-            include: { plans: true },
-        });
+  // ✏️ Update
+  async update(id: string, dto: UpdateVariationDto) {
+    const variation = await this.prisma.variation.update({
+      where: { id },
+      data: dto,
+    });
 
-        if (!variation) {
-            throw new NotFoundException('Variation not found');
-        }
+    return {
+      message: 'Variation updated successfully',
+      variation,
+    };
+  }
 
-        return variation;
-    }
+  // 🗑️ Delete
+  async delete(id: string) {
+    const variation = await this.prisma.variation.delete({
+      where: { id },
+    });
 
-    // ✏️ Update
-    async update(id: string, dto: UpdateVariationDto) {
-        const variation = await this.prisma.variation.update({
-            where: { id },
-            data: dto,
-        });
-
-        return {
-            message: 'Variation updated successfully',
-            variation,
-        };
-    }
-
-    // 🗑️ Delete
-    async delete(id: string) {
-        const variation = await this.prisma.variation.delete({
-            where: { id },
-        });
-
-        return {
-            message: 'Variation deleted successfully',
-            variation,
-        };
-    }
+    return {
+      message: 'Variation deleted successfully',
+      variation,
+    };
+  }
 }

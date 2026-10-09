@@ -1,249 +1,256 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNumber, IsOptional, IsArray, ValidateNested, IsBoolean, IsEnum } from 'class-validator';
+import {
+  IsString,
+  IsNumber,
+  IsOptional,
+  IsArray,
+  ValidateNested,
+  IsBoolean,
+  IsEnum,
+} from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { BadRequestException } from '@nestjs/common';
 import { DayOfWeek, ScheduleType } from '@prisma/client';
 
 export class PlansDto {
-    @ApiProperty({ example: 'Weekly Lunch Plan' })
-    @IsString()
-    planName!: string
+  @ApiProperty({ example: 'Weekly Lunch Plan' })
+  @IsString()
+  planName!: string;
 
-    @ApiProperty({ example: 999 })
-    @IsNumber()
-    @Transform(({ value }) => {
-        if (value === '' || value === undefined) return undefined;
-        return Number(value);
-    })
-    price!: number
+  @ApiProperty({ example: 999 })
+  @IsNumber()
+  @Transform(({ value }) => {
+    if (value === '' || value === undefined) return undefined;
+    return Number(value);
+  })
+  price!: number;
 
-    @ApiPropertyOptional({ example: 799 })
-    @IsNumber()
-    @IsOptional()
-    @Transform(({ value }) => {
-        if (value === '' || value === undefined) return undefined;
-        return Number(value);
-    })
-    minPrice?: number
+  @ApiPropertyOptional({ example: 799 })
+  @IsNumber()
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === '' || value === undefined) return undefined;
+    return Number(value);
+  })
+  minPrice?: number;
 
-    @ApiProperty({ example: 'Balanced weekday meal plan' })
-    @IsString()
-    description!: string
+  @ApiProperty({ example: 'Balanced weekday meal plan' })
+  @IsString()
+  description!: string;
 
-    @ApiProperty({ example: 'c2b7d4af-7c5f-4d4a-9a08-2f2f7d4e3a11' })
-    @IsString()
-    messId!: string
+  @ApiProperty({ example: 'c2b7d4af-7c5f-4d4a-9a08-2f2f7d4e3a11' })
+  @IsString()
+  messId!: string;
 
-    @ApiPropertyOptional({ example: ['1f2e3d4c-1111-2222-3333-444455556666'] })
-    @IsOptional()
-    @IsArray()
-    @IsString({ each: true })
-    @Transform(({ value }) => {
-        if (!value) return undefined;
+  @ApiPropertyOptional({ example: ['1f2e3d4c-1111-2222-3333-444455556666'] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @Transform(({ value }) => {
+    if (!value) return undefined;
 
-        if (typeof value === 'string') {
-            try {
-                const parsed = JSON.parse(value);
-                if (!Array.isArray(parsed)) {
-                    throw new Error();
-                }
-                return parsed;
-            } catch {
-                throw new BadRequestException(
-                    'variationIds must be a valid JSON array of strings',
-                );
-            }
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        if (!Array.isArray(parsed)) {
+          throw new Error();
         }
+        return parsed;
+      } catch {
+        throw new BadRequestException(
+          'variationIds must be a valid JSON array of strings',
+        );
+      }
+    }
 
-        return value;
-    })
-    variationIds?: string[];
+    return value;
+  })
+  variationIds?: string[];
 
-    @ApiPropertyOptional({
-        example: ['7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111'],
-        description: 'Optional — link this plan to one or more existing menus of the same mess.',
-    })
-    @IsOptional()
-    @IsArray()
-    @IsString({ each: true })
-    @Transform(({ value }) => {
-        if (!value) return undefined;
+  @ApiPropertyOptional({
+    example: ['7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111'],
+    description:
+      'Optional — link this plan to one or more existing menus of the same mess.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @Transform(({ value }) => {
+    if (!value) return undefined;
 
-        if (typeof value === 'string') {
-            try {
-                const parsed = JSON.parse(value);
-                if (!Array.isArray(parsed)) {
-                    throw new Error();
-                }
-                return parsed;
-            } catch {
-                throw new BadRequestException(
-                    'menuIds must be a valid JSON array of strings',
-                );
-            }
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        if (!Array.isArray(parsed)) {
+          throw new Error();
         }
+        return parsed;
+      } catch {
+        throw new BadRequestException(
+          'menuIds must be a valid JSON array of strings',
+        );
+      }
+    }
 
-        return value;
-    })
-    menuIds?: string[];
+    return value;
+  })
+  menuIds?: string[];
 
-    @ApiPropertyOptional({
-        example: [
-            'https://cdn.example.com/plans/plan-1.jpg',
-            'https://cdn.example.com/plans/plan-2.jpg',
-        ],
-        description: 'Gallery image links (S3/public URLs)'
-    })
-    @IsOptional()
-    @IsArray()
-    @IsString({ each: true })
-    @Transform(({ value }) => {
-        if (!value) return undefined;
+  @ApiPropertyOptional({
+    example: [
+      'https://cdn.example.com/plans/plan-1.jpg',
+      'https://cdn.example.com/plans/plan-2.jpg',
+    ],
+    description: 'Gallery image links (S3/public URLs)',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @Transform(({ value }) => {
+    if (!value) return undefined;
 
-        if (typeof value === 'string') {
-            try {
-                const parsed = JSON.parse(value);
-                if (!Array.isArray(parsed)) {
-                    throw new Error();
-                }
-                return parsed;
-            } catch {
-                throw new BadRequestException(
-                    'planImages must be a valid JSON array of strings',
-                );
-            }
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        if (!Array.isArray(parsed)) {
+          throw new Error();
         }
+        return parsed;
+      } catch {
+        throw new BadRequestException(
+          'planImages must be a valid JSON array of strings',
+        );
+      }
+    }
 
-        return value;
-    })
-    planImages?: string[];
+    return value;
+  })
+  planImages?: string[];
 
-    //default false
-    @ApiPropertyOptional({ example: true })
-    @IsOptional()
-    @IsBoolean()
-    @Transform(({ value }) => value === 'true' || value === true)
-    isMonthlyPlan?: boolean
+  //default false
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === 'true' || value === true)
+  isMonthlyPlan?: boolean;
 
-    @ApiPropertyOptional({ example: false })
-    @IsOptional()
-    @IsBoolean()
-    @Transform(({ value }) => value === 'true' || value === true)
-    isDailyPlan?: boolean
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === 'true' || value === true)
+  isDailyPlan?: boolean;
 
-    @ApiPropertyOptional({
-        enum: ScheduleType,
-        example: ScheduleType.EVERYDAY,
-        description:
-            'The plan\'s own weekly schedule. EVERYDAY (default) runs every day and places no ' +
-            'restriction on a subscriber\'s chosen days. CUSTOM restricts the plan to ' +
-            '`availableDays` — a subscriber\'s own day selection then defaults to (and must be ' +
-            'a subset of) those days.',
-    })
-    @IsOptional()
-    @IsEnum(ScheduleType)
-    scheduleType?: ScheduleType;
+  @ApiPropertyOptional({
+    enum: ScheduleType,
+    example: ScheduleType.EVERYDAY,
+    description:
+      "The plan's own weekly schedule. EVERYDAY (default) runs every day and places no " +
+      "restriction on a subscriber's chosen days. CUSTOM restricts the plan to " +
+      "`availableDays` — a subscriber's own day selection then defaults to (and must be " +
+      'a subset of) those days.',
+  })
+  @IsOptional()
+  @IsEnum(ScheduleType)
+  scheduleType?: ScheduleType;
 
-    @ApiPropertyOptional({
-        example: ['MONDAY', 'WEDNESDAY', 'FRIDAY'],
-        description: 'Required when scheduleType is CUSTOM — the weekdays this plan runs on.',
-    })
-    @IsOptional()
-    @IsArray()
-    @IsEnum(DayOfWeek, { each: true })
-    @Transform(({ value }) => {
-        if (!value) return undefined;
+  @ApiPropertyOptional({
+    example: ['MONDAY', 'WEDNESDAY', 'FRIDAY'],
+    description:
+      'Required when scheduleType is CUSTOM — the weekdays this plan runs on.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsEnum(DayOfWeek, { each: true })
+  @Transform(({ value }) => {
+    if (!value) return undefined;
 
-        if (typeof value === 'string') {
-            try {
-                const parsed = JSON.parse(value);
-                if (!Array.isArray(parsed)) {
-                    throw new Error();
-                }
-                return parsed;
-            } catch {
-                throw new BadRequestException(
-                    'availableDays must be a valid JSON array of DayOfWeek strings',
-                );
-            }
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        if (!Array.isArray(parsed)) {
+          throw new Error();
         }
+        return parsed;
+      } catch {
+        throw new BadRequestException(
+          'availableDays must be a valid JSON array of DayOfWeek strings',
+        );
+      }
+    }
 
-        return value;
-    })
-    availableDays?: string[];
+    return value;
+  })
+  availableDays?: string[];
 
-    @IsOptional()
-    @IsArray()
-    @ValidateNested({ each: true })
-    @Type(() => PlanImagesDto)
-    images?: PlanImagesDto[];
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PlanImagesDto)
+  images?: PlanImagesDto[];
 
-    // @IsOptional()
-    // @IsArray()
-    // @ValidateNested({ each: true })
-    // @Type(() => VariationDto)
-    // variations?: VariationDto[];
+  // @IsOptional()
+  // @IsArray()
+  // @ValidateNested({ each: true })
+  // @Type(() => VariationDto)
+  // variations?: VariationDto[];
 }
-
 
 export class VariationDto {
-    @ApiPropertyOptional({ example: '1f2e3d4c-1111-2222-3333-444455556666' })
-    @IsOptional()
-    @IsString()
-    id?: string; // ✅ add this for updates
+  @ApiPropertyOptional({ example: '1f2e3d4c-1111-2222-3333-444455556666' })
+  @IsOptional()
+  @IsString()
+  id?: string; // ✅ add this for updates
 
-    @ApiProperty({ example: 'Regular' })
-    @IsString()
-    title!: string
+  @ApiProperty({ example: 'Regular' })
+  @IsString()
+  title!: string;
 
-    @ApiProperty({ example: '09:00-12:00' })
-    @IsString()
-    timeRange!: string
+  @ApiProperty({ example: '09:00-12:00' })
+  @IsString()
+  timeRange!: string;
 
-    @ApiPropertyOptional({ example: 'Breakfast slot' })
-    @IsString()
-    @IsOptional()
-    description?: string
+  @ApiPropertyOptional({ example: 'Breakfast slot' })
+  @IsString()
+  @IsOptional()
+  description?: string;
 
-
-    @IsOptional()
-    @IsArray()
-    @ValidateNested({ each: true })
-    @Type(() => VariationImagesDto)
-    images?: VariationImagesDto[];
-
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => VariationImagesDto)
+  images?: VariationImagesDto[];
 }
-
 
 export class PlanImagesDto {
-    @ApiProperty({ example: 'https://cdn.example.com/plans/plan-1.jpg' })
-    @IsString()
-    url!: string;
+  @ApiProperty({ example: 'https://cdn.example.com/plans/plan-1.jpg' })
+  @IsString()
+  url!: string;
 
-    @ApiPropertyOptional({ example: 'Plan image' })
-    @IsOptional()
-    @IsString()
-    altText?: string;
+  @ApiPropertyOptional({ example: 'Plan image' })
+  @IsOptional()
+  @IsString()
+  altText?: string;
 
-    @ApiPropertyOptional({ example: 1 })
-    @IsOptional()
-    @IsNumber()
-    sortOrder?: number;
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @IsNumber()
+  sortOrder?: number;
 }
 
-
 export class VariationImagesDto {
-    @ApiProperty({ example: 'https://cdn.example.com/variations/variation-1.jpg' })
-    @IsString()
-    url!: string;
+  @ApiProperty({
+    example: 'https://cdn.example.com/variations/variation-1.jpg',
+  })
+  @IsString()
+  url!: string;
 
-    @ApiPropertyOptional({ example: 'Variation image' })
-    @IsOptional()
-    @IsString()
-    altText?: string;
+  @ApiPropertyOptional({ example: 'Variation image' })
+  @IsOptional()
+  @IsString()
+  altText?: string;
 
-    @ApiPropertyOptional({ example: 1 })
-    @IsOptional()
-    @IsNumber()
-    sortOrder?: number;
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @IsNumber()
+  sortOrder?: number;
 }

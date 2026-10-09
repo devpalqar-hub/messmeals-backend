@@ -9,468 +9,508 @@ const FEATURED_RADIUS_KM = 20;
 
 @Injectable()
 export class OpenMessService {
-    constructor(
-        private readonly prisma: PrismaService,
-        private readonly geocodingService: GeocodingService,
-    ) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly geocodingService: GeocodingService,
+  ) {}
 
-    private getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
-        const R = 6371;
-        const dLat = ((lat2 - lat1) * Math.PI) / 180;
-        const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  private getDistanceKm(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+  ) {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
 
-        const a =
-            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos((lat1 * Math.PI) / 180) *
-            Math.cos((lat2 * Math.PI) / 180) *
-            Math.sin(dLon / 2) *
-            Math.sin(dLon / 2);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
 
-        return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+  }
+
+  /// Fisher-Yates shuffle — used so a "featured" listing doesn't always come back in the
+  /// same order every time (a fair rotation among nearby featured messes).
+  private shuffle<T>(items: T[]): T[] {
+    const arr = [...items];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  private lowestActivePlanPrice(
+    plans: {
+      isActive: boolean;
+      price: Prisma.Decimal;
+      minPrice: Prisma.Decimal | null;
+    }[],
+  ): number | null {
+    const active = plans.filter((p) => p.isActive !== false);
+    if (!active.length) return null;
+
+    const lowest = active.sort(
+      (a, b) => Number(a.price.toString()) - Number(b.price.toString()),
+    )[0];
+
+    return Number(
+      lowest.minPrice ? lowest.minPrice.toString() : lowest.price.toString(),
+    );
+  }
+
+  /// Shapes one mess record into the flat public-listing card shape.
+  private toListingCard(mess: any, distanceKm: number | null) {
+    const cover =
+      (mess.images ?? []).find((img: any) => img.isCover) ?? mess.images?.[0];
+
+    return {
+      id: mess.id,
+      slug: mess.slug,
+      messName: mess.name,
+      logo: mess.icon ?? null,
+      coverImage: cover?.url ?? null,
+      startingPlanPrice: this.lowestActivePlanPrice(mess.plans ?? []),
+      totalSubscribers: mess._count?.UserSubscriptions ?? 0,
+      address: {
+        address: mess.address,
+        location: mess.location,
+        zipcode: mess.zipcode,
+        latitude: mess.latitude,
+        longitude: mess.logitude,
+      },
+      status: {
+        isVerified: mess.is_verified,
+        isFeatured: mess.isFeatured,
+        isActive: mess.is_active,
+      },
+      distanceKm: distanceKm !== null ? Number(distanceKm.toFixed(2)) : null,
+      foodTypes: (mess.foodTypes ?? []).map((f: any) => f.foodType),
+    };
+  }
+
+  /// GET /open/messes — public listing for the website. Every filter is optional.
+  async findAll(query: ListOpenMessesDto) {
+    const page = query.page ? Math.max(1, Number(query.page) || 1) : 1;
+    const limit = query.limit ? Math.max(1, Number(query.limit) || 10) : 10;
+    const skip = (page - 1) * limit;
+
+    const featured = query.featured === 'true';
+    const isVerified =
+      query.isVerified !== undefined ? query.isVerified === 'true' : undefined;
+
+    const lat = query.latitude !== undefined ? Number(query.latitude) : NaN;
+    const lng = query.longitude !== undefined ? Number(query.longitude) : NaN;
+    const hasCoords = !isNaN(lat) && !isNaN(lng);
+
+    // Only ever surface messes the superadmin has explicitly opted into the public site.
+    const where: Prisma.MessWhereInput = {
+      isListed: true,
+      is_active: true,
+    };
+
+    if (query.search) {
+      where.OR = [
+        { name: { contains: query.search } },
+        { description: { contains: query.search } },
+      ];
     }
 
-    /// Fisher-Yates shuffle — used so a "featured" listing doesn't always come back in the
-    /// same order every time (a fair rotation among nearby featured messes).
-    private shuffle<T>(items: T[]): T[] {
-        const arr = [...items];
-        for (let i = arr.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [arr[i], arr[j]] = [arr[j], arr[i]];
-        }
-        return arr;
+    if (isVerified !== undefined) {
+      where.is_verified = isVerified;
     }
 
-    private lowestActivePlanPrice(
-        plans: { isActive: boolean; price: Prisma.Decimal; minPrice: Prisma.Decimal | null }[],
-    ): number | null {
-        const active = plans.filter((p) => p.isActive !== false);
-        if (!active.length) return null;
-
-        const lowest = active.sort(
-            (a, b) => Number(a.price.toString()) - Number(b.price.toString()),
-        )[0];
-
-        return Number(lowest.minPrice ? lowest.minPrice.toString() : lowest.price.toString());
+    if (featured) {
+      where.isFeatured = true;
     }
 
-    /// Shapes one mess record into the flat public-listing card shape.
-    private toListingCard(mess: any, distanceKm: number | null) {
-        const cover = (mess.images ?? []).find((img: any) => img.isCover) ?? mess.images?.[0];
-
-        return {
-            id: mess.id,
-            slug: mess.slug,
-            messName: mess.name,
-            logo: mess.icon ?? null,
-            coverImage: cover?.url ?? null,
-            startingPlanPrice: this.lowestActivePlanPrice(mess.plans ?? []),
-            totalSubscribers: mess._count?.UserSubscriptions ?? 0,
-            address: {
-                address: mess.address,
-                location: mess.location,
-                zipcode: mess.zipcode,
-                latitude: mess.latitude,
-                longitude: mess.logitude,
-            },
-            status: {
-                isVerified: mess.is_verified,
-                isFeatured: mess.isFeatured,
-                isActive: mess.is_active,
-            },
-            distanceKm: distanceKm !== null ? Number(distanceKm.toFixed(2)) : null,
-            foodTypes: (mess.foodTypes ?? []).map((f: any) => f.foodType),
-        };
+    if (query.foodType) {
+      where.foodTypes = { some: { foodType: query.foodType } };
     }
 
-    /// GET /open/messes — public listing for the website. Every filter is optional.
-    async findAll(query: ListOpenMessesDto) {
-        const page = query.page ? Math.max(1, Number(query.page) || 1) : 1;
-        const limit = query.limit ? Math.max(1, Number(query.limit) || 10) : 10;
-        const skip = (page - 1) * limit;
-
-        const featured = query.featured === 'true';
-        const isVerified = query.isVerified !== undefined ? query.isVerified === 'true' : undefined;
-
-        const lat = query.latitude !== undefined ? Number(query.latitude) : NaN;
-        const lng = query.longitude !== undefined ? Number(query.longitude) : NaN;
-        const hasCoords = !isNaN(lat) && !isNaN(lng);
-
-        // Only ever surface messes the superadmin has explicitly opted into the public site.
-        const where: Prisma.MessWhereInput = {
-            isListed: true,
-            is_active: true,
-        };
-
-        if (query.search) {
-            where.OR = [
-                { name: { contains: query.search } },
-                { description: { contains: query.search } },
-            ];
-        }
-
-        if (isVerified !== undefined) {
-            where.is_verified = isVerified;
-        }
-
-        if (featured) {
-            where.isFeatured = true;
-        }
-
-        if (query.foodType) {
-            where.foodTypes = { some: { foodType: query.foodType } };
-        }
-
-        if (query.planType) {
-            where.plans = {
-                some: {
-                    isActive: true,
-                    ...(query.planType === 'DAILY' ? { isDailyPlan: true } : { isMonthlyPlan: true }),
-                },
-            };
-        }
-
-        const messes = await this.prisma.mess.findMany({
-            where,
-            include: {
-                images: true,
-                foodTypes: true,
-                plans: { select: { isActive: true, price: true, minPrice: true } },
-                // Total subscribers = customers with a currently-active subscription to any
-                // plan of this mess (UserSubscriptions.is_active — the flag every other
-                // subscription query in this codebase uses).
-                _count: {
-                    select: {
-                        UserSubscriptions: { where: { is_active: true } },
-                        menus: true,
-                        plans: true,
-                        images: true,
-                    },
-                },
-            },
-        });
-
-        let withDistance = messes.map((mess) => {
-            let distance: number | null = null;
-
-            if (hasCoords && mess.latitude && mess.logitude) {
-                const messLat = Number(mess.latitude);
-                const messLng = Number(mess.logitude);
-                if (!isNaN(messLat) && !isNaN(messLng)) {
-                    distance = this.getDistanceKm(lat, lng, messLat, messLng);
-                }
-            }
-
-            return { mess, distance };
-        });
-
-        if (featured && hasCoords) {
-            // Featured + location: restrict to a 15km radius, then shuffle rather than sort by
-            // distance — so the same set of nearby featured messes doesn't always come back in
-            // the same order.
-            withDistance = withDistance.filter(
-                (m) => m.distance !== null && m.distance <= 15,
-            );
-            withDistance = this.shuffle(withDistance);
-        } else if (hasCoords) {
-            withDistance = withDistance.filter(
-                (m) => m.distance !== null && m.distance <= 15,
-            );
-            withDistance.sort((a, b) => {
-                const countA = (a.mess as any)._count;
-                const countB = (b.mess as any)._count;
-
-                const menusA = countA?.menus ?? 0;
-                const menusB = countB?.menus ?? 0;
-                if (menusA !== menusB) return menusB - menusA;
-
-                const plansA = countA?.plans ?? 0;
-                const plansB = countB?.plans ?? 0;
-                if (plansA !== plansB) return plansB - plansA;
-
-                const imagesA = countA?.images ?? 0;
-                const imagesB = countB?.images ?? 0;
-                if (imagesA !== imagesB) return imagesB - imagesA;
-
-                return (a.distance ?? Number.MAX_SAFE_INTEGER) - (b.distance ?? Number.MAX_SAFE_INTEGER);
-            });
-        } else {
-            withDistance.sort((a, b) => {
-                const countA = (a.mess as any)._count;
-                const countB = (b.mess as any)._count;
-
-                const menusA = countA?.menus ?? 0;
-                const menusB = countB?.menus ?? 0;
-                if (menusA !== menusB) return menusB - menusA;
-
-                const plansA = countA?.plans ?? 0;
-                const plansB = countB?.plans ?? 0;
-                if (plansA !== plansB) return plansB - plansA;
-
-                const imagesA = countA?.images ?? 0;
-                const imagesB = countB?.images ?? 0;
-                if (imagesA !== imagesB) return imagesB - imagesA;
-
-                return b.mess.createdAt.getTime() - a.mess.createdAt.getTime();
-            });
-        }
-
-        const total = withDistance.length;
-        const paged = withDistance.slice(skip, skip + limit);
-
-        return {
-            data: paged.map(({ mess, distance }) => this.toListingCard(mess, distance)),
-            meta: {
-                total,
-                page,
-                limit,
-                totalPages: Math.ceil(total / limit),
-            },
-        };
+    if (query.planType) {
+      where.plans = {
+        some: {
+          isActive: true,
+          ...(query.planType === 'DAILY'
+            ? { isDailyPlan: true }
+            : { isMonthlyPlan: true }),
+        },
+      };
     }
 
-    /// GET /open/mess/:slug — full public detail page: plans (with variations, images, menus),
-    /// tags, food types, gallery, and cover image.
-    async findBySlug(slug: string) {
-        const mess = await this.prisma.mess.findFirst({
-            where: { slug, isListed: true, is_active: true },
-            include: {
-                images: true,
-                foodTypes: true,
-                tags: true,
-                District: { select: { id: true, name: true } },
-                plans: {
-                    where: { isActive: true },
-                    include: {
-                        images: true,
-                        Variation: { where: { isActive: true } },
-                        menus: { where: { isActive: true } },
-                    },
-                },
-            },
-        });
+    const messes = await this.prisma.mess.findMany({
+      where,
+      include: {
+        images: true,
+        foodTypes: true,
+        plans: { select: { isActive: true, price: true, minPrice: true } },
+        // Total subscribers = customers with a currently-active subscription to any
+        // plan of this mess (UserSubscriptions.is_active — the flag every other
+        // subscription query in this codebase uses).
+        _count: {
+          select: {
+            UserSubscriptions: { where: { is_active: true } },
+            menus: true,
+            plans: true,
+            images: true,
+          },
+        },
+      },
+    });
 
-        if (!mess) {
-            throw new NotFoundException('Mess not found');
+    let withDistance = messes.map((mess) => {
+      let distance: number | null = null;
+
+      if (hasCoords && mess.latitude && mess.logitude) {
+        const messLat = Number(mess.latitude);
+        const messLng = Number(mess.logitude);
+        if (!isNaN(messLat) && !isNaN(messLng)) {
+          distance = this.getDistanceKm(lat, lng, messLat, messLng);
         }
+      }
 
-        const cover = mess.images.find((img) => img.isCover) ?? mess.images[0];
-        const gallery = mess.images.filter((img) => img.id !== cover?.id);
+      return { mess, distance };
+    });
 
-        return {
-            id: mess.id,
-            slug: mess.slug,
-            messName: mess.name,
-            description: mess.description,
-            logo: mess.icon ?? null,
-            coverImage: cover?.url ?? null,
-            gallery: gallery.map((img) => ({ id: img.id, url: img.url, altText: img.altText })),
-            address: {
-                address: mess.address,
-                location: mess.location,
-                zipcode: mess.zipcode,
-                latitude: mess.latitude,
-                longitude: mess.logitude,
-                district: mess.District,
-            },
-            phone: mess.phone,
-            email: mess.email,
-            openingHours: mess.openingHours,
-            features: mess.features,
-            status: {
-                isVerified: mess.is_verified,
-                isFeatured: mess.isFeatured,
-                isPremium: mess.isPremium,
-            },
-            foodTypes: mess.foodTypes.map((f) => f.foodType),
-            tags: mess.tags.map((t) => t.tag),
-            plans: mess.plans.map((plan) => ({
-                id: plan.id,
-                planName: plan.planName,
-                description: plan.description,
-                price: plan.price,
-                minPrice: plan.minPrice,
-                isMonthlyPlan: plan.isMonthlyPlan,
-                isDailyPlan: plan.isDailyPlan,
-                images: plan.images.map((img) => ({ id: img.id, url: img.url, altText: img.altText })),
-                variations: plan.Variation.map((v) => ({
-                    id: v.id,
-                    title: v.title,
-                    description: v.description,
-                })),
-                menus: plan.menus.map((menu) => ({
-                    id: menu.id,
-                    name: menu.name,
-                    schedule: menu.schedule,
-                })),
-            })),
-        };
+    if (featured && hasCoords) {
+      // Featured + location: restrict to a 15km radius, then shuffle rather than sort by
+      // distance — so the same set of nearby featured messes doesn't always come back in
+      // the same order.
+      withDistance = withDistance.filter(
+        (m) => m.distance !== null && m.distance <= 15,
+      );
+      withDistance = this.shuffle(withDistance);
+    } else if (hasCoords) {
+      withDistance = withDistance.filter(
+        (m) => m.distance !== null && m.distance <= 15,
+      );
+      withDistance.sort((a, b) => {
+        const countA = (a.mess as any)._count;
+        const countB = (b.mess as any)._count;
+
+        const menusA = countA?.menus ?? 0;
+        const menusB = countB?.menus ?? 0;
+        if (menusA !== menusB) return menusB - menusA;
+
+        const plansA = countA?.plans ?? 0;
+        const plansB = countB?.plans ?? 0;
+        if (plansA !== plansB) return plansB - plansA;
+
+        const imagesA = countA?.images ?? 0;
+        const imagesB = countB?.images ?? 0;
+        if (imagesA !== imagesB) return imagesB - imagesA;
+
+        return (
+          (a.distance ?? Number.MAX_SAFE_INTEGER) -
+          (b.distance ?? Number.MAX_SAFE_INTEGER)
+        );
+      });
+    } else {
+      withDistance.sort((a, b) => {
+        const countA = (a.mess as any)._count;
+        const countB = (b.mess as any)._count;
+
+        const menusA = countA?.menus ?? 0;
+        const menusB = countB?.menus ?? 0;
+        if (menusA !== menusB) return menusB - menusA;
+
+        const plansA = countA?.plans ?? 0;
+        const plansB = countB?.plans ?? 0;
+        if (plansA !== plansB) return plansB - plansA;
+
+        const imagesA = countA?.images ?? 0;
+        const imagesB = countB?.images ?? 0;
+        if (imagesA !== imagesB) return imagesB - imagesA;
+
+        return b.mess.createdAt.getTime() - a.mess.createdAt.getTime();
+      });
     }
 
-    /// GET /open/popular-plans — public listing of plans. Ranked by subscription count by
-    /// default; when latitude/longitude are given, ranked by distance instead — nearest
-    /// mess first, farthest last (same haversine formula as GET /open/messes).
-    async findPopularPlans(page: number = 1, limit: number = 10, latitude?: string, longitude?: string) {
-        const lat = latitude !== undefined ? Number(latitude) : NaN;
-        const lng = longitude !== undefined ? Number(longitude) : NaN;
-        const hasCoords = !isNaN(lat) && !isNaN(lng);
+    const total = withDistance.length;
+    const paged = withDistance.slice(skip, skip + limit);
 
-        const where = {
-            isActive: true,
-            mess: { isListed: true, is_active: true },
-        };
+    return {
+      data: paged.map(({ mess, distance }) =>
+        this.toListingCard(mess, distance),
+      ),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
 
-        const include = {
+  /// GET /open/mess/:slug — full public detail page: plans (with variations, images, menus),
+  /// tags, food types, gallery, and cover image.
+  async findBySlug(slug: string) {
+    const mess = await this.prisma.mess.findFirst({
+      where: { slug, isListed: true, is_active: true },
+      include: {
+        images: true,
+        foodTypes: true,
+        tags: true,
+        District: { select: { id: true, name: true } },
+        plans: {
+          where: { isActive: true },
+          include: {
             images: true,
             Variation: { where: { isActive: true } },
-            mess: {
-                select: {
-                    id: true,
-                    name: true,
-                    slug: true,
-                    icon: true,
-                    address: true,
-                    location: true,
-                    latitude: true,
-                    logitude: true,
-                    images: { where: { isCover: true }, take: 1 },
-                },
-            },
-        } as const;
+            menus: { where: { isActive: true } },
+          },
+        },
+      },
+    });
 
-        let plans: Prisma.PlansGetPayload<{ include: typeof include }>[];
-        let total: number;
-        let distanceByPlanId = new Map<string, number | null>();
+    if (!mess) {
+      throw new NotFoundException('Mess not found');
+    }
 
-        if (hasCoords) {
-            // Distance can't be sorted at the DB level (lat/lng are free-text columns, not
-            // geo/decimal ones) — fetch every matching plan, compute distance in app code,
-            // sort nearest-first, then paginate in memory. Mirrors GET /open/messes.
-            const all = await this.prisma.plans.findMany({ where, include });
+    const cover = mess.images.find((img) => img.isCover) ?? mess.images[0];
+    const gallery = mess.images.filter((img) => img.id !== cover?.id);
 
-            all.forEach((plan) => {
-                let distance: number | null = null;
-                if (plan.mess.latitude && plan.mess.logitude) {
-                    const messLat = Number(plan.mess.latitude);
-                    const messLng = Number(plan.mess.logitude);
-                    if (!isNaN(messLat) && !isNaN(messLng)) {
-                        distance = this.getDistanceKm(lat, lng, messLat, messLng);
-                    }
-                }
-                distanceByPlanId.set(plan.id, distance);
-            });
+    return {
+      id: mess.id,
+      slug: mess.slug,
+      messName: mess.name,
+      description: mess.description,
+      logo: mess.icon ?? null,
+      coverImage: cover?.url ?? null,
+      gallery: gallery.map((img) => ({
+        id: img.id,
+        url: img.url,
+        altText: img.altText,
+      })),
+      address: {
+        address: mess.address,
+        location: mess.location,
+        zipcode: mess.zipcode,
+        latitude: mess.latitude,
+        longitude: mess.logitude,
+        district: mess.District,
+      },
+      phone: mess.phone,
+      email: mess.email,
+      openingHours: mess.openingHours,
+      features: mess.features,
+      status: {
+        isVerified: mess.is_verified,
+        isFeatured: mess.isFeatured,
+        isPremium: mess.isPremium,
+      },
+      foodTypes: mess.foodTypes.map((f) => f.foodType),
+      tags: mess.tags.map((t) => t.tag),
+      plans: mess.plans.map((plan) => ({
+        id: plan.id,
+        planName: plan.planName,
+        description: plan.description,
+        price: plan.price,
+        minPrice: plan.minPrice,
+        isMonthlyPlan: plan.isMonthlyPlan,
+        isDailyPlan: plan.isDailyPlan,
+        images: plan.images.map((img) => ({
+          id: img.id,
+          url: img.url,
+          altText: img.altText,
+        })),
+        variations: plan.Variation.map((v) => ({
+          id: v.id,
+          title: v.title,
+          description: v.description,
+        })),
+        menus: plan.menus.map((menu) => ({
+          id: menu.id,
+          name: menu.name,
+          schedule: menu.schedule,
+        })),
+      })),
+    };
+  }
 
-            all.sort(
-                (a, b) =>
-                    (distanceByPlanId.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
-                    (distanceByPlanId.get(b.id) ?? Number.MAX_SAFE_INTEGER),
-            );
+  /// GET /open/popular-plans — public listing of plans. Ranked by subscription count by
+  /// default; when latitude/longitude are given, ranked by distance instead — nearest
+  /// mess first, farthest last (same haversine formula as GET /open/messes).
+  async findPopularPlans(
+    page: number = 1,
+    limit: number = 10,
+    latitude?: string,
+    longitude?: string,
+  ) {
+    const lat = latitude !== undefined ? Number(latitude) : NaN;
+    const lng = longitude !== undefined ? Number(longitude) : NaN;
+    const hasCoords = !isNaN(lat) && !isNaN(lng);
 
-            total = all.length;
-            const skip = (page - 1) * limit;
-            plans = all.slice(skip, skip + limit);
-        } else {
-            const skip = (page - 1) * limit;
-            [plans, total] = await Promise.all([
-                this.prisma.plans.findMany({
-                    where,
-                    orderBy: { totalCustomers: 'desc' },
-                    skip,
-                    take: limit,
-                    include,
-                }),
-                this.prisma.plans.count({ where }),
-            ]);
+    const where = {
+      isActive: true,
+      mess: { isListed: true, is_active: true },
+    };
+
+    const include = {
+      images: true,
+      Variation: { where: { isActive: true } },
+      mess: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          icon: true,
+          address: true,
+          location: true,
+          latitude: true,
+          logitude: true,
+          images: { where: { isCover: true }, take: 1 },
+        },
+      },
+    } as const;
+
+    let plans: Prisma.PlansGetPayload<{ include: typeof include }>[];
+    let total: number;
+    let distanceByPlanId = new Map<string, number | null>();
+
+    if (hasCoords) {
+      // Distance can't be sorted at the DB level (lat/lng are free-text columns, not
+      // geo/decimal ones) — fetch every matching plan, compute distance in app code,
+      // sort nearest-first, then paginate in memory. Mirrors GET /open/messes.
+      const all = await this.prisma.plans.findMany({ where, include });
+
+      all.forEach((plan) => {
+        let distance: number | null = null;
+        if (plan.mess.latitude && plan.mess.logitude) {
+          const messLat = Number(plan.mess.latitude);
+          const messLng = Number(plan.mess.logitude);
+          if (!isNaN(messLat) && !isNaN(messLng)) {
+            distance = this.getDistanceKm(lat, lng, messLat, messLng);
+          }
         }
+        distanceByPlanId.set(plan.id, distance);
+      });
 
+      all.sort(
+        (a, b) =>
+          (distanceByPlanId.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+          (distanceByPlanId.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+      );
+
+      total = all.length;
+      const skip = (page - 1) * limit;
+      plans = all.slice(skip, skip + limit);
+    } else {
+      const skip = (page - 1) * limit;
+      [plans, total] = await Promise.all([
+        this.prisma.plans.findMany({
+          where,
+          orderBy: { totalCustomers: 'desc' },
+          skip,
+          take: limit,
+          include,
+        }),
+        this.prisma.plans.count({ where }),
+      ]);
+    }
+
+    return {
+      message: 'Popular plans fetched successfully',
+      data: plans.map((plan) => {
+        const distanceKm = distanceByPlanId.get(plan.id) ?? null;
         return {
-            message: 'Popular plans fetched successfully',
-            data: plans.map((plan) => {
-                const distanceKm = distanceByPlanId.get(plan.id) ?? null;
-                return {
-                    id: plan.id,
-                    planName: plan.planName,
-                    description: plan.description,
-                    price: plan.price,
-                    minPrice: plan.minPrice,
-                    isMonthlyPlan: plan.isMonthlyPlan,
-                    isDailyPlan: plan.isDailyPlan,
-                    totalCustomers: plan.totalCustomers,
-                    images: plan.images.map((img) => ({ id: img.id, url: img.url, altText: img.altText })),
-                    variations: plan.Variation.map((v) => ({
-                        id: v.id,
-                        title: v.title,
-                        description: v.description,
-                    })),
-                    mess: {
-                        id: plan.mess.id,
-                        name: plan.mess.name,
-                        slug: plan.mess.slug,
-                        logo: plan.mess.icon ?? null,
-                        address: plan.mess.address,
-                        location: plan.mess.location,
-                        latitude: plan.mess.latitude,
-                        longitude: plan.mess.logitude,
-                        coverImage: plan.mess.images?.[0]?.url ?? null,
-                    },
-                    distanceKm: distanceKm !== null ? Number(distanceKm.toFixed(2)) : null,
-                };
-            }),
-            meta: {
-                total,
-                page,
-                limit,
-                totalPages: Math.ceil(total / limit),
-            },
+          id: plan.id,
+          planName: plan.planName,
+          description: plan.description,
+          price: plan.price,
+          minPrice: plan.minPrice,
+          isMonthlyPlan: plan.isMonthlyPlan,
+          isDailyPlan: plan.isDailyPlan,
+          totalCustomers: plan.totalCustomers,
+          images: plan.images.map((img) => ({
+            id: img.id,
+            url: img.url,
+            altText: img.altText,
+          })),
+          variations: plan.Variation.map((v) => ({
+            id: v.id,
+            title: v.title,
+            description: v.description,
+          })),
+          mess: {
+            id: plan.mess.id,
+            name: plan.mess.name,
+            slug: plan.mess.slug,
+            logo: plan.mess.icon ?? null,
+            address: plan.mess.address,
+            location: plan.mess.location,
+            latitude: plan.mess.latitude,
+            longitude: plan.mess.logitude,
+            coverImage: plan.mess.images?.[0]?.url ?? null,
+          },
+          distanceKm:
+            distanceKm !== null ? Number(distanceKm.toFixed(2)) : null,
         };
+      }),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /// GET /open/search-suggestions — autocomplete for the website's search bar. Returns two
+  /// groups in parallel: mess matches (id/slug/name, straight from the DB — never touches
+  /// the geocoding API) and location matches (name + coordinates, from GeocodingService,
+  /// which caches and rate-gates the underlying Mapbox calls — see its docstring).
+  async searchSuggestions(query: SearchSuggestionsDto) {
+    const q = (query.q ?? '').trim();
+    const limit = query.limit
+      ? Math.max(1, Math.min(20, Number(query.limit) || 5))
+      : 5;
+
+    if (!q) {
+      return { messes: [], locations: [] };
     }
 
-    /// GET /open/search-suggestions — autocomplete for the website's search bar. Returns two
-    /// groups in parallel: mess matches (id/slug/name, straight from the DB — never touches
-    /// the geocoding API) and location matches (name + coordinates, from GeocodingService,
-    /// which caches and rate-gates the underlying Mapbox calls — see its docstring).
-    async searchSuggestions(query: SearchSuggestionsDto) {
-        const q = (query.q ?? '').trim();
-        const limit = query.limit ? Math.max(1, Math.min(20, Number(query.limit) || 5)) : 5;
+    const [messes, locations] = await Promise.all([
+      this.prisma.mess.findMany({
+        where: {
+          isListed: true,
+          is_active: true,
+          name: { contains: q },
+        },
+        select: { id: true, slug: true, name: true },
+        take: limit,
+        orderBy: { name: 'asc' },
+      }),
+      this.geocodingService.suggestLocations(q, limit),
+    ]);
 
-        if (!q) {
-            return { messes: [], locations: [] };
-        }
+    return {
+      messes: messes.map((m) => ({ id: m.id, slug: m.slug, name: m.name })),
+      locations,
+    };
+  }
 
-        const [messes, locations] = await Promise.all([
-            this.prisma.mess.findMany({
-                where: {
-                    isListed: true,
-                    is_active: true,
-                    name: { contains: q },
-                },
-                select: { id: true, slug: true, name: true },
-                take: limit,
-                orderBy: { name: 'asc' },
-            }),
-            this.geocodingService.suggestLocations(q, limit),
-        ]);
+  /// GET /open/seo/messes — lightweight unpaginated list of all public messes for sitemap generation
+  async findSeoMesses() {
+    const messes = await this.prisma.mess.findMany({
+      where: {
+        isListed: true,
+        is_active: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        updatedAt: true,
+      },
+    });
 
-        return {
-            messes: messes.map((m) => ({ id: m.id, slug: m.slug, name: m.name })),
-            locations,
-        };
-    }
-
-    /// GET /open/seo/messes — lightweight unpaginated list of all public messes for sitemap generation
-    async findSeoMesses() {
-        const messes = await this.prisma.mess.findMany({
-            where: {
-                isListed: true,
-                is_active: true,
-            },
-            select: {
-                id: true,
-                name: true,
-                slug: true,
-                updatedAt: true,
-            },
-        });
-
-        return { data: messes };
-    }
+    return { data: messes };
+  }
 }

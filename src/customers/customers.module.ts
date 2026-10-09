@@ -8,16 +8,16 @@ import { UserModule } from 'src/user/user.module';
 import { PaymentsModule } from 'src/payments/payments.module';
 
 @Module({
-    imports: [
-        UserModule,
-        PaymentsModule,
-        JwtModule.register({
-            secret: process.env.JWT_SECRET || 'super-secret-key',
-            signOptions: { expiresIn: '7d' },
-        }),
-    ],
-    providers: [CustomerService, PrismaService],
-    controllers: [CustomerController, WalletController],
-    exports: [CustomerService],
+  imports: [
+    UserModule,
+    PaymentsModule,
+    JwtModule.register({
+      secret: process.env.JWT_SECRET || 'super-secret-key',
+      signOptions: { expiresIn: '7d' },
+    }),
+  ],
+  providers: [CustomerService, PrismaService],
+  controllers: [CustomerController, WalletController],
+  exports: [CustomerService],
 })
-export class CustomerModule { }
+export class CustomerModule {}
