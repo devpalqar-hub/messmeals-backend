@@ -328,6 +328,169 @@ export class DeliveriesService {
   }
 
   /**
+   * Lists deliveries flattened one row per variation — a delivery with 3 variations
+   * (e.g. Breakfast/Lunch/Dinner) is returned as 3 separate rows, each carrying its own
+   * VariationStatus, so a mess admin / partner / superadmin can filter and page through
+   * individual meals rather than whole-day deliveries. Scoped for MESSADMIN (own mess(es))
+   * and DELIVERYAGENT (own assigned deliveries); SUPERADMIN sees everything and may filter
+   * by any mess/partner.
+   */
+  async findAllVariations(
+    query: {
+      page?: number | string;
+      limit?: number | string;
+      status?: VariationStatus;
+      date?: string;
+      messId?: string;
+      partnerId?: string;
+      variationId?: string;
+      subscriptionId?: string;
+    },
+    user: {
+      id: string;
+      role: Role;
+      deliveryPartnerProfileId?: string;
+      messId?: string;
+      messIds?: string[];
+    },
+  ) {
+    const page = Number(query.page) || 1;
+    const limit = Number(query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+
+    // Variation (meal) level filters — scope which DeliveryVariation rows are returned.
+    if (query.status) {
+      where.status = query.status;
+    }
+    if (query.variationId) {
+      where.variationId = query.variationId;
+    }
+
+    // Delivery (day) level filters, joined via the parent delivery.
+    const deliveryWhere: any = {};
+
+    if (user.role === Role.DELIVERYAGENT) {
+      deliveryWhere.partnerId = user.deliveryPartnerProfileId ?? 'unauthorized';
+    }
+
+    if (user.role === Role.MESSADMIN) {
+      if (user.messIds && user.messIds.length > 0) {
+        deliveryWhere.messId = { in: user.messIds };
+      } else if (user.messId) {
+        deliveryWhere.messId = user.messId;
+      } else {
+        deliveryWhere.messId = 'unauthorized';
+      }
+    }
+
+    // SUPERADMIN → no role-based restriction, may filter by any mess/partner below.
+
+    if (query.messId && user.role === Role.SUPERADMIN) {
+      deliveryWhere.messId = query.messId;
+    }
+
+    if (
+      query.partnerId &&
+      (user.role === Role.SUPERADMIN || user.role === Role.MESSADMIN)
+    ) {
+      deliveryWhere.partnerId = query.partnerId;
+    }
+
+    if (query.date) {
+      const selectedDate = new Date(query.date);
+      const nextDate = new Date(selectedDate);
+      nextDate.setDate(selectedDate.getDate() + 1);
+      deliveryWhere.date = { gte: selectedDate, lt: nextDate };
+    }
+
+    if (query.subscriptionId) {
+      deliveryWhere.subscriptionId = query.subscriptionId;
+    }
+
+    where.delivery = deliveryWhere;
+
+    const [rows, totalCount] = await this.prisma.$transaction([
+      this.prisma.deliveryVariation.findMany({
+        where,
+        include: {
+          variation: {
+            select: { id: true, title: true, description: true },
+          },
+          delivery: {
+            select: {
+              id: true,
+              date: true,
+              status: true,
+              sequence: true,
+              subscriptionId: true,
+              customer: {
+                select: {
+                  id: true,
+                  user: {
+                    select: { id: true, name: true, phone: true, email: true },
+                  },
+                },
+              },
+              mess: { select: { id: true, name: true } },
+              partner: {
+                select: {
+                  id: true,
+                  user: {
+                    select: { id: true, name: true, phone: true, email: true },
+                  },
+                },
+              },
+              plan: { select: { id: true, planName: true } },
+            },
+          },
+        },
+        orderBy: [{ delivery: { date: 'desc' } }, { createdAt: 'asc' }],
+        skip,
+        take: limit,
+      }),
+
+      this.prisma.deliveryVariation.count({ where }),
+    ]);
+
+    const data = rows.map((row) => ({
+      id: row.id,
+      status: row.status,
+      variation: row.variation,
+      deliveryId: row.delivery.id,
+      date: row.delivery.date,
+      deliveryStatus: row.delivery.status,
+      sequence: row.delivery.sequence,
+      subscriptionId: row.delivery.subscriptionId,
+      mess: row.delivery.mess,
+      partner: row.delivery.partner,
+      customer: row.delivery.customer,
+      plan: row.delivery.plan,
+    }));
+
+    return {
+      message: 'Delivery variations fetched successfully',
+      page,
+      limit,
+      totalCount,
+      totalPages: Math.ceil(totalCount / limit),
+      filters: {
+        status: query.status || 'ALL',
+        date: query.date || null,
+        variationId: query.variationId || null,
+        messId: user.role === Role.SUPERADMIN ? query.messId || null : null,
+        partnerId:
+          user.role === Role.SUPERADMIN || user.role === Role.MESSADMIN
+            ? query.partnerId || null
+            : null,
+        subscriptionId: query.subscriptionId || null,
+      },
+      data,
+    };
+  }
+
+  /**
    * Cancels a delivery (the whole day's food for that customer). Only allowed for
    * MESSADMIN (of the owning mess) / SUPERADMIN, only for today-or-future dates, and
    * only while the delivery hasn't already reached a terminal/cancelled state.
