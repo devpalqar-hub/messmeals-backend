@@ -24,10 +24,14 @@ import {
   ScheduleType,
   VariationStatus,
 } from '@prisma/client';
+import { TransactionsService } from 'src/transactions/transactions.service';
 
 @Injectable()
 export class DeliveriesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly transactionsService: TransactionsService,
+  ) {}
 
   async create(dto: CreateDeliveryDto) {
     const delivery = await this.prisma.deliveries.create({
@@ -702,6 +706,7 @@ export class DeliveriesService {
           include: {
             mess: { include: { messAdmins: true } },
             partner: { include: { user: { select: { id: true } } } },
+            plan: { select: { price: true, isDailyPlan: true } },
           },
         },
       },
@@ -770,6 +775,30 @@ export class DeliveriesService {
         where: { id: deliveryId },
         data: { status: newDeliveryStatus },
       });
+
+      // Billing ledger: a daily plan is only ever charged once a delivery's variations
+      // are all complete and the day counts as successfully delivered — never upfront.
+      // Monthly plans are charged in full at subscription creation and are deliberately
+      // untouched here (per-day completion/cancellation never changes what's owed).
+      if (
+        newDeliveryStatus === DeliveryStatus.COMPLETED &&
+        delivery.plan?.isDailyPlan
+      ) {
+        try {
+          await this.transactionsService.chargeDailyDeliveryCompleted({
+            deliveryId,
+            subscriptionId: delivery.subscriptionId,
+            customerProfileId: delivery.customerId,
+            messId: delivery.messId,
+            amount: Number(delivery.plan.price),
+          });
+        } catch (err) {
+          console.error(
+            'Failed to record ledger transaction for completed delivery:',
+            err,
+          );
+        }
+      }
     }
 
     return updatedDv;

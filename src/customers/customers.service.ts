@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UserService } from 'src/user/user.service';
 import { PaymentsService } from 'src/payments/payments.service';
+import { TransactionsService } from 'src/transactions/transactions.service';
 import {
   choosePlanDto,
   CreateCustomerDto,
@@ -42,6 +43,7 @@ export class CustomerService {
     private readonly prisma: PrismaService,
     private readonly userService: UserService,
     private readonly paymentsService: PaymentsService,
+    private readonly transactionsService: TransactionsService,
   ) {}
 
   // Ensure a Wallet exists for a customer profile. Returns the wallet.
@@ -453,6 +455,32 @@ export class CustomerService {
     } catch (err) {
       // non-fatal: log and continue
       console.error('Failed to create wallet transaction:', err);
+    }
+
+    // ── Billing ledger: monthly plans are charged in full now; daily plans are only
+    // charged per completed delivery, so this wallet-settled amount is recorded purely
+    // as an advance payment (see TransactionsService.chargeDailyDeliveryCompleted). ──
+    try {
+      if (plan.isMonthlyPlan) {
+        await this.transactionsService.chargeMonthlyPlan({
+          subscriptionId: userSubscription.id,
+          customerProfileId: customerProfile.id,
+          messId: plan.messId,
+          amount: discountedPrice,
+          note: 'Monthly plan charge at registration',
+        });
+      }
+      await this.transactionsService.recordPayment({
+        customerProfileId: customerProfile.id,
+        messId: plan.messId,
+        subscriptionId: userSubscription.id,
+        amount: discountedPrice,
+        note: plan.isMonthlyPlan
+          ? 'Wallet settlement at registration'
+          : 'Advance payment via wallet at registration',
+      });
+    } catch (err) {
+      console.error('Failed to record ledger transaction:', err);
     }
 
     // ✅ Return success response
@@ -2249,6 +2277,24 @@ export class CustomerService {
       data: { totalCustomers: { increment: 1 } },
     });
 
+    // Monthly plan: charge the full amount now (payment pending) — if payment fails,
+    // the subscription row (and this DEBIT, via cascade) is deleted by
+    // PaymentsService.handlePaymentFailure. Daily plans are never charged upfront;
+    // the CREDIT for whatever is actually paid is recorded once payment succeeds.
+    if (plan.isMonthlyPlan) {
+      try {
+        await this.transactionsService.chargeMonthlyPlan({
+          subscriptionId: userSubscription.id,
+          customerProfileId: customerProfile.id,
+          messId: plan.messId,
+          amount: totalPrice,
+          note: 'Monthly plan charge (pending payment)',
+        });
+      } catch (err) {
+        console.error('Failed to record ledger transaction (choosePlan):', err);
+      }
+    }
+
     // Create a Razorpay order and return session URL so frontend can redirect user to payment
     const paymentResult = await this.paymentsService.createPaymentOrder(
       userSubscription.id,
@@ -2950,6 +2996,31 @@ export class CustomerService {
       console.error('Failed to create wallet transaction:', err);
     }
 
+    // ─── 11b. Billing ledger — same rule as register-user: monthly charged in full
+    // now, daily only charged per completed delivery (this wallet amount is an advance) ───
+    try {
+      if (plan.isMonthlyPlan) {
+        await this.transactionsService.chargeMonthlyPlan({
+          subscriptionId: userSubscription.id,
+          customerProfileId: customerProfile.id,
+          messId: plan.messId,
+          amount: discountedPrice,
+          note: 'Monthly plan charge at registration',
+        });
+      }
+      await this.transactionsService.recordPayment({
+        customerProfileId: customerProfile.id,
+        messId: plan.messId,
+        subscriptionId: userSubscription.id,
+        amount: discountedPrice,
+        note: plan.isMonthlyPlan
+          ? 'Wallet settlement at registration'
+          : 'Advance payment via wallet at registration',
+      });
+    } catch (err) {
+      console.error('Failed to record ledger transaction:', err);
+    }
+
     // ─── 12. Return result ──────────────────────────────────────────────────
     return {
       message: 'Subscription created successfully',
@@ -3071,6 +3142,25 @@ export class CustomerService {
           err,
         );
       }
+
+      // Ledger: claw back the earlier advance-payment credit by this refunded amount,
+      // so the outstanding/advance balance stays accurate (no DEBIT was ever recorded
+      // for this day, since daily plans are only charged on successful delivery).
+      try {
+        await this.transactionsService.recordRefundAdjustment({
+          customerProfileId: subscription.CustomerProfile.id,
+          messId: subscription.messId,
+          subscriptionId,
+          deliveryId: delivery.id,
+          amount: refundAmount,
+          note: `Delivery cancelled for ${dateStr} — refunded to wallet`,
+        });
+      } catch (err) {
+        console.error(
+          'Failed to record ledger refund adjustment on delivery cancel:',
+          err,
+        );
+      }
     }
 
     return {
@@ -3145,6 +3235,23 @@ export class CustomerService {
         } catch (err) {
           console.error(
             'Failed to create wallet transaction on full cancellation:',
+            err,
+          );
+        }
+
+        // Ledger: claw back the earlier advance-payment credit for the remaining,
+        // now-cancelled days (no DEBIT was ever recorded for them).
+        try {
+          await this.transactionsService.recordRefundAdjustment({
+            customerProfileId: subscription.CustomerProfile.id,
+            messId: subscription.messId,
+            subscriptionId,
+            amount: refundAmount,
+            note: 'Full subscription cancellation — refunded to wallet',
+          });
+        } catch (err) {
+          console.error(
+            'Failed to record ledger refund adjustment on full cancellation:',
             err,
           );
         }
@@ -3485,6 +3592,26 @@ export class CustomerService {
       throw new BadRequestException(
         'No chargeable days found in the extended range',
       );
+    }
+
+    // Monthly plan: charge the extension amount now (payment pending), same rule as
+    // a fresh booking. Daily plans stay uncharged until each extra day's delivery
+    // completes — only the CREDIT (if payment succeeds) is recorded upfront here.
+    if (plan.isMonthlyPlan) {
+      try {
+        await this.transactionsService.chargeMonthlyPlan({
+          subscriptionId: subscription.id,
+          customerProfileId: customerProfile.id,
+          messId: subscription.messId,
+          amount: extraPrice,
+          note: 'Monthly plan extension charge (pending payment)',
+        });
+      } catch (err) {
+        console.error(
+          'Failed to record ledger transaction (ExtendSubscription):',
+          err,
+        );
+      }
     }
 
     const paymentResult = await this.paymentsService.createPaymentOrder(

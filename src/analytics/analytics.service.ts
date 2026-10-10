@@ -1,10 +1,14 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { startOfDay, endOfDay } from 'date-fns';
+import { TransactionsService } from 'src/transactions/transactions.service';
 
 @Injectable()
 export class AnalyticsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly transactionsService: TransactionsService,
+  ) {}
 
   private async resolveMessIds(messId?: string, ownerId?: string) {
     if (messId) return [messId];
@@ -17,6 +21,31 @@ export class AnalyticsService {
       return profile.messes.map((m) => m.id);
     }
     return undefined; // no filtering
+  }
+
+  /**
+   * Ledger-based revenue/pending-payment totals — built on the customer↔mess billing
+   * ledger (see TransactionsService), which (unlike revenueSummary's Payments-only
+   * total) also captures wallet-settled registrations and daily-plan per-delivery
+   * charges. totalRevenue = money actually received (sum of CREDIT entries);
+   * pendingPayment = still owed by customers to this mess (sum(DEBIT) - sum(CREDIT),
+   * floored at 0); advanceBalance = prepaid but not yet consumed by a completed
+   * delivery's charge.
+   */
+  async ledgerSummary({ messId, ownerId }: { messId?: string; ownerId?: string }) {
+    const messIds = await this.resolveMessIds(messId, ownerId);
+    if (!messIds) {
+      throw new BadRequestException('messId or ownerId is required');
+    }
+
+    const totals = await this.transactionsService.getTotalsForMessIds(messIds);
+
+    return {
+      totalRevenue: totals.totalCredit,
+      totalCharged: totals.totalDebit,
+      pendingPayment: totals.balanceDue,
+      advanceBalance: totals.advanceBalance,
+    };
   }
 
   async revenueSummary({ date1, date2, messId, ownerId, variationId }: any) {

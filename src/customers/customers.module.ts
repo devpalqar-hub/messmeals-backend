@@ -6,11 +6,13 @@ import { WalletController } from './wallet.controller';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UserModule } from 'src/user/user.module';
 import { PaymentsModule } from 'src/payments/payments.module';
+import { TransactionsModule } from 'src/transactions/transactions.module';
 
 @Module({
   imports: [
     UserModule,
     PaymentsModule,
+    TransactionsModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'super-secret-key',
       signOptions: { expiresIn: '7d' },

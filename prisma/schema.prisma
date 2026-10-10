@@ -85,6 +85,33 @@ enum InvoiceStatus {
   OVERDUE
 }
 
+/// DEBIT = a charge that raises the amount a customer owes a mess (a monthly plan's
+/// lump charge at subscription creation, or one daily-plan delivery completing).
+/// CREDIT = money the mess has received for/from the customer (a payment, including
+/// the wallet-settled amount at registration). Outstanding balance owed by the
+/// customer to the mess = sum(DEBIT) - sum(CREDIT) for that (customer, mess) pair.
+enum LedgerEntryType {
+  DEBIT
+  CREDIT
+}
+
+enum LedgerEntryReason {
+  /// Monthly plan: the full plan charge recorded once at subscription creation/extension.
+  MONTHLY_PLAN_CHARGE
+  /// Daily plan: one day's charge, recorded only once that delivery's variations are
+  /// all marked complete — a daily plan is never charged upfront.
+  DAILY_DELIVERY_CHARGE
+  /// A payment received from the customer (gateway, wallet-settlement, or manually
+  /// recorded by a mess admin/superadmin).
+  PAYMENT_RECEIVED
+  /// A previously-recorded CREDIT being clawed back (e.g. a daily-plan delivery/day
+  /// cancellation refunded to the customer's wallet) — recorded as a DEBIT so the
+  /// ledger balance reflects that the mess no longer holds that money.
+  REFUND_ADJUSTMENT
+  /// Manual correction by a superadmin/mess admin, outside the normal flows above.
+  MANUAL_ADJUSTMENT
+}
+
 /// Staff/admin identity table — MESSADMIN, SUPERADMIN, and DELIVERYAGENT accounts.
 /// Customer (role=USER) accounts live in their own `Customer` table (see below); the
 /// `Role` enum is still used app-wide (JWT payload / `@Roles(Role.USER)` guards) even
@@ -147,6 +174,7 @@ model CustomerProfile {
   Wallet              Wallet?
   Testimonials        Testimonials[]
   deliveryAssignments DeliveryAssignment[]
+  ledgerTransactions  CustomerMessTransaction[]
 }
 
 model UserSubscriptions {
@@ -182,6 +210,7 @@ model UserSubscriptions {
   UserAddress            UserAddress?            @relation(fields: [userAddressId], references: [id])
   deliveries             Deliveries[]
   payments               Payments[]
+  ledgerTransactions     CustomerMessTransaction[]
 
   @@unique([messId, deliveryPriority])
   @@index([messId, deliveryPriority])
@@ -337,6 +366,7 @@ model Deliveries {
   UserSubscriptions  UserSubscriptions?      @relation(fields: [subscriptionId], references: [id])
   deliveryVariations DeliveryVariation[]
   deliveryAssignment DeliveryAssignment?
+  ledgerTransactions CustomerMessTransaction[]
 }
 
 model Mess {
@@ -398,6 +428,43 @@ model Mess {
 
   expenseCategories ExpenseCategory[]
   expenses          Expense[]
+
+  ledgerTransactions CustomerMessTransaction[]
+}
+
+/// Per-(customer, mess) billing ledger — see LedgerEntryType/LedgerEntryReason for the
+/// debit/credit semantics. Many rows can exist for the same (customerProfileId, messId)
+/// pair over time; `balanceAfter` snapshots the running outstanding balance (sum(DEBIT) -
+/// sum(CREDIT)) immediately after this entry, for audit without re-summing history.
+/// `relatedTransactionId` optionally links a settling entry back to the one it offsets
+/// (e.g. a REFUND_ADJUSTMENT pointing at the PAYMENT_RECEIVED/advance it claws back).
+model CustomerMessTransaction {
+  id                String            @id @default(uuid())
+  customerProfileId String
+  messId            String
+  subscriptionId    String?
+  deliveryId        String?
+  type              LedgerEntryType
+  reason            LedgerEntryReason
+  amount            Decimal
+  balanceAfter      Decimal
+  note              String?
+  createdAt         DateTime          @default(now())
+
+  relatedTransactionId String?
+
+  customerProfile    CustomerProfile           @relation(fields: [customerProfileId], references: [id], onDelete: Cascade)
+  mess               Mess                      @relation(fields: [messId], references: [id], onDelete: Cascade)
+  subscription       UserSubscriptions?        @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  delivery           Deliveries?               @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  relatedTransaction CustomerMessTransaction?  @relation("RelatedLedgerTransaction", fields: [relatedTransactionId], references: [id])
+  settlements        CustomerMessTransaction[] @relation("RelatedLedgerTransaction")
+
+  /// At most one DAILY_DELIVERY_CHARGE debit per delivery — keeps the auto-complete
+  /// hook in deliveries.service.ts idempotent against retries/re-triggers.
+  @@unique([deliveryId, reason])
+  @@index([customerProfileId, messId])
+  @@index([subscriptionId])
 }
 
 model BillingGlobalConfig {

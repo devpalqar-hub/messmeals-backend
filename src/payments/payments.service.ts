@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { DeliveryStatus, ScheduleType } from '@prisma/client';
+import { TransactionsService } from 'src/transactions/transactions.service';
 import axios from 'axios';
 import crypto from 'crypto';
 
@@ -16,7 +17,10 @@ export class PaymentsService {
   private razorpayKeyId = process.env.RAZORPAY_KEY_ID;
   private razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET;
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly transactionsService: TransactionsService,
+  ) {
     if (!this.razorpayKeyId || !this.razorpayKeySecret) {
       console.warn(
         '[RAZORPAY DEBUG] RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET is not set. ' +
@@ -392,6 +396,30 @@ export class PaymentsService {
           processedAt: new Date(),
         },
       });
+
+      // Billing ledger: this gateway payment is money actually collected, so it's
+      // always a CREDIT — for a monthly plan it settles the DEBIT charged when the
+      // order was created; for a daily plan it's simply an advance, consumed later
+      // as each delivery completes (see DeliveriesService.updateVariationStatus).
+      if (subscription.customerProfileId) {
+        try {
+          await this.transactionsService.recordPayment({
+            customerProfileId: subscription.customerProfileId,
+            messId: subscription.messId,
+            subscriptionId: subscription.id,
+            amount: Number(payment.amount),
+            note:
+              purpose === 'EXTENSION'
+                ? 'Razorpay payment received (subscription extension)'
+                : 'Razorpay payment received',
+          });
+        } catch (err) {
+          console.error(
+            '[RAZORPAY DEBUG] Failed to record ledger transaction on payment success:',
+            err,
+          );
+        }
+      }
 
       // Update wallet if discount was applied
       if (
