@@ -22,6 +22,7 @@ import {
   DeliveryStatus,
   VariationStatus,
   Role,
+  LedgerEntryType,
 } from '@prisma/client';
 import { CancelSubDto } from './dto/cancel-sub.dto';
 import { PauseSubDto } from './dto/pause-sub.dto';
@@ -477,7 +478,7 @@ export class CustomerService {
         amount: discountedPrice,
         note: plan.isMonthlyPlan
           ? 'Wallet settlement at registration'
-          : 'Advance payment via wallet at registration',
+          : 'Payment received via wallet at registration',
       });
     } catch (err) {
       console.error('Failed to record ledger transaction:', err);
@@ -1145,10 +1146,28 @@ export class CustomerService {
     );
 
     const totalOrders = activeSubs.length;
-    const totalSpent = customer.userSubscriptions.reduce(
-      (sum, sub) => sum + Number(sub.totalPrice),
-      0,
+
+    // 💰 Ledger-based totals: DEBIT = actually charged/consumed (monthly charge at
+    // registration, or per completed delivery for daily plans) — this is "total spent".
+    // CREDIT = payments received into the wallet (e.g. at registration/top-up) and is
+    // deliberately excluded from spend, since receiving a payment isn't the same as
+    // consuming it. outstandingPayment is whatever's still owed beyond what's been paid —
+    // clamped to 0 so a customer who has paid in advance never shows a negative due amount.
+    const ledgerTotals = await this.prisma.customerMessTransaction.groupBy({
+      by: ['type'],
+      where: { customerProfileId: customer.id },
+      _sum: { amount: true },
+    });
+    const totalDebit = Number(
+      ledgerTotals.find((t) => t.type === LedgerEntryType.DEBIT)?._sum
+        .amount ?? 0,
     );
+    const totalCredit = Number(
+      ledgerTotals.find((t) => t.type === LedgerEntryType.CREDIT)?._sum
+        .amount ?? 0,
+    );
+    const totalSpent = totalDebit;
+    const outstandingPayment = Math.max(totalDebit - totalCredit, 0);
 
     const daysLeft =
       activeSubs.length > 0 && activeSubs[0].end_date
@@ -1173,6 +1192,7 @@ export class CustomerService {
       noOfDaysToEnd: daysLeft,
       totalOrders,
       totalSpent,
+      outstandingPayment,
       activeSubscriptions: activeSubs.map((sub) => {
         const today = new Date();
         let status: string;
@@ -3008,15 +3028,20 @@ export class CustomerService {
           note: 'Monthly plan charge at registration',
         });
       }
-      await this.transactionsService.recordPayment({
-        customerProfileId: customerProfile.id,
-        messId: plan.messId,
-        subscriptionId: userSubscription.id,
-        amount: discountedPrice,
-        note: plan.isMonthlyPlan
-          ? 'Wallet settlement at registration'
-          : 'Advance payment via wallet at registration',
-      });
+      // Only record a payment-received entry when the customer actually had wallet
+      // funds to settle this charge with — if the wallet was empty, the deduction
+      // above just put the customer into debt, no money actually changed hands.
+      if (Number(customerProfile.walletAmount) > 0) {
+        await this.transactionsService.recordPayment({
+          customerProfileId: customerProfile.id,
+          messId: plan.messId,
+          subscriptionId: userSubscription.id,
+          amount: discountedPrice,
+          note: plan.isMonthlyPlan
+            ? 'Wallet settlement at registration'
+            : 'Payment received via wallet at registration',
+        });
+      }
     } catch (err) {
       console.error('Failed to record ledger transaction:', err);
     }
