@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { CustomerService } from './customers.service';
 import { CustomerController } from './customers.controller';
-import { WalletController } from './wallet.controller';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UserModule } from 'src/user/user.module';
 import { PaymentsModule } from 'src/payments/payments.module';
@@ -19,7 +18,7 @@ import { TransactionsModule } from 'src/transactions/transactions.module';
     }),
   ],
   providers: [CustomerService, PrismaService],
-  controllers: [CustomerController, WalletController],
+  controllers: [CustomerController],
   exports: [CustomerService],
 })
 export class CustomerModule {}

@@ -11,6 +11,7 @@ import { TwoFactorModule } from 'src/twofactor/twofactor.module';
 import { TwoFactorService } from 'src/twofactor/twofactor.service';
 import { BillingModule } from 'src/billing/billing.module';
 import { MessModule } from 'src/mess/mess.module';
+import { TransactionsModule } from 'src/transactions/transactions.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { MessModule } from 'src/mess/mess.module';
     TwoFactorModule,
     BillingModule,
     MessModule,
+    TransactionsModule,
     PassportModule.register({ defaultStrategy: 'jwt' }), // 👈 register jwt
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'super-secret-key',

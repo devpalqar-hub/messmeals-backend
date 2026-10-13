@@ -421,22 +421,6 @@ export class PaymentsService {
         }
       }
 
-      // Update wallet if discount was applied
-      if (
-        subscription.discount &&
-        Number(subscription.discount) > 0 &&
-        subscription.CustomerProfile
-      ) {
-        await this.prisma.customerProfile.update({
-          where: { id: subscription.CustomerProfile.id },
-          data: {
-            walletAmount: {
-              decrement: Number(subscription.discountedPrice),
-            },
-          },
-        });
-      }
-
       console.log(
         '[RAZORPAY DEBUG] handlePaymentSuccess: subscription activated',
         {

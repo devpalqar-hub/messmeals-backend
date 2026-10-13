@@ -52,6 +52,7 @@ export class TransactionsService {
     deliveryId?: string | null;
     note?: string;
     relatedTransactionId?: string | null;
+    createdAt?: Date;
   }) {
     if (!params.amount || params.amount <= 0) return null;
 
@@ -62,9 +63,7 @@ export class TransactionsService {
         params.messId,
       );
       const signedDelta =
-        params.type === LedgerEntryType.DEBIT
-          ? params.amount
-          : -params.amount;
+        params.type === LedgerEntryType.DEBIT ? params.amount : -params.amount;
       const balanceAfter = currentBalance + signedDelta;
 
       return tx.customerMessTransaction.create({
@@ -79,6 +78,7 @@ export class TransactionsService {
           balanceAfter,
           note: params.note,
           relatedTransactionId: params.relatedTransactionId ?? undefined,
+          createdAt: params.createdAt,
         },
       });
     });
@@ -91,6 +91,7 @@ export class TransactionsService {
     messId: string;
     amount: number;
     note?: string;
+    createdAt?: Date;
   }) {
     return this.recordEntry({
       customerProfileId: params.customerProfileId,
@@ -100,6 +101,7 @@ export class TransactionsService {
       reason: LedgerEntryReason.MONTHLY_PLAN_CHARGE,
       amount: params.amount,
       note: params.note,
+      createdAt: params.createdAt,
     });
   }
 
@@ -144,6 +146,7 @@ export class TransactionsService {
     subscriptionId?: string | null;
     amount: number;
     note?: string;
+    createdAt?: Date;
   }) {
     return this.recordEntry({
       customerProfileId: params.customerProfileId,
@@ -153,6 +156,7 @@ export class TransactionsService {
       reason: LedgerEntryReason.PAYMENT_RECEIVED,
       amount: params.amount,
       note: params.note,
+      createdAt: params.createdAt,
     });
   }
 
@@ -168,6 +172,7 @@ export class TransactionsService {
     deliveryId?: string | null;
     amount: number;
     note?: string;
+    createdAt?: Date;
   }) {
     return this.recordEntry({
       customerProfileId: params.customerProfileId,
@@ -178,6 +183,33 @@ export class TransactionsService {
       reason: LedgerEntryReason.REFUND_ADJUSTMENT,
       amount: params.amount,
       note: params.note,
+      createdAt: params.createdAt,
+    });
+  }
+
+  /**
+   * General-purpose correction outside the normal charge/payment/refund flows — used by
+   * one-off data migrations (e.g. backfilling ledger rows for subscriptions that predate
+   * this ledger) where the caller must pick the entry type explicitly.
+   */
+  async recordManualAdjustment(params: {
+    customerProfileId: string;
+    messId: string;
+    subscriptionId?: string | null;
+    type: LedgerEntryType;
+    amount: number;
+    note?: string;
+    createdAt?: Date;
+  }) {
+    return this.recordEntry({
+      customerProfileId: params.customerProfileId,
+      messId: params.messId,
+      subscriptionId: params.subscriptionId,
+      type: params.type,
+      reason: LedgerEntryReason.MANUAL_ADJUSTMENT,
+      amount: params.amount,
+      note: params.note,
+      createdAt: params.createdAt,
     });
   }
 
@@ -187,7 +219,12 @@ export class TransactionsService {
    */
   async getBalance(
     query: { customerProfileId?: string; messId?: string },
-    user: { id: string; role: Role; customerProfileId?: string; messIds?: string[] },
+    user: {
+      id: string;
+      role: Role;
+      customerProfileId?: string;
+      messIds?: string[];
+    },
   ) {
     const where: any = {};
 
@@ -243,14 +280,32 @@ export class TransactionsService {
    * analytics (unscoped by requesting user, since the caller already resolved which
    * mess(es) the requester is allowed to see).
    */
-  async getTotalsForMessIds(messIds: string[]) {
+  async getTotalsForMessIds(
+    messIds: string[],
+    dateRange?: { from?: Date; to?: Date },
+  ) {
     if (!messIds.length) {
-      return { totalDebit: 0, totalCredit: 0, balanceDue: 0, advanceBalance: 0 };
+      return {
+        totalDebit: 0,
+        totalCredit: 0,
+        balanceDue: 0,
+        advanceBalance: 0,
+      };
     }
+
+    const createdAtFilter =
+      dateRange && (dateRange.from || dateRange.to)
+        ? {
+            createdAt: {
+              ...(dateRange.from ? { gte: dateRange.from } : {}),
+              ...(dateRange.to ? { lte: dateRange.to } : {}),
+            },
+          }
+        : {};
 
     const totals = await this.prisma.customerMessTransaction.groupBy({
       by: ['type'],
-      where: { messId: { in: messIds } },
+      where: { messId: { in: messIds }, ...createdAtFilter },
       _sum: { amount: true },
     });
     const totalDebit = Number(

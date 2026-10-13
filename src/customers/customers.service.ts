@@ -47,52 +47,6 @@ export class CustomerService {
     private readonly transactionsService: TransactionsService,
   ) {}
 
-  // Ensure a Wallet exists for a customer profile. Returns the wallet.
-  private async ensureWallet(profileId: string) {
-    const existing = await this.prisma.wallet.findUnique({
-      where: { userId: profileId },
-    });
-    if (existing) return existing;
-
-    // create wallet with initial amount from customerProfile if available
-    const profile = await this.prisma.customerProfile.findUnique({
-      where: { id: profileId },
-    });
-    const initialAmount = profile?.walletAmount || 0;
-    return this.prisma.wallet.create({
-      data: { userId: profileId, walletAmount: initialAmount },
-    });
-  }
-
-  // Create a wallet transaction and update wallet balance atomically
-  private async createWalletTransaction(
-    profileId: string,
-    amount: number,
-    meta?: any,
-  ) {
-    // use a transaction to update wallet amount and create transaction record
-    const result = await this.prisma.$transaction(async (tx) => {
-      const wallet = await tx.wallet.upsert({
-        where: { userId: profileId },
-        create: { userId: profileId, walletAmount: amount },
-        update: { walletAmount: { increment: amount } },
-      });
-
-      const txn = await tx.transaction.create({
-        data: {
-          walletId: wallet.id,
-          amount: amount,
-          balanceAfter: wallet.walletAmount,
-          meta: meta || null,
-        },
-      });
-
-      return { wallet, txn };
-    });
-
-    return result;
-  }
-
   private ensureHttpsUrl(url: string): string {
     if (!url) return url;
     if (url.startsWith('http://') || url.startsWith('https://')) {
@@ -200,7 +154,6 @@ export class CustomerService {
         data: {
           userId: user.id,
           address,
-          walletAmount: Number(walletAmount),
           current_location: currentLocation,
           latitude_logitude,
         },
@@ -217,7 +170,6 @@ export class CustomerService {
           data: {
             userId: user.id,
             address,
-            walletAmount: Number(walletAmount),
             current_location: currentLocation,
             latitude_logitude,
           },
@@ -438,29 +390,12 @@ export class CustomerService {
       );
     }
 
-    // 7️⃣ Update wallet (debit for subscription)
-    const updatedProfile = await this.prisma.customerProfile.update({
-      where: { id: customerProfile.id },
-      data: {
-        walletAmount: Number(customerProfile.walletAmount) - discountedPrice,
-      },
-    });
-
-    // create transaction record (negative amount)
-    try {
-      await this.createWalletTransaction(
-        customerProfile.id,
-        -Number(discountedPrice),
-        { note: 'Subscription purchase', subscriptionId: userSubscription.id },
-      );
-    } catch (err) {
-      // non-fatal: log and continue
-      console.error('Failed to create wallet transaction:', err);
-    }
-
-    // ── Billing ledger: monthly plans are charged in full now; daily plans are only
-    // charged per completed delivery, so this wallet-settled amount is recorded purely
-    // as an advance payment (see TransactionsService.chargeDailyDeliveryCompleted). ──
+    // 7️⃣ Billing ledger: monthly plans are charged in full now; daily plans are only
+    // charged per completed delivery (see TransactionsService.chargeDailyDeliveryCompleted).
+    // `walletAmount` on the DTO is the amount actually being paid right now (e.g. cash/UPI
+    // collected at registration) — not a stored balance — so it's credited directly and
+    // uncapped by discountedPrice (paying more than the charge is a legitimate advance).
+    const amountPaidNow = Math.max(0, Number(walletAmount) || 0);
     try {
       if (plan.isMonthlyPlan) {
         await this.transactionsService.chargeMonthlyPlan({
@@ -471,15 +406,17 @@ export class CustomerService {
           note: 'Monthly plan charge at registration',
         });
       }
-      await this.transactionsService.recordPayment({
-        customerProfileId: customerProfile.id,
-        messId: plan.messId,
-        subscriptionId: userSubscription.id,
-        amount: discountedPrice,
-        note: plan.isMonthlyPlan
-          ? 'Wallet settlement at registration'
-          : 'Payment received via wallet at registration',
-      });
+      if (amountPaidNow > 0) {
+        await this.transactionsService.recordPayment({
+          customerProfileId: customerProfile.id,
+          messId: plan.messId,
+          subscriptionId: userSubscription.id,
+          amount: amountPaidNow,
+          note: plan.isMonthlyPlan
+            ? 'Payment received at registration'
+            : 'Advance payment received at registration',
+        });
+      }
     } catch (err) {
       console.error('Failed to record ledger transaction:', err);
     }
@@ -701,14 +638,14 @@ export class CustomerService {
           name,
           phone,
           email: row.email?.trim() || undefined,
-          address: row.address!.trim(),
+          address: row.address.trim(),
           walletAmount:
             row.walletAmount !== undefined ? String(row.walletAmount) : '0',
           discount:
             row.discount !== undefined ? String(row.discount) : undefined,
           planId,
           deliveryPartnerId: row.deliveryPartnerId?.trim() || undefined,
-          start_date: row.start_date!,
+          start_date: row.start_date,
           end_date: row.end_date || '',
           scheduleType:
             (row.scheduleType?.trim().toUpperCase() as ScheduleType) ||
@@ -810,7 +747,6 @@ export class CustomerService {
       address,
       latitude_logitude,
       currentLocation,
-      walletAmount,
       planId,
       deliveryPartnerId,
     } = dto;
@@ -833,8 +769,6 @@ export class CustomerService {
       customerProfileUpdateData.latitude_logitude = latitude_logitude;
     if (currentLocation !== undefined)
       customerProfileUpdateData.current_location = currentLocation;
-    if (walletAmount !== undefined)
-      customerProfileUpdateData.walletAmount = walletAmount;
 
     // 3️⃣ Run atomic transaction
     const result = await this.prisma.$transaction(async (tx) => {
@@ -997,6 +931,29 @@ export class CustomerService {
       this.prisma.customerProfile.count({ where }),
     ]);
 
+    // Ledger-based wallet balance (credit - debit) per customer on this page — replaces
+    // the old stored walletAmount field, scoped the same way as the rest of this query.
+    const customerProfileIds = customers.map((c) => c.id);
+    const ledgerTotals = customerProfileIds.length
+      ? await this.prisma.customerMessTransaction.groupBy({
+          by: ['customerProfileId', 'type'],
+          where: {
+            customerProfileId: { in: customerProfileIds },
+            ...(messId ? { messId } : {}),
+          },
+          _sum: { amount: true },
+        })
+      : [];
+    const walletBalanceByProfile = new Map<string, number>();
+    for (const row of ledgerTotals) {
+      const amount = Number(row._sum.amount ?? 0);
+      const prev = walletBalanceByProfile.get(row.customerProfileId) ?? 0;
+      walletBalanceByProfile.set(
+        row.customerProfileId,
+        prev + (row.type === LedgerEntryType.CREDIT ? amount : -amount),
+      );
+    }
+
     const result = customers.map((c) => {
       const activeSubs = c.userSubscriptions.filter(
         (sub) =>
@@ -1026,7 +983,7 @@ export class CustomerService {
         email: c.user.email,
         phone: c.user.phone,
         is_active: c.user.is_active,
-        walletBalance: Number(c.walletAmount),
+        walletBalance: walletBalanceByProfile.get(c.id) ?? 0,
         address: c.address,
         current_location: c.current_location,
         latitude_logitude: c.latitude_logitude,
@@ -1088,7 +1045,13 @@ export class CustomerService {
       ...(messId ? { messId } : {}),
     };
 
-    const [activeSubs, endingSoonSubs, dueProfiles] = await Promise.all([
+    const messIdsInScope = messId
+      ? [messId]
+      : (await this.prisma.mess.findMany({ select: { id: true } })).map(
+          (m) => m.id,
+        );
+
+    const [activeSubs, endingSoonSubs, ledgerTotals] = await Promise.all([
       this.prisma.userSubscriptions.findMany({
         where: activeWhere,
         select: { customerProfileId: true },
@@ -1099,19 +1062,10 @@ export class CustomerService {
         select: { customerProfileId: true },
         distinct: ['customerProfileId'],
       }),
-      this.prisma.customerProfile.findMany({
-        where: {
-          walletAmount: { lt: 0 },
-          ...(messId ? { userSubscriptions: { some: { messId } } } : {}),
-        },
-        select: { walletAmount: true },
-      }),
+      this.transactionsService.getTotalsForMessIds(messIdsInScope),
     ]);
 
-    const totalDue = dueProfiles.reduce(
-      (sum, p) => sum + Math.abs(Number(p.walletAmount)),
-      0,
-    );
+    const totalDue = ledgerTotals.balanceDue;
 
     return {
       activeSubscriptionsCount: activeSubs.length,
@@ -1159,8 +1113,8 @@ export class CustomerService {
       _sum: { amount: true },
     });
     const totalDebit = Number(
-      ledgerTotals.find((t) => t.type === LedgerEntryType.DEBIT)?._sum
-        .amount ?? 0,
+      ledgerTotals.find((t) => t.type === LedgerEntryType.DEBIT)?._sum.amount ??
+        0,
     );
     const totalCredit = Number(
       ledgerTotals.find((t) => t.type === LedgerEntryType.CREDIT)?._sum
@@ -1185,7 +1139,7 @@ export class CustomerService {
       name: customer.user.name,
       email: customer.user.email,
       phone: customer.user.phone,
-      walletBalance: Number(customer.walletAmount),
+      walletBalance: totalCredit - totalDebit,
       current_location: customer.current_location,
       latitude_logitude: customer.latitude_logitude,
       address: customer.address,
@@ -1579,24 +1533,20 @@ export class CustomerService {
       );
     }
 
-    // ─── 10. Debit wallet ─────────────────────────────────────────────────
-    await this.prisma.customerProfile.update({
-      where: { id: customerProfileId },
-      data: {
-        walletAmount:
-          Number(customerProfile.walletAmount ?? 0) - discountedPrice,
-      },
-    });
-
-    // create wallet debit transaction for renewal
+    // ─── 10. Billing ledger — monthly plans are charged in full now, same rule as a
+    // fresh registration; daily plans stay uncharged until each day's delivery completes. ───
     try {
-      await this.createWalletTransaction(
-        customerProfileId,
-        -Number(discountedPrice),
-        { note: 'Subscription renewal', subscriptionId },
-      );
+      if (plan.isMonthlyPlan) {
+        await this.transactionsService.chargeMonthlyPlan({
+          subscriptionId,
+          customerProfileId,
+          messId: plan.messId,
+          amount: discountedPrice,
+          note: 'Monthly plan charge at renewal',
+        });
+      }
     } catch (err) {
-      console.error('Failed to create wallet transaction on renewal:', err);
+      console.error('Failed to record ledger transaction on renewal:', err);
     }
 
     return {
@@ -1608,239 +1558,6 @@ export class CustomerService {
         effectiveStartDate,
         newEndDate: endDate,
       },
-    };
-  }
-
-  async UpdateWalletAmount(userId: string, amount: number) {
-    // Logic to update wallet amount
-    console.log('Updating wallet for user:', userId, 'by amount:', amount);
-    const updatedProfile = await this.prisma.customerProfile.update({
-      where: { id: userId },
-      data: { walletAmount: { increment: amount } },
-    });
-
-    // create wallet transaction (credit)
-    try {
-      await this.createWalletTransaction(userId, Number(amount), {
-        note: 'Wallet top-up',
-      });
-    } catch (err) {
-      console.error('Failed to create wallet transaction on top-up:', err);
-    }
-
-    return {
-      message: 'Wallet amount updated successfully',
-      walletBalance: Number(updatedProfile.walletAmount),
-    };
-  }
-
-  async getWalletTransactionsForUser(
-    userId: string,
-    page: number = 1,
-    limit: number = 20,
-  ) {
-    const skip = (page - 1) * limit;
-
-    const profile = await this.prisma.customerProfile.findUnique({
-      where: { userId },
-    });
-    if (!profile) throw new NotFoundException('Customer profile not found');
-
-    const wallet = await this.prisma.wallet.findUnique({
-      where: { userId: profile.id },
-    });
-    if (!wallet) {
-      return { data: [], meta: { total: 0, page, limit, totalPages: 0 } };
-    }
-
-    const [transactions, total] = await this.prisma.$transaction([
-      this.prisma.transaction.findMany({
-        where: { walletId: wallet.id },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-      }),
-      this.prisma.transaction.count({ where: { walletId: wallet.id } }),
-    ]);
-
-    return {
-      data: transactions,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
-  }
-
-  async CancelSubscription(subscriptionId: string, dto: CancelSubDto) {
-    const { cancellation_start_date, cancellation_end_date } = dto || {};
-
-    const cancelStartDate = cancellation_start_date
-      ? new Date(cancellation_start_date)
-      : null;
-    const cancelEndDate = cancellation_end_date
-      ? new Date(cancellation_end_date)
-      : null;
-    const currentDate = new Date();
-
-    // 1️⃣ Find subscription with plan and customer profile
-    const subscription = await this.prisma.userSubscriptions.findUnique({
-      where: { id: subscriptionId },
-      include: {
-        CustomerProfile: true,
-        plan: true,
-      },
-    });
-
-    if (!subscription) throw new NotFoundException('Subscription not found');
-    if (!subscription.is_active)
-      throw new BadRequestException('Subscription is already cancelled');
-    if (!subscription.CustomerProfile)
-      throw new BadRequestException('Customer profile not found');
-
-    const planPrice = Number(subscription.plan.price);
-    const customerWallet = Number(subscription.CustomerProfile.walletAmount);
-
-    let refundAmount = 0;
-    let deletedDeliveriesCount = 0;
-    let cancellationType = 'Full';
-
-    // 2️⃣ Partial cancellation (date range provided)
-    if (cancelStartDate && cancelEndDate) {
-      // Ensure start is before end
-      if (cancelEndDate < cancelStartDate) {
-        throw new BadRequestException(
-          'Cancellation end date must be after start date.',
-        );
-      }
-
-      // Ensure cancellation start is at least 2 days from now
-      const diffFromNowDays = Math.ceil(
-        (cancelStartDate.getTime() - currentDate.getTime()) /
-          (1000 * 60 * 60 * 24),
-      );
-      if (diffFromNowDays < 2) {
-        throw new BadRequestException(
-          'Cancellation can only be scheduled at least 2 days in advance.',
-        );
-      }
-
-      // Calculate duration between cancellation start and end
-      const diffInMs = cancelEndDate.getTime() - cancelStartDate.getTime();
-      const diffInDays = Math.ceil(diffInMs / (1000 * 60 * 60 * 24));
-
-      // Calculate refund amount
-      refundAmount = diffInDays * planPrice;
-
-      // Delete deliveries during cancellation period
-      const result = await this.prisma.deliveries.deleteMany({
-        where: {
-          subscriptionId,
-          date: {
-            gte: cancelStartDate,
-            lte: cancelEndDate,
-          },
-        },
-      });
-      deletedDeliveriesCount = result.count;
-
-      // Update wallet with refund
-      const updatedProfileRefund = await this.prisma.customerProfile.update({
-        where: { id: subscription.CustomerProfile.id },
-        data: { walletAmount: customerWallet + refundAmount },
-      });
-
-      // create wallet credit transaction for refund
-      try {
-        await this.createWalletTransaction(
-          subscription.CustomerProfile.id,
-          Number(refundAmount),
-          { note: 'Subscription partial cancellation refund', subscriptionId },
-        );
-      } catch (err) {
-        console.error(
-          'Failed to create wallet transaction on partial cancellation:',
-          err,
-        );
-      }
-
-      // Update subscription
-      await this.prisma.userSubscriptions.update({
-        where: { id: subscriptionId },
-        data: {
-          cancellation_start_date: cancelStartDate,
-          cancellation_end_date: cancelEndDate,
-          cancelled_on: new Date(),
-          is_active: false,
-        },
-      });
-
-      cancellationType = 'Partial';
-    }
-    // 3️⃣ Full cancellation (no dates provided)
-    else {
-      // Find undelivered deliveries
-      const undeliveredDeliveries = await this.prisma.deliveries.findMany({
-        where: {
-          subscriptionId,
-          date: { gte: currentDate },
-        },
-      });
-
-      const remainingDays = undeliveredDeliveries.length;
-
-      // Calculate refund for undelivered days
-      refundAmount = remainingDays * planPrice;
-
-      // Delete all future deliveries
-      const result = await this.prisma.deliveries.deleteMany({
-        where: {
-          subscriptionId,
-          date: { gte: currentDate },
-        },
-      });
-      deletedDeliveriesCount = result.count;
-
-      // Update wallet
-      const updatedProfileRefund = await this.prisma.customerProfile.update({
-        where: { id: subscription.CustomerProfile.id },
-        data: { walletAmount: customerWallet + refundAmount },
-      });
-
-      // create wallet credit transaction for refund
-      try {
-        await this.createWalletTransaction(
-          subscription.CustomerProfile.id,
-          Number(refundAmount),
-          { note: 'Subscription full cancellation refund', subscriptionId },
-        );
-      } catch (err) {
-        console.error(
-          'Failed to create wallet transaction on full cancellation:',
-          err,
-        );
-      }
-
-      // Update subscription
-      await this.prisma.userSubscriptions.update({
-        where: { id: subscriptionId },
-        data: {
-          is_active: false,
-          cancelled_on: new Date(),
-          cancellation_start_date: null,
-          cancellation_end_date: null,
-        },
-      });
-    }
-
-    return {
-      message: 'Subscription cancelled successfully',
-      cancellationType,
-      deletedDeliveries: deletedDeliveriesCount,
-      refundAmount,
-      updatedWallet: customerWallet + refundAmount,
     };
   }
 
@@ -2093,21 +1810,6 @@ export class CustomerService {
     };
   }
 
-  async ResetWalletAmount(userId: string) {
-    const customer = await this.prisma.customerProfile.findUnique({
-      where: { id: userId },
-    });
-
-    if (!customer) {
-      throw new NotFoundException('Customer profile not found');
-    }
-
-    await this.prisma.customerProfile.update({
-      where: { id: userId },
-      data: { walletAmount: 0 },
-    });
-  }
-
   /**
    * Shared pricing logic for a plan booking: validates the plan and dates, normalizes
    * the schedule, and computes totalPrice = chargeable days × plan.price. Used by both
@@ -2238,7 +1940,7 @@ export class CustomerService {
       cancelUrl,
     } = dto;
 
-    let address = await this.prisma.userAddress.findUnique({
+    const address = await this.prisma.userAddress.findUnique({
       where: { id: addressId },
     });
     if (!address) {
@@ -2446,7 +2148,7 @@ export class CustomerService {
       : null;
     const currentDate = new Date();
 
-    let user = await this.prisma.customerProfile.findUnique({
+    const user = await this.prisma.customerProfile.findUnique({
       where: { userId: userId },
     });
     if (!user) {
@@ -2468,7 +2170,6 @@ export class CustomerService {
       throw new BadRequestException('Customer profile not found');
 
     const planPrice = Number(subscription.plan.price);
-    const customerWallet = Number(subscription.CustomerProfile.walletAmount);
 
     let refundAmount = 0;
     let deletedDeliveriesCount = 0;
@@ -2513,21 +2214,17 @@ export class CustomerService {
       });
       deletedDeliveriesCount = result.count;
 
-      // Update wallet with refund
-      const updatedProfileRefund = await this.prisma.customerProfile.update({
-        where: { id: subscription.CustomerProfile.id },
-        data: { walletAmount: customerWallet + refundAmount },
-      });
-
       try {
-        await this.createWalletTransaction(
-          subscription.CustomerProfile.id,
-          Number(refundAmount),
-          { note: 'Subscription partial cancellation refund', subscriptionId },
-        );
+        await this.transactionsService.recordRefundAdjustment({
+          customerProfileId: subscription.CustomerProfile.id,
+          messId: subscription.messId,
+          subscriptionId,
+          amount: refundAmount,
+          note: 'Subscription partial cancellation refund',
+        });
       } catch (err) {
         console.error(
-          'Failed to create wallet transaction on user partial cancellation:',
+          'Failed to record ledger refund adjustment on user partial cancellation:',
           err,
         );
       }
@@ -2569,21 +2266,17 @@ export class CustomerService {
       });
       deletedDeliveriesCount = result.count;
 
-      // Update wallet
-      const updatedProfileRefund = await this.prisma.customerProfile.update({
-        where: { id: subscription.CustomerProfile.id },
-        data: { walletAmount: customerWallet + refundAmount },
-      });
-
       try {
-        await this.createWalletTransaction(
-          subscription.CustomerProfile.id,
-          Number(refundAmount),
-          { note: 'Subscription full cancellation refund', subscriptionId },
-        );
+        await this.transactionsService.recordRefundAdjustment({
+          customerProfileId: subscription.CustomerProfile.id,
+          messId: subscription.messId,
+          subscriptionId,
+          amount: refundAmount,
+          note: 'Subscription full cancellation refund',
+        });
       } catch (err) {
         console.error(
-          'Failed to create wallet transaction on user full cancellation:',
+          'Failed to record ledger refund adjustment on user full cancellation:',
           err,
         );
       }
@@ -2605,7 +2298,6 @@ export class CustomerService {
       cancellationType,
       deletedDeliveries: deletedDeliveriesCount,
       refundAmount,
-      updatedWallet: customerWallet + refundAmount,
     };
   }
 
@@ -2613,7 +2305,7 @@ export class CustomerService {
   async PauseUserSubscription(dto: PauseSubDto, userId: string) {
     const { pause_start_date, pause_end_date, subscriptionId } = dto;
 
-    let user = await this.prisma.customerProfile.findUnique({
+    const user = await this.prisma.customerProfile.findUnique({
       where: { userId: userId },
     });
     if (!user) {
@@ -2997,27 +2689,10 @@ export class CustomerService {
       );
     }
 
-    // ─── 11. Deduct from wallet (same as register-user) ─────────────────
-    const updatedProfile = await this.prisma.customerProfile.update({
-      where: { id: customerProfile.id },
-      data: {
-        walletAmount: Number(customerProfile.walletAmount) - discountedPrice,
-      },
-    });
-
-    // create transaction record (negative amount) — same as CreateUser
-    try {
-      await this.createWalletTransaction(
-        customerProfile.id,
-        -Number(discountedPrice),
-        { note: 'Subscription purchase', subscriptionId: userSubscription.id },
-      );
-    } catch (err) {
-      console.error('Failed to create wallet transaction:', err);
-    }
-
-    // ─── 11b. Billing ledger — same rule as register-user: monthly charged in full
-    // now, daily only charged per completed delivery (this wallet amount is an advance) ───
+    // ─── 11. Billing ledger — monthly plans are charged in full now; daily plans
+    // stay uncharged until each delivery completes. No payment amount is collected
+    // through this endpoint, so there's nothing to credit here — any prior advance
+    // balance is already netted automatically by the ledger's running balance. ───
     try {
       if (plan.isMonthlyPlan) {
         await this.transactionsService.chargeMonthlyPlan({
@@ -3028,23 +2703,23 @@ export class CustomerService {
           note: 'Monthly plan charge at registration',
         });
       }
-      // Only record a payment-received entry when the customer actually had wallet
-      // funds to settle this charge with — if the wallet was empty, the deduction
-      // above just put the customer into debt, no money actually changed hands.
-      if (Number(customerProfile.walletAmount) > 0) {
-        await this.transactionsService.recordPayment({
-          customerProfileId: customerProfile.id,
-          messId: plan.messId,
-          subscriptionId: userSubscription.id,
-          amount: discountedPrice,
-          note: plan.isMonthlyPlan
-            ? 'Wallet settlement at registration'
-            : 'Payment received via wallet at registration',
-        });
-      }
     } catch (err) {
       console.error('Failed to record ledger transaction:', err);
     }
+
+    const ledgerTotals = await this.prisma.customerMessTransaction.groupBy({
+      by: ['type'],
+      where: { customerProfileId: customerProfile.id },
+      _sum: { amount: true },
+    });
+    const totalDebitAll = Number(
+      ledgerTotals.find((t) => t.type === LedgerEntryType.DEBIT)?._sum.amount ??
+        0,
+    );
+    const totalCreditAll = Number(
+      ledgerTotals.find((t) => t.type === LedgerEntryType.CREDIT)?._sum
+        .amount ?? 0,
+    );
 
     // ─── 12. Return result ──────────────────────────────────────────────────
     return {
@@ -3065,7 +2740,7 @@ export class CustomerService {
           pricingMode: plan.isMonthlyPlan ? 'monthly' : 'daily',
         },
         deliveriesCreated: deliveriesToCreate.length,
-        walletBalance: Number(updatedProfile.walletAmount),
+        walletBalance: totalCreditAll - totalDebitAll,
       },
     };
   }
@@ -3146,27 +2821,6 @@ export class CustomerService {
     let refundAmount = 0;
     if (!subscription.plan.isMonthlyPlan) {
       refundAmount = Number(subscription.plan.price);
-      const currentWallet = Number(subscription.CustomerProfile.walletAmount);
-      await this.prisma.customerProfile.update({
-        where: { id: subscription.CustomerProfile.id },
-        data: { walletAmount: currentWallet + refundAmount },
-      });
-      try {
-        await this.createWalletTransaction(
-          subscription.CustomerProfile.id,
-          refundAmount,
-          {
-            note: `Delivery cancelled for ${dateStr}`,
-            subscriptionId,
-            deliveryId: delivery.id,
-          },
-        );
-      } catch (err) {
-        console.error(
-          'Failed to create wallet transaction on delivery cancel:',
-          err,
-        );
-      }
 
       // Ledger: claw back the earlier advance-payment credit by this refunded amount,
       // so the outstanding/advance balance stays accurate (no DEBIT was ever recorded
@@ -3246,24 +2900,6 @@ export class CustomerService {
     if (!subscription.plan.isMonthlyPlan) {
       refundAmount = remainingDays * Number(subscription.plan.price);
       if (refundAmount > 0) {
-        const currentWallet = Number(subscription.CustomerProfile.walletAmount);
-        await this.prisma.customerProfile.update({
-          where: { id: subscription.CustomerProfile.id },
-          data: { walletAmount: currentWallet + refundAmount },
-        });
-        try {
-          await this.createWalletTransaction(
-            subscription.CustomerProfile.id,
-            refundAmount,
-            { note: 'Full subscription cancellation refund', subscriptionId },
-          );
-        } catch (err) {
-          console.error(
-            'Failed to create wallet transaction on full cancellation:',
-            err,
-          );
-        }
-
         // Ledger: claw back the earlier advance-payment credit for the remaining,
         // now-cancelled days (no DEBIT was ever recorded for them).
         try {
