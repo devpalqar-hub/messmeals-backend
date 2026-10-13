@@ -6,9 +6,9 @@ import { AddressService } from 'src/user-address/user-address.service';
 import { UserControllers } from './user.controller';
 
 @Module({
-    imports: [AddressModule],
-    providers: [UserService, PrismaService, AddressService],
-    exports: [UserService],
-    controllers: [UserControllers]
+  imports: [AddressModule],
+  providers: [UserService, PrismaService, AddressService],
+  exports: [UserService],
+  controllers: [UserControllers],
 })
-export class UserModule { }
+export class UserModule {}

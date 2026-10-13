@@ -12,8 +12,16 @@ import * as path from 'path';
 
 // Fields that must never be written to a log, request body or otherwise.
 const REDACTED_KEYS = new Set([
-  'password', 'newpassword', 'confirmpassword', 'otp', 'token', 'accesstoken',
-  'refreshtoken', 'authorization', 'secret', 'apikey',
+  'password',
+  'newpassword',
+  'confirmpassword',
+  'otp',
+  'token',
+  'accesstoken',
+  'refreshtoken',
+  'authorization',
+  'secret',
+  'apikey',
 ]);
 
 /**
@@ -90,8 +98,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
       statusCode: status,
       message: detail,
       ...(user ? { user } : {}),
-      ...(Object.keys(request.query ?? {}).length ? { query: request.query } : {}),
-      ...(this.hasBody(request.body) ? { body: this.redact(request.body) } : {}),
+      ...(Object.keys(request.query ?? {}).length
+        ? { query: request.query }
+        : {}),
+      ...(this.hasBody(request.body)
+        ? { body: this.redact(request.body) }
+        : {}),
       ...(stack ? { stack } : {}),
     });
 
@@ -130,7 +142,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
       return Object.fromEntries(
         Object.entries(value).map(([key, val]) => [
           key,
-          REDACTED_KEYS.has(key.toLowerCase()) ? '[REDACTED]' : this.redact(val),
+          REDACTED_KEYS.has(key.toLowerCase())
+            ? '[REDACTED]'
+            : this.redact(val),
         ]),
       );
     }
@@ -141,7 +155,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // Fire-and-forget — a logging failure must never break the actual request.
     fs.appendFile(this.logFile, JSON.stringify(entry) + '\n', (err) => {
       if (err) {
-        this.logger.warn(`Failed to write error log to ${this.logFile}: ${err.message}`);
+        this.logger.warn(
+          `Failed to write error log to ${this.logFile}: ${err.message}`,
+        );
       }
     });
   }

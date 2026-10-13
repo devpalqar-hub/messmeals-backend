@@ -36,10 +36,11 @@ export class S3Service {
 
       credentials: {
         accessKeyId: this.configService.get<string>('AWS_ACCESS_KEY_ID')!,
-        secretAccessKey: this.configService.get<string>('AWS_SECRET_ACCESS_KEY')!,
+        secretAccessKey: this.configService.get<string>(
+          'AWS_SECRET_ACCESS_KEY',
+        )!,
       },
     });
-
   }
 
   async uploadFile(
@@ -88,12 +89,9 @@ export class S3Service {
         metadata: error?.$metadata,
       });
 
-      throw new BadRequestException(
-        `Failed to upload file: ${error.message}`,
-      );
+      throw new BadRequestException(`Failed to upload file: ${error.message}`);
     }
   }
-
 
   async uploadMultipleFiles(
     files: Express.Multer.File[],

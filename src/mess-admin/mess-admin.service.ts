@@ -1,285 +1,297 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { AssignMessAdminDto, RemoveMessAdminDto, CreateMessAdminDto } from './dto/mess-admin.dto';
+import {
+  AssignMessAdminDto,
+  RemoveMessAdminDto,
+  CreateMessAdminDto,
+} from './dto/mess-admin.dto';
 import { Role } from '@prisma/client';
 
 @Injectable()
 export class MessAdminService {
-    constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
-    // async createMessAdmin(dto: CreateMessAdminDto) {
-    //     // Check if user already exists
-    //     const existing = await this.prisma.user.findFirst({
-    //         where: {
-    //             OR: [{ email: dto.email }, { phone: dto.phone }],
-    //         },
-    //     });
+  // async createMessAdmin(dto: CreateMessAdminDto) {
+  //     // Check if user already exists
+  //     const existing = await this.prisma.user.findFirst({
+  //         where: {
+  //             OR: [{ email: dto.email }, { phone: dto.phone }],
+  //         },
+  //     });
 
-    //     if (existing) {
-    //         throw new BadRequestException('User with this email or phone already exists');
-    //     }
+  //     if (existing) {
+  //         throw new BadRequestException('User with this email or phone already exists');
+  //     }
 
-    //     // Validate mess IDs
-    //     const messes = await this.prisma.mess.findMany({
-    //         where: { id: { in: dto.messIds } },
-    //     });
+  //     // Validate mess IDs
+  //     const messes = await this.prisma.mess.findMany({
+  //         where: { id: { in: dto.messIds } },
+  //     });
 
-    //     if (messes.length !== dto.messIds.length) {
-    //         throw new BadRequestException('One or more mess IDs are invalid');
-    //     }
+  //     if (messes.length !== dto.messIds.length) {
+  //         throw new BadRequestException('One or more mess IDs are invalid');
+  //     }
 
-    //     // Create user and mess admin profile
-    //     const user = await this.prisma.user.create({
-    //         data: {
-    //             name: dto.name,
-    //             email: dto.email,
-    //             phone: dto.phone,
-    //             role: Role.MESSADMIN,
-    //             is_verified: true,
-    //             messAdminProfile: {
-    //                 create: {
-    //                     messes: {
-    //                         connect: dto.messIds.map((id) => ({ id })),
-    //                     },
-    //                 },
-    //             },
-    //         },
-    //         include: {
-    //             messAdminProfile: {
-    //                 include: {
-    //                     messes: true,
-    //                 },
-    //             },
-    //         },
-    //     });
+  //     // Create user and mess admin profile
+  //     const user = await this.prisma.user.create({
+  //         data: {
+  //             name: dto.name,
+  //             email: dto.email,
+  //             phone: dto.phone,
+  //             role: Role.MESSADMIN,
+  //             is_verified: true,
+  //             messAdminProfile: {
+  //                 create: {
+  //                     messes: {
+  //                         connect: dto.messIds.map((id) => ({ id })),
+  //                     },
+  //                 },
+  //             },
+  //         },
+  //         include: {
+  //             messAdminProfile: {
+  //                 include: {
+  //                     messes: true,
+  //                 },
+  //             },
+  //         },
+  //     });
 
-    //     return {
-    //         message: 'Mess admin created successfully',
-    //         data: user,
-    //     };
-    // }
+  //     return {
+  //         message: 'Mess admin created successfully',
+  //         data: user,
+  //     };
+  // }
 
-    async assignMessAdmin(dto: AssignMessAdminDto) {
-        // Check if user exists
-        const user = await this.prisma.user.findUnique({
-            where: { id: dto.userId },
-            include: { messAdminProfile: true },
-        });
+  async assignMessAdmin(dto: AssignMessAdminDto) {
+    // Check if user exists
+    const user = await this.prisma.user.findUnique({
+      where: { id: dto.userId },
+      include: { messAdminProfile: true },
+    });
 
-        if (!user) {
-            throw new NotFoundException('User not found');
-        }
-
-        // Validate mess IDs
-        const messes = await this.prisma.mess.findMany({
-            where: { id: { in: dto.messIds } },
-        });
-
-        if (messes.length !== dto.messIds.length) {
-            throw new BadRequestException('One or more mess IDs are invalid');
-        }
-
-        // Create mess admin profile if doesn't exist, or update role
-        if (!user.messAdminProfile) {
-            await this.prisma.user.update({
-                where: { id: dto.userId },
-                data: {
-                    role: Role.MESSADMIN,
-                    messAdminProfile: {
-                        create: {
-                            messes: {
-                                connect: dto.messIds.map((id) => ({ id })),
-                            },
-                        },
-                    },
-                },
-            });
-        } else {
-            // Add new messes to existing mess admin
-            await this.prisma.messAdminProfile.update({
-                where: { id: user.messAdminProfile.id },
-                data: {
-                    messes: {
-                        connect: dto.messIds.map((id) => ({ id })),
-                    },
-                },
-            });
-        }
-
-        return {
-            message: 'Mess admin assigned successfully',
-        };
+    if (!user) {
+      throw new NotFoundException('User not found');
     }
 
-    async removeMessAdminFromMess(dto: RemoveMessAdminDto) {
-        const user = await this.prisma.user.findUnique({
-            where: { id: dto.userId },
-            include: { messAdminProfile: { include: { messes: true } } },
-        });
+    // Validate mess IDs
+    const messes = await this.prisma.mess.findMany({
+      where: { id: { in: dto.messIds } },
+    });
 
-        if (!user || !user.messAdminProfile) {
-            throw new NotFoundException('Mess admin not found');
-        }
+    if (messes.length !== dto.messIds.length) {
+      throw new BadRequestException('One or more mess IDs are invalid');
+    }
 
-        await this.prisma.messAdminProfile.update({
-            where: { id: user.messAdminProfile.id },
-            data: {
-                messes: {
-                    disconnect: { id: dto.messId },
-                },
+    // Create mess admin profile if doesn't exist, or update role
+    if (!user.messAdminProfile) {
+      await this.prisma.user.update({
+        where: { id: dto.userId },
+        data: {
+          role: Role.MESSADMIN,
+          messAdminProfile: {
+            create: {
+              messes: {
+                connect: dto.messIds.map((id) => ({ id })),
+              },
             },
-        });
-
-        return {
-            message: 'Mess admin removed from mess successfully',
-        };
+          },
+        },
+      });
+    } else {
+      // Add new messes to existing mess admin
+      await this.prisma.messAdminProfile.update({
+        where: { id: user.messAdminProfile.id },
+        data: {
+          messes: {
+            connect: dto.messIds.map((id) => ({ id })),
+          },
+        },
+      });
     }
 
-    async findAll(page: number = 1, limit: number = 10, search?: string) {
-        const skip = (page - 1) * limit;
+    return {
+      message: 'Mess admin assigned successfully',
+    };
+  }
 
-        const where: any = {
-            role: Role.MESSADMIN,
-        };
+  async removeMessAdminFromMess(dto: RemoveMessAdminDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: dto.userId },
+      include: { messAdminProfile: { include: { messes: true } } },
+    });
 
-        if (search) {
-            where.OR = [
-                { name: { contains: search } },
-                { email: { contains: search } },
-            ];
-        }
-
-        const [messAdmins, total] = await this.prisma.$transaction([
-            this.prisma.user.findMany({
-                skip,
-                take: limit,
-                where,
-                select: {
-                    id: true,
-                    name: true,
-                    phone: true,
-                    email: true,
-                    is_verified: true,
-                    is_active: true,
-                    role: true,
-                    createdAt: true,
-                    updatedAt: true,
-                    messAdminProfile: {
-                        select: {
-                            id: true,
-                            messes: {
-                                select: {
-                                    id: true,
-                                    name: true,
-                                    email: true,
-                                    is_active: true,
-                                },
-                            },
-                        },
-                    },
-                },
-                orderBy: { createdAt: 'desc' },
-            }),
-            this.prisma.user.count({ where }),
-        ]);
-
-        return {
-            data: messAdmins,
-            meta: {
-                total,
-                page,
-                limit,
-                totalPages: Math.ceil(total / limit),
-            },
-        };
+    if (!user || !user.messAdminProfile) {
+      throw new NotFoundException('Mess admin not found');
     }
 
-    async findOne(userId: string) {
-        const user = await this.prisma.user.findUnique({
-            where: { id: userId },
+    await this.prisma.messAdminProfile.update({
+      where: { id: user.messAdminProfile.id },
+      data: {
+        messes: {
+          disconnect: { id: dto.messId },
+        },
+      },
+    });
+
+    return {
+      message: 'Mess admin removed from mess successfully',
+    };
+  }
+
+  async findAll(page: number = 1, limit: number = 10, search?: string) {
+    const skip = (page - 1) * limit;
+
+    const where: any = {
+      role: Role.MESSADMIN,
+    };
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search } },
+        { email: { contains: search } },
+      ];
+    }
+
+    const [messAdmins, total] = await this.prisma.$transaction([
+      this.prisma.user.findMany({
+        skip,
+        take: limit,
+        where,
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          email: true,
+          is_verified: true,
+          is_active: true,
+          role: true,
+          createdAt: true,
+          updatedAt: true,
+          messAdminProfile: {
             select: {
-                id: true,
-                name: true,
-                phone: true,
-                email: true,
-                is_verified: true,
-                is_active: true,
-                role: true,
-                createdAt: true,
-                updatedAt: true,
-                messAdminProfile: {
-                    select: {
-                        id: true,
-                        messes: {
-                            include: {
-                                plans: {
-                                    select: {
-                                        id: true,
-                                        planName: true,
-                                        price: true,
-                                    },
-                                },
-                            },
-                        },
-                    },
+              id: true,
+              messes: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  is_active: true,
                 },
+              },
             },
-        });
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
 
-        if (!user || user.role !== Role.MESSADMIN) {
-            throw new NotFoundException('Mess admin not found');
-        }
+    return {
+      data: messAdmins,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
 
-        return user;
+  async findOne(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        email: true,
+        is_verified: true,
+        is_active: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+        messAdminProfile: {
+          select: {
+            id: true,
+            messes: {
+              include: {
+                plans: {
+                  select: {
+                    id: true,
+                    planName: true,
+                    price: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!user || user.role !== Role.MESSADMIN) {
+      throw new NotFoundException('Mess admin not found');
     }
 
-    async getMessAdminsByMess(messId: string, page: number = 1, limit: number = 10) {
-        const skip = (page - 1) * limit;
+    return user;
+  }
 
-        const mess = await this.prisma.mess.findUnique({ where: { id: messId } });
-        if (!mess) {
-            throw new NotFoundException('Mess not found');
-        }
+  async getMessAdminsByMess(
+    messId: string,
+    page: number = 1,
+    limit: number = 10,
+  ) {
+    const skip = (page - 1) * limit;
 
-        const [messAdmins, total] = await this.prisma.$transaction([
-            this.prisma.messAdminProfile.findMany({
-                skip,
-                take: limit,
-                where: {
-                    messes: {
-                        some: { id: messId },
-                    },
-                },
-                include: {
-                    user: {
-                        select: {
-                            id: true,
-                            name: true,
-                            email: true,
-                            phone: true,
-                            is_active: true,
-                            createdAt: true,
-                        },
-                    },
-                },
-            }),
-            this.prisma.messAdminProfile.count({
-                where: {
-                    messes: {
-                        some: { id: messId },
-                    },
-                },
-            }),
-        ]);
-
-        return {
-            data: messAdmins,
-            meta: {
-                total,
-                page,
-                limit,
-                totalPages: Math.ceil(total / limit),
-            },
-        };
+    const mess = await this.prisma.mess.findUnique({ where: { id: messId } });
+    if (!mess) {
+      throw new NotFoundException('Mess not found');
     }
+
+    const [messAdmins, total] = await this.prisma.$transaction([
+      this.prisma.messAdminProfile.findMany({
+        skip,
+        take: limit,
+        where: {
+          messes: {
+            some: { id: messId },
+          },
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              is_active: true,
+              createdAt: true,
+            },
+          },
+        },
+      }),
+      this.prisma.messAdminProfile.count({
+        where: {
+          messes: {
+            some: { id: messId },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      data: messAdmins,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
 }

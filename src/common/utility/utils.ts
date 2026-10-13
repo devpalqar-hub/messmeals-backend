@@ -24,7 +24,6 @@ export function generate6DigitOtp(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-
 // Alphabet without look-alike characters (0/O, 1/l/I) so a generated password survives being read out or retyped.
 const PASSWORD_UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const PASSWORD_LOWER = 'abcdefghijkmnopqrstuvwxyz';
@@ -38,7 +37,11 @@ export function generateRandomPassword(length = 10): string {
   const pick = (chars: string) => chars[randomInt(chars.length)];
   const all = PASSWORD_UPPER + PASSWORD_LOWER + PASSWORD_DIGITS;
 
-  const chars = [pick(PASSWORD_UPPER), pick(PASSWORD_LOWER), pick(PASSWORD_DIGITS)];
+  const chars = [
+    pick(PASSWORD_UPPER),
+    pick(PASSWORD_LOWER),
+    pick(PASSWORD_DIGITS),
+  ];
   while (chars.length < length) chars.push(pick(all));
 
   // Fisher–Yates shuffle so the guaranteed characters aren't always at the front.

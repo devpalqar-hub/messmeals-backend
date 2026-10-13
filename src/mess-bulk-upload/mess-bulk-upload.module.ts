@@ -5,8 +5,8 @@ import { MessBulkUploadController } from './mess-bulk-upload.controller';
 import { MessBulkUploadService } from './mess-bulk-upload.service';
 
 @Module({
-    imports: [PrismaModule, BillingModule],
-    controllers: [MessBulkUploadController],
-    providers: [MessBulkUploadService],
+  imports: [PrismaModule, BillingModule],
+  controllers: [MessBulkUploadController],
+  providers: [MessBulkUploadService],
 })
-export class MessBulkUploadModule { }
+export class MessBulkUploadModule {}

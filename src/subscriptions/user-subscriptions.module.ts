@@ -4,8 +4,8 @@ import { UserSubscriptionsService } from './user-subscriptions.service';
 import { UserSubscriptionsController } from './user-subscriptions.controller';
 
 @Module({
-    providers: [PrismaService, UserSubscriptionsService],
-    exports: [UserSubscriptionsService],
-    controllers: [UserSubscriptionsController]
+  providers: [PrismaService, UserSubscriptionsService],
+  exports: [UserSubscriptionsService],
+  controllers: [UserSubscriptionsController],
 })
-export class UserSubscriptionsModule { }
+export class UserSubscriptionsModule {}

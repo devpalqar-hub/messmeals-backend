@@ -11,22 +11,24 @@ import { TwoFactorModule } from 'src/twofactor/twofactor.module';
 import { TwoFactorService } from 'src/twofactor/twofactor.service';
 import { BillingModule } from 'src/billing/billing.module';
 import { MessModule } from 'src/mess/mess.module';
+import { TransactionsModule } from 'src/transactions/transactions.module';
 
 @Module({
-    imports: [
-        UserModule,
-        ConfigModule,
-        TwoFactorModule,
-        BillingModule,
-        MessModule,
-        PassportModule.register({ defaultStrategy: 'jwt' }), // 👈 register jwt
-        JwtModule.register({
-            secret: process.env.JWT_SECRET || 'super-secret-key',
-            signOptions: { expiresIn: '365d' },
-        }),
-    ],
-    providers: [AuthService, PrismaService, JwtStrategy, TwoFactorService],
-    controllers: [AuthController],
-    exports: [AuthService],
+  imports: [
+    UserModule,
+    ConfigModule,
+    TwoFactorModule,
+    BillingModule,
+    MessModule,
+    TransactionsModule,
+    PassportModule.register({ defaultStrategy: 'jwt' }), // 👈 register jwt
+    JwtModule.register({
+      secret: process.env.JWT_SECRET || 'super-secret-key',
+      signOptions: { expiresIn: '365d' },
+    }),
+  ],
+  providers: [AuthService, PrismaService, JwtStrategy, TwoFactorService],
+  controllers: [AuthController],
+  exports: [AuthService],
 })
-export class AuthModule { }
+export class AuthModule {}

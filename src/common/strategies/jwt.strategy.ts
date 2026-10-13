@@ -63,7 +63,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         email: true,
         role: true,
         deliveryPartnerProfile: { select: { id: true, messId: true } },
-        messAdminProfile: { select: { id: true, messes: { select: { id: true } } } },
+        messAdminProfile: {
+          select: { id: true, messes: { select: { id: true } } },
+        },
       },
     });
 
@@ -73,12 +75,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     if (user.role === Role.MESSADMIN) {
       const messIds = user.messAdminProfile?.messes?.map((m) => m.id) ?? [];
-      await Promise.all(messIds.map((id) => this.billingService.enforceBillingStatus(id)));
+      await Promise.all(
+        messIds.map((id) => this.billingService.enforceBillingStatus(id)),
+      );
     }
 
     const messId =
       user.role === Role.MESSADMIN
-        ? (user.messAdminProfile?.messes?.length === 1 ? user.messAdminProfile.messes[0].id : undefined)
+        ? user.messAdminProfile?.messes?.length === 1
+          ? user.messAdminProfile.messes[0].id
+          : undefined
         : user.role === Role.DELIVERYAGENT
           ? user.deliveryPartnerProfile?.messId
           : undefined;

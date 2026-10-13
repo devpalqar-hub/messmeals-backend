@@ -1,6 +1,15 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { PlansDto, VariationDto, VariationImagesDto, PlanImagesDto } from './dto/create-plan.dto';
+import {
+  PlansDto,
+  VariationDto,
+  VariationImagesDto,
+  PlanImagesDto,
+} from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
 import * as path from 'path';
 import { pl, tr } from '@faker-js/faker';
@@ -9,442 +18,466 @@ import { ScheduleType } from '@prisma/client';
 
 @Injectable()
 export class PlansService {
-    constructor(private prisma: PrismaService,
-        private readonly s3Service: S3Service
-    ) { }
+  constructor(
+    private prisma: PrismaService,
+    private readonly s3Service: S3Service,
+  ) {}
 
-    /** Every linked menu must belong to the same mess as the plan itself. */
-    private async assertMenusBelongToMess(menuIds: string[], messId: string) {
-        if (menuIds.length === 0) return;
+  /** Every linked menu must belong to the same mess as the plan itself. */
+  private async assertMenusBelongToMess(menuIds: string[], messId: string) {
+    if (menuIds.length === 0) return;
 
-        const menus = await this.prisma.menu.findMany({
-            where: { id: { in: menuIds } },
-            select: { id: true, messId: true },
-        });
+    const menus = await this.prisma.menu.findMany({
+      where: { id: { in: menuIds } },
+      select: { id: true, messId: true },
+    });
 
-        if (menus.length !== menuIds.length) {
-            throw new BadRequestException('One or more menu IDs are invalid');
-        }
-        const foreignMenu = menus.find((m) => m.messId !== messId);
-        if (foreignMenu) {
-            throw new BadRequestException('A plan can only be linked to menus of the same mess');
-        }
+    if (menus.length !== menuIds.length) {
+      throw new BadRequestException('One or more menu IDs are invalid');
     }
-
-    /** CUSTOM requires at least one day; EVERYDAY/MONTHLY carry no day restriction. */
-    private assertScheduleValid(scheduleType: ScheduleType, availableDays?: string[]) {
-        if (scheduleType === ScheduleType.CUSTOM && (!availableDays || availableDays.length === 0)) {
-            throw new BadRequestException('availableDays is required when scheduleType is CUSTOM');
-        }
+    const foreignMenu = menus.find((m) => m.messId !== messId);
+    if (foreignMenu) {
+      throw new BadRequestException(
+        'A plan can only be linked to menus of the same mess',
+      );
     }
+  }
 
-    async createPlan(
-        dto: PlansDto,
-        images: { url: string }[] = [],
+  /** CUSTOM requires at least one day; EVERYDAY/MONTHLY carry no day restriction. */
+  private assertScheduleValid(
+    scheduleType: ScheduleType,
+    availableDays?: string[],
+  ) {
+    if (
+      scheduleType === ScheduleType.CUSTOM &&
+      (!availableDays || availableDays.length === 0)
     ) {
+      throw new BadRequestException(
+        'availableDays is required when scheduleType is CUSTOM',
+      );
+    }
+  }
 
-        const { planName, price, minPrice, description, variationIds, menuIds, messId } = dto;
+  async createPlan(dto: PlansDto, images: { url: string }[] = []) {
+    const {
+      planName,
+      price,
+      minPrice,
+      description,
+      variationIds,
+      menuIds,
+      messId,
+    } = dto;
 
-        if (dto.isMonthlyPlan === dto.isDailyPlan) {
-            throw new BadRequestException(
-                'Invalid plan type: exactly one of isMonthlyPlan or isDailyPlan must be true',
-            );
-        }
-
-        const scheduleType = dto.scheduleType ?? ScheduleType.EVERYDAY;
-        this.assertScheduleValid(scheduleType, dto.availableDays);
-
-        // 1️⃣ Validate mess exists
-        const mess = await this.prisma.mess.findUnique({
-            where: { id: messId },
-        });
-
-        if (!mess) {
-            throw new BadRequestException('Mess not found');
-        }
-
-        // 1️⃣b Validate menus (optional) belong to the same mess
-        await this.assertMenusBelongToMess(menuIds ?? [], messId);
-
-        return this.prisma.$transaction(async (tx) => {
-            // 2️⃣ Create Plan
-            const plan = await tx.plans.create({
-                data: {
-                    planName,
-                    price,
-                    minPrice,
-                    description,
-                    messId,
-                    isActive: true,
-                    isDailyPlan: dto.isDailyPlan,
-                    isMonthlyPlan: dto.isMonthlyPlan,
-                    scheduleType,
-                    availableDays: scheduleType === ScheduleType.CUSTOM ? dto.availableDays : undefined,
-                    Variation: {
-                        connect: variationIds?.map((id) => ({ id })) || [],
-                    },
-                    ...(menuIds?.length && { menus: { connect: menuIds.map((id) => ({ id })) } }),
-                },
-                include: {
-                    Variation: true,
-                    menus: true,
-                },
-            });
-
-            // 3️⃣ Add plan images (optional)
-            if (images.length > 0) {
-                const galleryData = images.map((image) => ({
-                    planId: plan.id,
-                    url: image.url,
-                }));
-
-                await tx.planImages.createMany({
-                    data: galleryData,
-                });
-            }
-
-            const createdImages = await tx.planImages.findMany({
-                where: { planId: plan.id },
-                select: {
-                    id: true,
-                    url: true,
-                    altText: true,
-                    sortOrder: true,
-                    createdAt: true,
-                    updatedAt: true,
-                },
-            });
-
-            return {
-                message: 'Plan created successfully',
-                planId: {
-                    ...plan,
-                    images: createdImages,
-                },
-            };
-        });
+    if (dto.isMonthlyPlan === dto.isDailyPlan) {
+      throw new BadRequestException(
+        'Invalid plan type: exactly one of isMonthlyPlan or isDailyPlan must be true',
+      );
     }
 
+    const scheduleType = dto.scheduleType ?? ScheduleType.EVERYDAY;
+    this.assertScheduleValid(scheduleType, dto.availableDays);
 
-    async findAll(page: number = 1, limit: number = 10, messId?: string, search?: string) {
-        const skip = (page - 1) * limit;
+    // 1️⃣ Validate mess exists
+    const mess = await this.prisma.mess.findUnique({
+      where: { id: messId },
+    });
 
-        const where: any = {};
-        if (messId) {
-            where.messId = messId;
-        }
-        if (search) {
-            where.planName = { contains: search, mode: 'insensitive' };
-        }
-
-        const [plans, total] = await this.prisma.$transaction([
-            this.prisma.plans.findMany({
-                skip,
-                take: limit,
-                where,
-                include: {
-                    images: true,
-                    mess: {
-                        select: {
-                            id: true,
-                            name: true,
-                        },
-                    },
-                    Variation: {
-                        select: {
-                            id: true,
-                            title: true,
-                            description: true
-                        },
-                    },
-                    menus: {
-                        select: {
-                            id: true,
-                            name: true,
-                            schedule: true,
-                        },
-                    },
-                },
-                orderBy: {
-                    createdAt: 'desc', // newest first
-                },
-            }),
-            this.prisma.plans.count({ where }),
-        ]);
-
-        return {
-            data: plans,
-            meta: {
-                total,
-                page,
-                limit,
-                totalPages: Math.ceil(total / limit),
-            },
-        };
+    if (!mess) {
+      throw new BadRequestException('Mess not found');
     }
 
+    // 1️⃣b Validate menus (optional) belong to the same mess
+    await this.assertMenusBelongToMess(menuIds ?? [], messId);
 
+    return this.prisma.$transaction(async (tx) => {
+      // 2️⃣ Create Plan
+      const plan = await tx.plans.create({
+        data: {
+          planName,
+          price,
+          minPrice,
+          description,
+          messId,
+          isActive: true,
+          isDailyPlan: dto.isDailyPlan,
+          isMonthlyPlan: dto.isMonthlyPlan,
+          scheduleType,
+          availableDays:
+            scheduleType === ScheduleType.CUSTOM
+              ? dto.availableDays
+              : undefined,
+          Variation: {
+            connect: variationIds?.map((id) => ({ id })) || [],
+          },
+          ...(menuIds?.length && {
+            menus: { connect: menuIds.map((id) => ({ id })) },
+          }),
+        },
+        include: {
+          Variation: true,
+          menus: true,
+        },
+      });
 
-    async findOne(id: string) {
-        const plan = await this.prisma.plans.findUnique({
-            where: { id },
-            include: {
-                images: true,
-                mess: {
-                    select: {
-                        id: true,
-                        name: true,
-                        email: true,
-                        phone: true,
-                    },
-                },
-                Variation: {
-                    select: {
-                        id: true,
-                        title: true,
-                        description: true
-                    },
-                },
-                menus: {
-                    select: {
-                        id: true,
-                        name: true,
-                        schedule: true,
-                    },
-                },
-            },
-        });
-        if (!plan) throw new NotFoundException('Plan not found');
-        return plan;
-    }
-
-    async updatePlan(id: string, dto: UpdatePlanDto) {
-        if (
-            dto.isMonthlyPlan !== undefined &&
-            dto.isDailyPlan !== undefined &&
-            dto.isMonthlyPlan === dto.isDailyPlan
-        ) {
-            throw new BadRequestException(
-                'Invalid plan type: exactly one of isMonthlyPlan or isDailyPlan must be true',
-            );
-        }
-
-        return this.prisma.$transaction(async (tx) => {
-            const updateData: any = {};
-
-            if (dto.planName !== undefined)
-                updateData.planName = dto.planName;
-
-            if (dto.price !== undefined)
-                updateData.price = dto.price;
-
-            if (dto.minPrice !== undefined)
-                updateData.minPrice = dto.minPrice;
-
-            if (dto.description !== undefined)
-                updateData.description = dto.description;
-
-            if (dto.isActive !== undefined)
-                updateData.isActive = dto.isActive;
-
-            if (dto.isMonthlyPlan !== undefined)
-                updateData.isMonthlyPlan = dto.isMonthlyPlan;
-
-            if (dto.isDailyPlan !== undefined)
-                updateData.isDailyPlan = dto.isDailyPlan;
-
-            if (dto.scheduleType !== undefined || dto.availableDays !== undefined) {
-                const existing = await tx.plans.findUnique({
-                    where: { id },
-                    select: { scheduleType: true, availableDays: true },
-                });
-                if (!existing) throw new NotFoundException('Plan not found');
-
-                const nextScheduleType = dto.scheduleType ?? existing.scheduleType;
-                const nextAvailableDays =
-                    dto.availableDays ?? (Array.isArray(existing.availableDays) ? (existing.availableDays as string[]) : undefined);
-
-                this.assertScheduleValid(nextScheduleType, nextAvailableDays);
-
-                updateData.scheduleType = nextScheduleType;
-                updateData.availableDays = nextScheduleType === ScheduleType.CUSTOM ? nextAvailableDays : null;
-            }
-
-            if (dto.lunch !== undefined)
-                updateData.lunch = dto.lunch;
-
-            if (dto.messId) {
-                const mess = await tx.mess.findUnique({
-                    where: { id: dto.messId },
-                });
-
-                if (!mess) throw new BadRequestException('Mess not found');
-
-                updateData.messId = dto.messId;
-            }
-
-            // Variation update
-            if (dto.variationIds?.length) {
-                updateData.Variation = {
-                    set: dto.variationIds.map((id) => ({ id })),
-                };
-            }
-
-            // Menu update — replaces the full set of linked menus; [] unlinks all
-            if (dto.menuIds !== undefined) {
-                const targetMessId = dto.messId ?? (await tx.plans.findUnique({ where: { id }, select: { messId: true } }))?.messId;
-                if (!targetMessId) throw new NotFoundException('Plan not found');
-                await this.assertMenusBelongToMess(dto.menuIds, targetMessId);
-
-                updateData.menus = {
-                    set: dto.menuIds.map((menuId) => ({ id: menuId })),
-                };
-            }
-
-            // ✅ Add images without removing existing ones
-            if (dto.planImages?.length) {
-                // fetch existing images
-                const existingImages = await tx.planImages.findMany({
-                    where: { planId: id },
-                    select: { url: true },
-                });
-
-                const existingUrls = new Set(existingImages.map(img => img.url));
-
-                // filter only new images
-                const newImages = dto.planImages.filter(
-                    (url) => !existingUrls.has(url),
-                );
-
-                if (newImages.length) {
-                    updateData.images = {
-                        create: newImages.map((url) => ({
-                            url,
-                            altText: 'plan-image',
-                        })),
-                    };
-                }
-            }
-
-
-            const updatedPlan = await tx.plans.update({
-                where: { id },
-                data: updateData,
-                include: {
-                    Variation: true,
-                    images: true,
-                    menus: true,
-                },
-            });
-
-            return {
-                message: 'Plan updated successfully',
-                plan: updatedPlan,
-            };
-        });
-    }
-
-
-    async remove(id: string) {
-        return this.prisma.plans.delete({ where: { id } });
-    }
-
-
-    async addPlanImages(
-        planId: string,
-        images: {
-            url: string;
-        }[] = [],
-        altText?: string,
-    ) {
-        if (!images || images.length === 0) {
-            throw new BadRequestException('At least one image is required');
-        }
-
-        const plan = await this.prisma.plans.findUnique({
-            where: { id: planId },
-        });
-
-        if (!plan) {
-            throw new NotFoundException('Plan not found');
-        }
-
+      // 3️⃣ Add plan images (optional)
+      if (images.length > 0) {
         const galleryData = images.map((image) => ({
-            planId: plan.id,
-            url: image.url,
+          planId: plan.id,
+          url: image.url,
         }));
 
-        await this.prisma.planImages.createMany({
-            data: galleryData,
+        await tx.planImages.createMany({
+          data: galleryData,
         });
+      }
 
-        // ✅ Fetch images and attach (response structure unchanged)
-        const Planimages = await this.prisma.planImages.findMany({
-            where: { planId: plan.id },
+      const createdImages = await tx.planImages.findMany({
+        where: { planId: plan.id },
+        select: {
+          id: true,
+          url: true,
+          altText: true,
+          sortOrder: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      return {
+        message: 'Plan created successfully',
+        planId: {
+          ...plan,
+          images: createdImages,
+        },
+      };
+    });
+  }
+
+  async findAll(
+    page: number = 1,
+    limit: number = 10,
+    messId?: string,
+    search?: string,
+  ) {
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (messId) {
+      where.messId = messId;
+    }
+    if (search) {
+      where.planName = { contains: search, mode: 'insensitive' };
+    }
+
+    const [plans, total] = await this.prisma.$transaction([
+      this.prisma.plans.findMany({
+        skip,
+        take: limit,
+        where,
+        include: {
+          images: true,
+          mess: {
             select: {
-                id: true,
-                url: true,
+              id: true,
+              name: true,
             },
-        });
+          },
+          Variation: {
+            select: {
+              id: true,
+              title: true,
+              description: true,
+            },
+          },
+          menus: {
+            select: {
+              id: true,
+              name: true,
+              schedule: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'desc', // newest first
+        },
+      }),
+      this.prisma.plans.count({ where }),
+    ]);
 
-        return {
-            message: 'Plan images uploaded successfully',
-            data: Planimages,
-        };
+    return {
+      data: plans,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async findOne(id: string) {
+    const plan = await this.prisma.plans.findUnique({
+      where: { id },
+      include: {
+        images: true,
+        mess: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+          },
+        },
+        Variation: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+          },
+        },
+        menus: {
+          select: {
+            id: true,
+            name: true,
+            schedule: true,
+          },
+        },
+      },
+    });
+    if (!plan) throw new NotFoundException('Plan not found');
+    return plan;
+  }
+
+  async updatePlan(id: string, dto: UpdatePlanDto) {
+    if (
+      dto.isMonthlyPlan !== undefined &&
+      dto.isDailyPlan !== undefined &&
+      dto.isMonthlyPlan === dto.isDailyPlan
+    ) {
+      throw new BadRequestException(
+        'Invalid plan type: exactly one of isMonthlyPlan or isDailyPlan must be true',
+      );
     }
 
-    async getPlanImages(planId: string) {
-        const plans = await this.prisma.plans.findUnique({
-            where: { id: planId }
+    return this.prisma.$transaction(async (tx) => {
+      const updateData: any = {};
+
+      if (dto.planName !== undefined) updateData.planName = dto.planName;
+
+      if (dto.price !== undefined) updateData.price = dto.price;
+
+      if (dto.minPrice !== undefined) updateData.minPrice = dto.minPrice;
+
+      if (dto.description !== undefined)
+        updateData.description = dto.description;
+
+      if (dto.isActive !== undefined) updateData.isActive = dto.isActive;
+
+      if (dto.isMonthlyPlan !== undefined)
+        updateData.isMonthlyPlan = dto.isMonthlyPlan;
+
+      if (dto.isDailyPlan !== undefined)
+        updateData.isDailyPlan = dto.isDailyPlan;
+
+      if (dto.scheduleType !== undefined || dto.availableDays !== undefined) {
+        const existing = await tx.plans.findUnique({
+          where: { id },
+          select: { scheduleType: true, availableDays: true },
+        });
+        if (!existing) throw new NotFoundException('Plan not found');
+
+        const nextScheduleType = dto.scheduleType ?? existing.scheduleType;
+        const nextAvailableDays =
+          dto.availableDays ??
+          (Array.isArray(existing.availableDays)
+            ? (existing.availableDays as string[])
+            : undefined);
+
+        this.assertScheduleValid(nextScheduleType, nextAvailableDays);
+
+        updateData.scheduleType = nextScheduleType;
+        updateData.availableDays =
+          nextScheduleType === ScheduleType.CUSTOM ? nextAvailableDays : null;
+      }
+
+      if (dto.lunch !== undefined) updateData.lunch = dto.lunch;
+
+      if (dto.messId) {
+        const mess = await tx.mess.findUnique({
+          where: { id: dto.messId },
         });
 
-        if (!plans) {
-            throw new NotFoundException('Plan not found');
-        }
+        if (!mess) throw new BadRequestException('Mess not found');
 
-        const images = await this.prisma.planImages.findMany({
-            where: {
-                planId: plans.id,
-            },
-            orderBy: {
-                createdAt: 'asc',
-            },
-        });
+        updateData.messId = dto.messId;
+      }
 
-        return {
-            status: 'success',
-            message: 'Plan images fetched successfully',
-            data: images,
+      // Variation update
+      if (dto.variationIds?.length) {
+        updateData.Variation = {
+          set: dto.variationIds.map((id) => ({ id })),
         };
+      }
+
+      // Menu update — replaces the full set of linked menus; [] unlinks all
+      if (dto.menuIds !== undefined) {
+        const targetMessId =
+          dto.messId ??
+          (
+            await tx.plans.findUnique({
+              where: { id },
+              select: { messId: true },
+            })
+          )?.messId;
+        if (!targetMessId) throw new NotFoundException('Plan not found');
+        await this.assertMenusBelongToMess(dto.menuIds, targetMessId);
+
+        updateData.menus = {
+          set: dto.menuIds.map((menuId) => ({ id: menuId })),
+        };
+      }
+
+      // ✅ Add images without removing existing ones
+      if (dto.planImages?.length) {
+        // fetch existing images
+        const existingImages = await tx.planImages.findMany({
+          where: { planId: id },
+          select: { url: true },
+        });
+
+        const existingUrls = new Set(existingImages.map((img) => img.url));
+
+        // filter only new images
+        const newImages = dto.planImages.filter(
+          (url) => !existingUrls.has(url),
+        );
+
+        if (newImages.length) {
+          updateData.images = {
+            create: newImages.map((url) => ({
+              url,
+              altText: 'plan-image',
+            })),
+          };
+        }
+      }
+
+      const updatedPlan = await tx.plans.update({
+        where: { id },
+        data: updateData,
+        include: {
+          Variation: true,
+          images: true,
+          menus: true,
+        },
+      });
+
+      return {
+        message: 'Plan updated successfully',
+        plan: updatedPlan,
+      };
+    });
+  }
+
+  async remove(id: string) {
+    return this.prisma.plans.delete({ where: { id } });
+  }
+
+  async addPlanImages(
+    planId: string,
+    images: {
+      url: string;
+    }[] = [],
+    altText?: string,
+  ) {
+    if (!images || images.length === 0) {
+      throw new BadRequestException('At least one image is required');
     }
 
-    async deletePlanImages(planId: string, imageId: string) {
-        const plans = await this.prisma.plans.findUnique({
-            where: { id: planId },
-        });
+    const plan = await this.prisma.plans.findUnique({
+      where: { id: planId },
+    });
 
-        if (!plans) {
-            throw new NotFoundException('Plan not found');
-        }
-
-        const image = await this.prisma.planImages.findUnique({
-            where: { id: imageId },
-        });
-
-        if (!image || image.planId !== plans.id) {
-            throw new NotFoundException('Image not found');
-        }
-        await this.s3Service.deleteFile(image.url);
-
-        await this.prisma.planImages.delete({
-            where: { id: imageId },
-        });
-
-        return {
-            message: 'Plan image deleted successfully',
-        };
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
     }
+
+    const galleryData = images.map((image) => ({
+      planId: plan.id,
+      url: image.url,
+    }));
+
+    await this.prisma.planImages.createMany({
+      data: galleryData,
+    });
+
+    // ✅ Fetch images and attach (response structure unchanged)
+    const Planimages = await this.prisma.planImages.findMany({
+      where: { planId: plan.id },
+      select: {
+        id: true,
+        url: true,
+      },
+    });
+
+    return {
+      message: 'Plan images uploaded successfully',
+      data: Planimages,
+    };
+  }
+
+  async getPlanImages(planId: string) {
+    const plans = await this.prisma.plans.findUnique({
+      where: { id: planId },
+    });
+
+    if (!plans) {
+      throw new NotFoundException('Plan not found');
+    }
+
+    const images = await this.prisma.planImages.findMany({
+      where: {
+        planId: plans.id,
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+
+    return {
+      status: 'success',
+      message: 'Plan images fetched successfully',
+      data: images,
+    };
+  }
+
+  async deletePlanImages(planId: string, imageId: string) {
+    const plans = await this.prisma.plans.findUnique({
+      where: { id: planId },
+    });
+
+    if (!plans) {
+      throw new NotFoundException('Plan not found');
+    }
+
+    const image = await this.prisma.planImages.findUnique({
+      where: { id: imageId },
+    });
+
+    if (!image || image.planId !== plans.id) {
+      throw new NotFoundException('Image not found');
+    }
+    await this.s3Service.deleteFile(image.url);
+
+    await this.prisma.planImages.delete({
+      where: { id: imageId },
+    });
+
+    return {
+      message: 'Plan image deleted successfully',
+    };
+  }
 }
 
-
-//add plan image validations 
+//add plan image validations

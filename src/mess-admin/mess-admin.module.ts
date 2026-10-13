@@ -4,9 +4,9 @@ import { MessAdminService } from './mess-admin.service';
 import { PrismaModule } from 'src/prisma/prisma.module';
 
 @Module({
-    imports: [PrismaModule],
-    controllers: [MessAdminController],
-    providers: [MessAdminService],
-    exports: [MessAdminService],
+  imports: [PrismaModule],
+  controllers: [MessAdminController],
+  providers: [MessAdminService],
+  exports: [MessAdminService],
 })
-export class MessAdminModule { }
+export class MessAdminModule {}

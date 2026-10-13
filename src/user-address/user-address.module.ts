@@ -6,9 +6,9 @@ import { PlansService } from 'src/plans/plans.service';
 import { S3Module } from 'src/s3/s3.module';
 
 @Module({
-    imports: [S3Module],
-    controllers: [AddressController],
-    providers: [PlansService, PrismaService, AddressService],
-    exports: [AddressService]
+  imports: [S3Module],
+  controllers: [AddressController],
+  providers: [PlansService, PrismaService, AddressService],
+  exports: [AddressService],
 })
-export class AddressModule { }
+export class AddressModule {}

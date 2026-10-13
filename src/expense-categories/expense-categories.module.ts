@@ -4,9 +4,9 @@ import { ExpenseCategoriesService } from './expense-categories.service';
 import { PrismaModule } from 'src/prisma/prisma.module';
 
 @Module({
-    imports: [PrismaModule],
-    controllers: [ExpenseCategoriesController],
-    providers: [ExpenseCategoriesService],
-    exports: [ExpenseCategoriesService],
+  imports: [PrismaModule],
+  controllers: [ExpenseCategoriesController],
+  providers: [ExpenseCategoriesService],
+  exports: [ExpenseCategoriesService],
 })
-export class ExpenseCategoriesModule { }
+export class ExpenseCategoriesModule {}

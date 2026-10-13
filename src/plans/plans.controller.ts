@@ -1,24 +1,33 @@
 import {
-    Controller,
-    Post,
-    Get,
-    Patch,
-    Delete,
-    Param,
-    Body,
-    Query,
-    ParseUUIDPipe,
-    BadRequestException,
-    UsePipes,
-    ValidationPipe,
-    UseGuards,
-    UploadedFiles,
-    UseInterceptors,
+  Controller,
+  Post,
+  Get,
+  Patch,
+  Delete,
+  Param,
+  Body,
+  Query,
+  ParseUUIDPipe,
+  BadRequestException,
+  UsePipes,
+  ValidationPipe,
+  UseGuards,
+  UploadedFiles,
+  UseInterceptors,
 } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
-import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { PlansService } from './plans.service';
 import { PlansDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
@@ -30,324 +39,408 @@ const maxSize = 10 * 1024 * 1024; // 50MB per media
 @ApiBearerAuth()
 @Controller('plans')
 export class PlansController {
-    constructor(
-        private readonly plansService: PlansService,
-        private readonly s3Service: S3Service,
-    ) { }
+  constructor(
+    private readonly plansService: PlansService,
+    private readonly s3Service: S3Service,
+  ) {}
 
-    @UseGuards(JwtAuthGuard, RolesGuard)
-    // @Roles('SUPERADMIN')
-    @Post('images/upload')
-    @ApiOperation({
-        summary: 'Upload plan images',
-        description: 'Uploads one or more image files to S3 and returns their public URLs. Use these URLs in create/update plan APIs.'
-    })
-    @ApiConsumes('multipart/form-data')
-    @ApiBody({
-        schema: {
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  // @Roles('SUPERADMIN')
+  @Post('images/upload')
+  @ApiOperation({
+    summary: 'Upload plan images',
+    description:
+      'Uploads one or more image files to S3 and returns their public URLs. Use these URLs in create/update plan APIs.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        files: {
+          type: 'array',
+          items: { type: 'string', format: 'binary' },
+        },
+      },
+      required: ['files'],
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Plan images uploaded successfully.',
+  })
+  @UseInterceptors(
+    FilesInterceptor('files', 10, {
+      limits: { fileSize: maxSize },
+      fileFilter: (_req, file, cb) => {
+        const isImage =
+          typeof file?.mimetype === 'string' &&
+          file.mimetype.startsWith('image/');
+        if (!isImage) {
+          return cb(
+            new BadRequestException('Only image files are allowed') as any,
+            false,
+          );
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  async uploadPlanImages(@UploadedFiles() files: any[]) {
+    if (!files || files.length === 0) {
+      throw new BadRequestException('Files are required');
+    }
+
+    const urls = await this.s3Service.uploadMultipleFiles(files, 'plans');
+
+    return {
+      message: 'Plan images uploaded successfully',
+      urls,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  // @Roles('SUPERADMIN')
+  @ApiOperation({
+    summary: 'Create a plan',
+    description:
+      'Creates a new plan with optional gallery images, linked variations, and optionally linked menus (menuIds — must belong to the same mess).',
+  })
+  @ApiResponse({ status: 201, description: 'Plan created successfully.' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        planName: { type: 'string', example: 'Weekly Lunch Plan' },
+        price: { type: 'number', example: 999 },
+        minPrice: { type: 'number', example: 799 },
+        description: { type: 'string', example: 'Balanced weekday meal plan' },
+        messId: {
+          type: 'string',
+          example: 'c2b7d4af-7c5f-4d4a-9a08-2f2f7d4e3a11',
+        },
+        variationIds: {
+          type: 'array',
+          example: ['1f2e3d4c-1111-2222-3333-444455556666'],
+          items: { type: 'string' },
+        },
+        menuIds: {
+          type: 'array',
+          example: ['7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111'],
+          items: { type: 'string' },
+          description:
+            'Optional — existing menus of the same mess to link to this plan.',
+        },
+        isMonthlyPlan: { type: 'boolean', example: true },
+        isDailyPlan: { type: 'boolean', example: false },
+        scheduleType: {
+          type: 'string',
+          enum: ['EVERYDAY', 'CUSTOM', 'MONTHLY'],
+          example: 'EVERYDAY',
+          description:
+            "The plan's own weekly schedule. Defaults to EVERYDAY (no day restriction). " +
+            'CUSTOM restricts the plan to availableDays.',
+        },
+        availableDays: {
+          type: 'array',
+          example: ['MONDAY', 'WEDNESDAY', 'FRIDAY'],
+          items: { type: 'string' },
+          description: 'Required when scheduleType is CUSTOM.',
+        },
+        planImages: {
+          type: 'array',
+          example: [
+            'https://cdn.example.com/plans/plan-1.jpg',
+            'https://cdn.example.com/plans/plan-2.jpg',
+          ],
+          items: { type: 'string' },
+        },
+        images: {
+          type: 'array',
+          example: [{ url: 'https://cdn.example.com/plans/plan-1.jpg' }],
+          items: {
             type: 'object',
             properties: {
-                files: {
-                    type: 'array',
-                    items: { type: 'string', format: 'binary' },
-                },
+              url: {
+                type: 'string',
+                example: 'https://cdn.example.com/plans/plan-1.jpg',
+              },
+              altText: { type: 'string', example: 'Plan image' },
+              sortOrder: { type: 'number', example: 1 },
             },
-            required: ['files'],
+          },
         },
-    })
-    @ApiResponse({ status: 201, description: 'Plan images uploaded successfully.' })
-    @UseInterceptors(
-        FilesInterceptor('files', 10, {
-            limits: { fileSize: maxSize },
-            fileFilter: (_req, file, cb) => {
-                const isImage = typeof file?.mimetype === 'string' && file.mimetype.startsWith('image/');
-                if (!isImage) {
-                    return cb(new BadRequestException('Only image files are allowed') as any, false);
-                }
-                cb(null, true);
-            },
-        }),
-    )
-    async uploadPlanImages(@UploadedFiles() files: any[]) {
-        if (!files || files.length === 0) {
-            throw new BadRequestException('Files are required');
-        }
+      },
+      required: ['planName', 'price', 'description', 'messId'],
+    },
+  })
+  @Post()
+  @UsePipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+    }),
+  )
+  async createPlan(@Body() dto: PlansDto) {
+    if (dto.variationIds && typeof dto.variationIds === 'string') {
+      dto.variationIds = JSON.parse(dto.variationIds);
+    }
+    const urls = [
+      ...(Array.isArray(dto.planImages) ? dto.planImages : []),
+      ...((dto.images || [])
+        .map((img) => img?.url)
+        .filter(Boolean) as string[]),
+    ];
+    const uniqueUrls = [...new Set(urls)];
+    const imagePayload = uniqueUrls.map((url) => ({ url }));
 
-        const urls = await this.s3Service.uploadMultipleFiles(files, 'plans');
+    return this.plansService.createPlan(dto, imagePayload);
+  }
 
-        return {
-            message: 'Plan images uploaded successfully',
-            urls,
-        };
+  // ✅ GET all (with pagination)
+  @ApiOperation({
+    summary: 'List plans',
+    description:
+      'Returns a paginated list of plans. Supports optional mess and search filters.',
+  })
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 10 })
+  @ApiQuery({
+    name: 'messId',
+    required: false,
+    description: 'Filter plans by mess UUID',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Search by plan name',
+  })
+  @ApiResponse({ status: 200, description: 'Plans fetched successfully.' })
+  @Get()
+  findAll(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('messId') messId?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.plansService.findAll(
+      Number(page) || 1,
+      Number(limit) || 10,
+      messId,
+      search,
+    );
+  }
+
+  // ✅ GET by ID
+  @ApiOperation({
+    summary: 'Get plan by id',
+    description: 'Fetches a single plan by its UUID identifier.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Plan UUID',
+    example: '8e6f4f4a-3bb7-4c74-9f42-5b3f7e5c7c11',
+  })
+  @ApiResponse({ status: 200, description: 'Plan fetched successfully.' })
+  @Get(':id')
+  findOne(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.plansService.findOne(id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  // @Roles('SUPERADMIN')
+  @ApiOperation({
+    summary: 'Update plan',
+    description:
+      'Updates an existing plan using its UUID identifier. Pass menuIds to replace the full set of linked menus (must belong to the same mess); pass [] to unlink all.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Plan UUID',
+    example: '8e6f4f4a-3bb7-4c74-9f42-5b3f7e5c7c11',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        menuIds: {
+          type: 'array',
+          example: ['7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111'],
+          items: { type: 'string' },
+          description:
+            'Optional — replaces all linked menus. Pass [] to unlink all.',
+        },
+        scheduleType: {
+          type: 'string',
+          enum: ['EVERYDAY', 'CUSTOM', 'MONTHLY'],
+          example: 'CUSTOM',
+        },
+        availableDays: {
+          type: 'array',
+          example: ['MONDAY', 'WEDNESDAY', 'FRIDAY'],
+          items: { type: 'string' },
+          description: 'Required when scheduleType is CUSTOM.',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Plan updated successfully.' })
+  @Patch(':id')
+  async updatePlan(@Param('id') id: string, @Body() dto: UpdatePlanDto) {
+    if (typeof dto.variationIds === 'string') {
+      try {
+        dto.variationIds = JSON.parse(dto.variationIds);
+      } catch {
+        dto.variationIds = [];
+      }
     }
 
+    if (typeof dto.menuIds === 'string') {
+      try {
+        dto.menuIds = JSON.parse(dto.menuIds);
+      } catch {
+        dto.menuIds = [];
+      }
+    }
 
-    @UseGuards(JwtAuthGuard, RolesGuard)
-    // @Roles('SUPERADMIN')
-    @ApiOperation({
-        summary: 'Create a plan',
-        description: 'Creates a new plan with optional gallery images, linked variations, and optionally linked menus (menuIds — must belong to the same mess).'
-    })
-    @ApiResponse({ status: 201, description: 'Plan created successfully.' })
-    @ApiBody({
-        schema: {
+    if (dto.planImages && typeof dto.planImages === 'string') {
+      try {
+        dto.planImages = JSON.parse(dto.planImages);
+      } catch {
+        dto.planImages = [];
+      }
+    }
+
+    if (dto.availableDays && typeof dto.availableDays === 'string') {
+      try {
+        dto.availableDays = JSON.parse(dto.availableDays);
+      } catch {
+        dto.availableDays = [];
+      }
+    }
+
+    return this.plansService.updatePlan(id, dto);
+  }
+
+  // ✅ DELETE
+  @ApiOperation({
+    summary: 'Delete plan',
+    description: 'Deletes a plan by UUID.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Plan UUID',
+    example: '8e6f4f4a-3bb7-4c74-9f42-5b3f7e5c7c11',
+  })
+  @ApiResponse({ status: 200, description: 'Plan deleted successfully.' })
+  @Delete(':id')
+  remove(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.plansService.remove(id);
+  }
+
+  // @UseGuards(JwtAuthGuard, RolesGuard)
+  // @Roles(Role.MESS_ADMIN)
+  @ApiOperation({
+    summary: 'Add images to a plan',
+    description: 'Adds gallery image URLs to an existing plan.',
+  })
+  @ApiParam({
+    name: 'planId',
+    description: 'Plan UUID',
+    example: '8e6f4f4a-3bb7-4c74-9f42-5b3f7e5c7c11',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Plan images uploaded successfully.',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        images: {
+          type: 'array',
+          example: [{ url: 'https://cdn.example.com/plans/plan-1.jpg' }],
+          items: {
             type: 'object',
             properties: {
-                planName: { type: 'string', example: 'Weekly Lunch Plan' },
-                price: { type: 'number', example: 999 },
-                minPrice: { type: 'number', example: 799 },
-                description: { type: 'string', example: 'Balanced weekday meal plan' },
-                messId: { type: 'string', example: 'c2b7d4af-7c5f-4d4a-9a08-2f2f7d4e3a11' },
-                variationIds: { type: 'array', example: ['1f2e3d4c-1111-2222-3333-444455556666'], items: { type: 'string' } },
-                menuIds: { type: 'array', example: ['7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111'], items: { type: 'string' }, description: 'Optional — existing menus of the same mess to link to this plan.' },
-                isMonthlyPlan: { type: 'boolean', example: true },
-                isDailyPlan: { type: 'boolean', example: false },
-                scheduleType: {
-                    type: 'string',
-                    enum: ['EVERYDAY', 'CUSTOM', 'MONTHLY'],
-                    example: 'EVERYDAY',
-                    description:
-                        'The plan\'s own weekly schedule. Defaults to EVERYDAY (no day restriction). ' +
-                        'CUSTOM restricts the plan to availableDays.',
-                },
-                availableDays: {
-                    type: 'array',
-                    example: ['MONDAY', 'WEDNESDAY', 'FRIDAY'],
-                    items: { type: 'string' },
-                    description: 'Required when scheduleType is CUSTOM.',
-                },
-                planImages: {
-                    type: 'array',
-                    example: [
-                        'https://cdn.example.com/plans/plan-1.jpg',
-                        'https://cdn.example.com/plans/plan-2.jpg',
-                    ],
-                    items: { type: 'string' },
-                },
-                images: {
-                    type: 'array',
-                    example: [{ url: 'https://cdn.example.com/plans/plan-1.jpg' }],
-                    items: {
-                        type: 'object',
-                        properties: {
-                            url: { type: 'string', example: 'https://cdn.example.com/plans/plan-1.jpg' },
-                            altText: { type: 'string', example: 'Plan image' },
-                            sortOrder: { type: 'number', example: 1 },
-                        },
-                    },
-                },
+              url: {
+                type: 'string',
+                example: 'https://cdn.example.com/plans/plan-1.jpg',
+              },
             },
-            required: ['planName', 'price', 'description', 'messId'],
+            required: ['url'],
+          },
         },
-    })
-    @Post()
-    @UsePipes(
-        new ValidationPipe({
-            transform: true,
-            whitelist: true,
-        }),
-    )
-    async createPlan(
-        @Body() dto: PlansDto,
-    ) {
-        if (dto.variationIds && typeof dto.variationIds === 'string') {
-            dto.variationIds = JSON.parse(dto.variationIds);
-        }
-        const urls = [
-            ...(Array.isArray(dto.planImages) ? dto.planImages : []),
-            ...((dto.images || []).map((img) => img?.url).filter(Boolean) as string[]),
-        ];
-        const uniqueUrls = [...new Set(urls)];
-        const imagePayload = uniqueUrls.map((url) => ({ url }));
-
-        return this.plansService.createPlan(dto, imagePayload);
+      },
+      required: ['images'],
+    },
+  })
+  @Post(':planId/plan/images')
+  async addPlanImages(
+    @Param('planId') planId: string,
+    @Body('images') images: { url: string }[],
+  ) {
+    if (!images || images.length === 0) {
+      throw new BadRequestException('At least one image is required');
     }
+    const imagePayload = images.map((img) => ({ url: img.url }));
+    return this.plansService.addPlanImages(planId, imagePayload);
+  }
 
+  // =========================
+  // GET MESS IMAGES
+  // =========================
+  // @UseGuards(JwtAuthGuard, RolesGuard)
+  // @Roles(Role.MESS_ADMIN)
 
-    // ✅ GET all (with pagination)
-    @ApiOperation({
-        summary: 'List plans',
-        description: 'Returns a paginated list of plans. Supports optional mess and search filters.'
-    })
-    @ApiQuery({ name: 'page', required: false, example: 1 })
-    @ApiQuery({ name: 'limit', required: false, example: 10 })
-    @ApiQuery({ name: 'messId', required: false, description: 'Filter plans by mess UUID' })
-    @ApiQuery({ name: 'search', required: false, description: 'Search by plan name' })
-    @ApiResponse({ status: 200, description: 'Plans fetched successfully.' })
-    @Get()
-    findAll(
-        @Query('page') page?: string,
-        @Query('limit') limit?: string,
-        @Query('messId') messId?: string,
-        @Query('search') search?: string,
-    ) {
-        return this.plansService.findAll(Number(page) || 1, Number(limit) || 10, messId, search);
-    }
+  // @ApiOperation({ summary: 'Get mess gallery images' })
+  // @ApiResponse({
+  //     status: 200,
+  //     description: 'Mess images fetched successfully',
+  // })
+  @ApiOperation({
+    summary: 'Get plan images',
+    description: 'Returns all gallery images attached to a plan.',
+  })
+  @ApiParam({
+    name: 'planId',
+    description: 'Plan UUID',
+    example: '8e6f4f4a-3bb7-4c74-9f42-5b3f7e5c7c11',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Plan images fetched successfully.',
+  })
+  @Get(':planId/gallery/images')
+  async getMessImages(@Param('planId') planId: string) {
+    return this.plansService.getPlanImages(planId);
+  }
 
-
-    // ✅ GET by ID
-    @ApiOperation({
-        summary: 'Get plan by id',
-        description: 'Fetches a single plan by its UUID identifier.'
-    })
-    @ApiParam({ name: 'id', description: 'Plan UUID', example: '8e6f4f4a-3bb7-4c74-9f42-5b3f7e5c7c11' })
-    @ApiResponse({ status: 200, description: 'Plan fetched successfully.' })
-    @Get(':id')
-    findOne(@Param('id', new ParseUUIDPipe()) id: string) {
-        return this.plansService.findOne(id);
-    }
-
-
-    @UseGuards(JwtAuthGuard, RolesGuard)
-    // @Roles('SUPERADMIN')
-    @ApiOperation({
-        summary: 'Update plan',
-        description: 'Updates an existing plan using its UUID identifier. Pass menuIds to replace the full set of linked menus (must belong to the same mess); pass [] to unlink all.'
-    })
-    @ApiParam({ name: 'id', description: 'Plan UUID', example: '8e6f4f4a-3bb7-4c74-9f42-5b3f7e5c7c11' })
-    @ApiBody({
-        schema: {
-            type: 'object',
-            properties: {
-                menuIds: { type: 'array', example: ['7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111'], items: { type: 'string' }, description: 'Optional — replaces all linked menus. Pass [] to unlink all.' },
-                scheduleType: { type: 'string', enum: ['EVERYDAY', 'CUSTOM', 'MONTHLY'], example: 'CUSTOM' },
-                availableDays: { type: 'array', example: ['MONDAY', 'WEDNESDAY', 'FRIDAY'], items: { type: 'string' }, description: 'Required when scheduleType is CUSTOM.' },
-            },
-        },
-    })
-    @ApiResponse({ status: 200, description: 'Plan updated successfully.' })
-    @Patch(':id')
-    async updatePlan(
-        @Param('id') id: string,
-        @Body() dto: UpdatePlanDto,
-    ) {
-        if (typeof dto.variationIds === 'string') {
-            try {
-                dto.variationIds = JSON.parse(dto.variationIds);
-            } catch {
-                dto.variationIds = [];
-            }
-        }
-
-        if (typeof dto.menuIds === 'string') {
-            try {
-                dto.menuIds = JSON.parse(dto.menuIds);
-            } catch {
-                dto.menuIds = [];
-            }
-        }
-
-        if (dto.planImages && typeof dto.planImages === 'string') {
-            try {
-                dto.planImages = JSON.parse(dto.planImages);
-            } catch {
-                dto.planImages = [];
-            }
-        }
-
-        if (dto.availableDays && typeof dto.availableDays === 'string') {
-            try {
-                dto.availableDays = JSON.parse(dto.availableDays);
-            } catch {
-                dto.availableDays = [];
-            }
-        }
-
-        return this.plansService.updatePlan(id, dto);
-    }
-
-
-    // ✅ DELETE
-    @ApiOperation({
-        summary: 'Delete plan',
-        description: 'Deletes a plan by UUID.'
-    })
-    @ApiParam({ name: 'id', description: 'Plan UUID', example: '8e6f4f4a-3bb7-4c74-9f42-5b3f7e5c7c11' })
-    @ApiResponse({ status: 200, description: 'Plan deleted successfully.' })
-    @Delete(':id')
-    remove(@Param('id', new ParseUUIDPipe()) id: string) {
-        return this.plansService.remove(id);
-    }
-
-
-    // @UseGuards(JwtAuthGuard, RolesGuard)
-    // @Roles(Role.MESS_ADMIN)
-    @ApiOperation({
-        summary: 'Add images to a plan',
-        description: 'Adds gallery image URLs to an existing plan.'
-    })
-    @ApiParam({ name: 'planId', description: 'Plan UUID', example: '8e6f4f4a-3bb7-4c74-9f42-5b3f7e5c7c11' })
-    @ApiResponse({ status: 201, description: 'Plan images uploaded successfully.' })
-    @ApiBody({
-        schema: {
-            type: 'object',
-            properties: {
-                images: {
-                    type: 'array',
-                    example: [{ url: 'https://cdn.example.com/plans/plan-1.jpg' }],
-                    items: {
-                        type: 'object',
-                        properties: {
-                            url: { type: 'string', example: 'https://cdn.example.com/plans/plan-1.jpg' },
-                        },
-                        required: ['url'],
-                    },
-                },
-            },
-            required: ['images'],
-        },
-    })
-    @Post(':planId/plan/images')
-    async addPlanImages(
-        @Param('planId') planId: string,
-        @Body('images') images: { url: string }[],
-    ) {
-        if (!images || images.length === 0) {
-            throw new BadRequestException('At least one image is required');
-        }
-        const imagePayload = images.map((img) => ({ url: img.url }));
-        return this.plansService.addPlanImages(planId, imagePayload);
-    }
-
-    // =========================
-    // GET MESS IMAGES
-    // =========================
-    // @UseGuards(JwtAuthGuard, RolesGuard)
-    // @Roles(Role.MESS_ADMIN)
-
-    // @ApiOperation({ summary: 'Get mess gallery images' })
-    // @ApiResponse({
-    //     status: 200,
-    //     description: 'Mess images fetched successfully',
-    // })
-    @ApiOperation({
-        summary: 'Get plan images',
-        description: 'Returns all gallery images attached to a plan.'
-    })
-    @ApiParam({ name: 'planId', description: 'Plan UUID', example: '8e6f4f4a-3bb7-4c74-9f42-5b3f7e5c7c11' })
-    @ApiResponse({ status: 200, description: 'Plan images fetched successfully.' })
-    @Get(':planId/gallery/images')
-    async getMessImages(@Param('planId') planId: string) {
-        return this.plansService.getPlanImages(planId);
-    }
-
-    // =========================
-    // DELETE MESS IMAGE
-    // =========================
-    // @UseGuards(JwtAuthGuard, RolesGuard)
-    // @Roles(Role.MESS_ADMIN)
-    @ApiOperation({
-        summary: 'Delete a plan image',
-        description: 'Deletes a single gallery image from a plan.'
-    })
-    @ApiParam({ name: 'planId', description: 'Plan UUID', example: '8e6f4f4a-3bb7-4c74-9f42-5b3f7e5c7c11' })
-    @ApiParam({ name: 'imageId', description: 'Image UUID', example: 'aab2d7d4-9a39-4d6c-9df6-4f7d3d7d8a01' })
-    @ApiResponse({ status: 200, description: 'Plan image deleted successfully.' })
-    @Delete(':planId/gallery/images/:imageId')
-    async deleteMessGalleryImage(
-        @Param('planId') planId: string,
-        @Param('imageId') imageId: string,
-    ) {
-        return this.plansService.deletePlanImages(planId, imageId);
-    }
+  // =========================
+  // DELETE MESS IMAGE
+  // =========================
+  // @UseGuards(JwtAuthGuard, RolesGuard)
+  // @Roles(Role.MESS_ADMIN)
+  @ApiOperation({
+    summary: 'Delete a plan image',
+    description: 'Deletes a single gallery image from a plan.',
+  })
+  @ApiParam({
+    name: 'planId',
+    description: 'Plan UUID',
+    example: '8e6f4f4a-3bb7-4c74-9f42-5b3f7e5c7c11',
+  })
+  @ApiParam({
+    name: 'imageId',
+    description: 'Image UUID',
+    example: 'aab2d7d4-9a39-4d6c-9df6-4f7d3d7d8a01',
+  })
+  @ApiResponse({ status: 200, description: 'Plan image deleted successfully.' })
+  @Delete(':planId/gallery/images/:imageId')
+  async deleteMessGalleryImage(
+    @Param('planId') planId: string,
+    @Param('imageId') imageId: string,
+  ) {
+    return this.plansService.deletePlanImages(planId, imageId);
+  }
 }

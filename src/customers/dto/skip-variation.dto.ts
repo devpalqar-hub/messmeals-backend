@@ -8,17 +8,18 @@ import { IsString } from 'class-validator';
  * wants to skip one meal.
  */
 export class SkipVariationDto {
-    @ApiProperty({
-        example: '2026-06-10',
-        description: 'ISO date of the delivery containing the variation to skip (YYYY-MM-DD).',
-    })
-    @IsString()
-    date: string;
+  @ApiProperty({
+    example: '2026-06-10',
+    description:
+      'ISO date of the delivery containing the variation to skip (YYYY-MM-DD).',
+  })
+  @IsString()
+  date: string;
 
-    @ApiProperty({
-        example: '7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111',
-        description: 'Variation UUID to skip (e.g. Lunch).',
-    })
-    @IsString()
-    variationId: string;
+  @ApiProperty({
+    example: '7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111',
+    description: 'Variation UUID to skip (e.g. Lunch).',
+  })
+  @IsString()
+  variationId: string;
 }
