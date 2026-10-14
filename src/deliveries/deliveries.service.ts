@@ -707,6 +707,9 @@ export class DeliveriesService {
             mess: { include: { messAdmins: true } },
             partner: { include: { user: { select: { id: true } } } },
             plan: { select: { price: true, isDailyPlan: true } },
+            UserSubscriptions: {
+              select: { totalPrice: true, discountedPrice: true },
+            },
           },
         },
       },
@@ -785,12 +788,22 @@ export class DeliveriesService {
         delivery.plan?.isDailyPlan
       ) {
         try {
+          // Charge the plan's price scaled by the subscription's own discount ratio
+          // (discountedPrice / totalPrice) — not the plan's full/undiscounted price —
+          // so a discount applied at registration is actually reflected per delivery.
+          const subscription = delivery.UserSubscriptions;
+          const subscriptionTotalPrice = Number(subscription?.totalPrice ?? 0);
+          const discountRatio =
+            subscription && subscriptionTotalPrice > 0
+              ? Number(subscription.discountedPrice) / subscriptionTotalPrice
+              : 1;
+
           await this.transactionsService.chargeDailyDeliveryCompleted({
             deliveryId,
             subscriptionId: delivery.subscriptionId,
             customerProfileId: delivery.customerId,
             messId: delivery.messId,
-            amount: Number(delivery.plan.price),
+            amount: Number(delivery.plan.price) * discountRatio,
           });
         } catch (err) {
           console.error(

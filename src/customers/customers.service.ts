@@ -1689,6 +1689,45 @@ export class CustomerService {
     return { message: 'Mess added to MessAdmin successfully' };
   }
 
+  /**
+   * Computes the dates that `count` deliveries should resume on after a pause,
+   * landing only on days the subscription actually runs (EVERYDAY/MONTHLY = any
+   * day, CUSTOM = only the selected weekdays), starting the day after pauseEnd.
+   */
+  private generateResumeDates(
+    pauseEnd: Date,
+    count: number,
+    scheduleType: ScheduleType,
+    selectedDays: string[] | null,
+  ): Date[] {
+    const weekdayMap = [
+      'SUNDAY',
+      'MONDAY',
+      'TUESDAY',
+      'WEDNESDAY',
+      'THURSDAY',
+      'FRIDAY',
+      'SATURDAY',
+    ];
+    const selectedDaysUpper =
+      scheduleType === ScheduleType.CUSTOM
+        ? (selectedDays ?? []).map((d) => d.toUpperCase())
+        : null;
+    const isAllowedDay = (date: Date) =>
+      !selectedDaysUpper || selectedDaysUpper.includes(weekdayMap[date.getDay()]);
+
+    const newDates: Date[] = [];
+    const cursor = new Date(pauseEnd);
+    cursor.setDate(cursor.getDate() + 1);
+    while (newDates.length < count) {
+      if (isAllowedDay(cursor)) {
+        newDates.push(new Date(cursor));
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return newDates;
+  }
+
   async PauseSubscription(subscriptionId: string, dto: PauseSubDto) {
     const { pause_start_date, pause_end_date } = dto;
 
@@ -1769,26 +1808,30 @@ export class CustomerService {
       throw new BadRequestException('No future deliveries found to pause.');
     }
 
-    // 7️⃣ Shift remaining deliveries forward by pause duration
-    const updates: Prisma.PrismaPromise<any>[] = [];
-    for (const delivery of remainingDeliveries) {
-      const newDate = new Date(delivery.date);
-      newDate.setDate(newDate.getDate() + pauseDurationDays);
+    // 7️⃣ Reschedule remaining deliveries onto the days the plan/subscription
+    // actually runs on, starting right after the pause ends — not a flat
+    // day-count shift, which could land a CUSTOM-schedule delivery on a
+    // weekday it was never meant to run on.
+    const newDates = this.generateResumeDates(
+      pauseEnd,
+      remainingDeliveries.length,
+      subscription.scheduleType,
+      subscription.selectedDays as string[] | null,
+    );
 
-      updates.push(
+    const updates: Prisma.PrismaPromise<any>[] = remainingDeliveries.map(
+      (delivery, index) =>
         this.prisma.deliveries.update({
           where: { id: delivery.id },
-          data: { date: newDate },
+          data: { date: newDates[index] },
         }),
-      );
-    }
+    );
 
     // Run all updates in one transaction
     await this.prisma.$transaction(updates);
 
-    // 8️⃣ Optionally, extend subscription end_date
-    const newEndDate = new Date(subscription.end_date);
-    newEndDate.setDate(newEndDate.getDate() + pauseDurationDays);
+    // 8️⃣ Extend subscription end_date to cover the last rescheduled delivery
+    const newEndDate = newDates[newDates.length - 1];
 
     // 9️⃣ Update subscription with pause info + new end date
     await this.prisma.userSubscriptions.update({
@@ -2386,26 +2429,30 @@ export class CustomerService {
       throw new BadRequestException('No future deliveries found to pause.');
     }
 
-    // 7️⃣ Shift remaining deliveries forward by pause duration
-    const updates: Prisma.PrismaPromise<any>[] = [];
-    for (const delivery of remainingDeliveries) {
-      const newDate = new Date(delivery.date);
-      newDate.setDate(newDate.getDate() + pauseDurationDays);
+    // 7️⃣ Reschedule remaining deliveries onto the days the plan/subscription
+    // actually runs on, starting right after the pause ends — not a flat
+    // day-count shift, which could land a CUSTOM-schedule delivery on a
+    // weekday it was never meant to run on.
+    const newDates = this.generateResumeDates(
+      pauseEnd,
+      remainingDeliveries.length,
+      subscription.scheduleType,
+      subscription.selectedDays as string[] | null,
+    );
 
-      updates.push(
+    const updates: Prisma.PrismaPromise<any>[] = remainingDeliveries.map(
+      (delivery, index) =>
         this.prisma.deliveries.update({
           where: { id: delivery.id },
-          data: { date: newDate },
+          data: { date: newDates[index] },
         }),
-      );
-    }
+    );
 
     // Run all updates in one transaction
     await this.prisma.$transaction(updates);
 
-    // 8️⃣ Optionally, extend subscription end_date
-    const newEndDate = new Date(subscription.end_date);
-    newEndDate.setDate(newEndDate.getDate() + pauseDurationDays);
+    // 8️⃣ Extend subscription end_date to cover the last rescheduled delivery
+    const newEndDate = newDates[newDates.length - 1];
 
     // 9️⃣ Update subscription with pause info + new end date
     await this.prisma.userSubscriptions.update({
