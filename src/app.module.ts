@@ -32,6 +32,7 @@ import { ExpensesModule } from './expenses/expenses.module';
 import { OpenModule } from './open/open.module';
 import { CustomerAuthModule } from './customer-auth/customer-auth.module';
 import { MessBulkUploadModule } from './mess-bulk-upload/mess-bulk-upload.module';
+import { TransactionsModule } from './transactions/transactions.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { MessBulkUploadModule } from './mess-bulk-upload/mess-bulk-upload.module
     OpenModule,
     CustomerAuthModule,
     MessBulkUploadModule,
+    TransactionsModule,
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'uploads'),
       serveRoot: '/uploads',

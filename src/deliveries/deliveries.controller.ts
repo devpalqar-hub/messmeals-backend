@@ -27,6 +27,7 @@ import {
 } from './dto/assign-partner.dto';
 import { DeliveryStatus, Role, VariationStatus } from '@prisma/client';
 import { VariationCountQueryDto } from './dto/variation-count-query.dto';
+import { ListDeliveryVariationsQueryDto } from './dto/list-delivery-variations-query.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
@@ -156,6 +157,57 @@ export class DeliveriesController {
       { status, date, messId, partnerId, variationId, search, subscriptionId },
       req.user,
     );
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.DELIVERYAGENT, Role.MESSADMIN, Role.SUPERADMIN)
+  @ApiOperation({
+    summary: 'List delivery variations (flattened)',
+    description:
+      'Lists deliveries flattened one row per variation — a delivery with 3 variations ' +
+      '(e.g. Breakfast/Lunch/Dinner) is returned as 3 separate, independently paginatable rows, ' +
+      'each with its own variation status. Scoped by role: DELIVERYAGENT (partner) sees only their ' +
+      "assigned deliveries' variations, MESSADMIN sees only their mess(es), SUPERADMIN sees everything " +
+      'and may filter by any mess or partner.',
+  })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    description: 'Variation status filter (PENDING/DELIVERED/COMPLETED/UNDELIVERED/CANCELLED)',
+  })
+  @ApiQuery({
+    name: 'date',
+    required: false,
+    description: 'Filter by exact delivery date (YYYY-MM-DD)',
+  })
+  @ApiQuery({
+    name: 'messId',
+    required: false,
+    description: 'Mess filter (SUPERADMIN only)',
+  })
+  @ApiQuery({
+    name: 'partnerId',
+    required: false,
+    description: 'Delivery partner filter (SUPERADMIN / MESSADMIN)',
+  })
+  @ApiQuery({
+    name: 'variationId',
+    required: false,
+    description: 'Variation filter — e.g. only Breakfast rows',
+  })
+  @ApiQuery({
+    name: 'subscriptionId',
+    required: false,
+    description: 'Subscription filter',
+  })
+  @Get('variations')
+  findAllVariations(
+    @Req() req: any,
+    @Query() query: ListDeliveryVariationsQueryDto,
+  ) {
+    return this.deliveriesService.findAllVariations(query, req.user);
   }
 
   // ✅ GET by ID

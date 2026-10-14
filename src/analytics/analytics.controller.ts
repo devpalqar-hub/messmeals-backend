@@ -20,6 +20,26 @@ import {
 export class AnalyticsController {
   constructor(private readonly service: AnalyticsService) {}
 
+  @Get('ledger-summary')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Ledger-based revenue & pending payment summary',
+    description:
+      'Totals built from the customer↔mess billing ledger: totalRevenue (money actually ' +
+      'received), totalCharged (total billed), pendingPayment (still owed), and ' +
+      'advanceBalance (prepaid, not yet consumed). Unlike revenue/summary, this also ' +
+      'captures wallet-settled registrations and daily-plan per-delivery charges.',
+  })
+  @ApiQuery({ name: 'messId', required: false })
+  @ApiQuery({ name: 'ownerId', required: false })
+  async ledgerSummary(
+    @Query(new ValidationPipe({ transform: true })) query: AnalyticsQueryDto,
+  ) {
+    const { restaurantId, ...rest } = query as any;
+    const payload = { ...rest, messId: rest.messId || restaurantId };
+    return this.service.ledgerSummary(payload);
+  }
+
   @Get('revenue/summary')
   @ApiBearerAuth()
   @ApiOperation({

@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
+import { TransactionsModule } from 'src/transactions/transactions.module';
 
 @Module({
+  imports: [TransactionsModule],
   controllers: [AnalyticsController],
   providers: [AnalyticsService],
   exports: [AnalyticsService],

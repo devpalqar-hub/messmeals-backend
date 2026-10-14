@@ -248,28 +248,6 @@ export class CustomerController {
     return this.cusomerservice.RenewSubscription(dto);
   }
 
-  @Patch('update-wallet/:userId')
-  @ApiOperation({
-    summary: 'Update wallet amount',
-    description: 'Adds funds to a customer wallet.',
-  })
-  @ApiParam({ name: 'userId', description: 'Customer profile UUID' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        amount: { type: 'number', example: 250 },
-      },
-      required: ['amount'],
-    },
-  })
-  async updateWalletAmount(
-    @Param('userId') id: string,
-    @Body('amount') amount: number,
-  ) {
-    return this.cusomerservice.UpdateWalletAmount(id, amount);
-  }
-
   /**
    * PATCH /customer/cancel-subscription/:subscriptionId
    * Cancels delivery for a single selected date only.
@@ -440,17 +418,6 @@ export class CustomerController {
     @Body() dto: PauseSubDto,
   ) {
     return this.cusomerservice.PauseSubscription(id, dto);
-  }
-
-  // PATCH /customer/:userId/reset-wallet
-  @Patch('reset-wallet/:userId')
-  @ApiOperation({
-    summary: 'Reset wallet',
-    description: 'Resets a customer wallet to zero.',
-  })
-  @ApiParam({ name: 'userId', description: 'Customer profile UUID' })
-  async resetWallet(@Param('userId') userId: string) {
-    return this.cusomerservice.ResetWalletAmount(userId);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

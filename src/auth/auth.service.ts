@@ -43,6 +43,7 @@ import { CreateMessWithOwnerDto } from './dto/create-mess-with-owner.dto';
 import { isPhoneOrEmailTaken } from 'src/common/utility/identity.util';
 import { MessService } from 'src/mess/mess.service';
 import * as bcrypt from 'bcrypt';
+import { TransactionsService } from 'src/transactions/transactions.service';
 
 @Injectable()
 export class AuthService {
@@ -52,6 +53,7 @@ export class AuthService {
     private readonly otpservice: TwoFactorService,
     private readonly mailerService: MailerService,
     private readonly messService: MessService,
+    private readonly transactionsService: TransactionsService,
   ) {}
   async sendOtpForRegistration(dto: RegisterDto) {
     const { email, name, phone, messId } = dto;
@@ -852,87 +854,46 @@ export class AuthService {
     });
 
     // ---------------------------------------------------
-    // 5️⃣ Revenue Calculations
+    // 5️⃣ Revenue Calculations — sourced from the CustomerMessTransaction ledger
+    // (DEBIT = amount billed, CREDIT = amount actually paid) instead of subscription
+    // prices, so pending/collected reflect real payment state, not delivery completion.
     // ---------------------------------------------------
 
     const today = new Date();
 
-    /**
-     * totalRevenue  – sum of discountedPrice for ALL subscriptions in scope.
-     *                 This represents total billed/collected amount.
-     */
-    const totalRevenue = allSubscriptions.reduce(
-      (sum, s) => sum + Number(s.discountedPrice || s.totalPrice),
-      0,
+    const overallLedgerTotals = await this.transactionsService.getTotalsForMessIds(
+      allowedMessIds,
+      dateFilter.createdAt
+        ? { from: dateFilter.createdAt.gte, to: dateFilter.createdAt.lte }
+        : undefined,
     );
 
-    /**
-     * pendingRevenue – calculated using the value of PENDING deliveries.
-     *                  (Pending Deliveries / Total Deliveries) * Subscription Price
-     */
-    const activeSubIds = allSubscriptions
-      .filter((s) => s.is_active && !s.cancelled_on)
-      .map((s) => s.id);
+    /** totalRevenue – total amount billed (ledger DEBIT) in scope. */
+    const totalRevenue = overallLedgerTotals.totalDebit;
 
-    let pendingRevenue = 0;
+    /** pendingRevenue – amount billed but not yet paid (ledger balanceDue). */
+    const pendingRevenue = overallLedgerTotals.balanceDue;
 
-    if (activeSubIds.length > 0) {
-      const deliveryStats = await this.prisma.deliveries.groupBy({
-        by: ['subscriptionId', 'status'],
-        where: { subscriptionId: { in: activeSubIds } },
-        _count: { _all: true },
-      });
-
-      const subDeliveries: Record<string, { total: number; pending: number }> =
-        {};
-      for (const stat of deliveryStats) {
-        if (!stat.subscriptionId) continue;
-        if (!subDeliveries[stat.subscriptionId]) {
-          subDeliveries[stat.subscriptionId] = { total: 0, pending: 0 };
-        }
-        subDeliveries[stat.subscriptionId].total += stat._count._all;
-        if (stat.status === 'PENDING') {
-          subDeliveries[stat.subscriptionId].pending += stat._count._all;
-        }
-      }
-
-      for (const s of allSubscriptions) {
-        if (!subDeliveries[s.id]) continue;
-        const stats = subDeliveries[s.id];
-        if (stats.total > 0 && stats.pending > 0) {
-          const price = Number(s.discountedPrice || s.totalPrice);
-          pendingRevenue += (stats.pending / stats.total) * price;
-        }
-      }
-    }
-
-    /**
-     * collectedRevenue – the portion of total revenue that has been earned
-     *                    (i.e., not pending).
-     */
-    const collectedRevenue = totalRevenue - pendingRevenue;
+    /** collectedRevenue – money actually received (ledger CREDIT) in scope. */
+    const collectedRevenue = overallLedgerTotals.totalCredit;
 
     // Current calendar month boundaries
     const monthStart = startOfMonth(today);
     const monthEnd = endOfMonth(today);
 
-    /**
-     * currentMonthRevenue – all subscriptions created this calendar month.
-     */
-    const currentMonthRevenue = allSubscriptions
-      .filter((s) => {
-        const created = new Date(s.createdAt);
-        return created >= monthStart && created <= monthEnd;
-      })
-      .reduce((sum, s) => sum + Number(s.discountedPrice || s.totalPrice), 0);
+    /** currentMonthRevenue – amount billed (DEBIT) this calendar month. */
+    const currentMonthTotals = await this.transactionsService.getTotalsForMessIds(
+      allowedMessIds,
+      { from: monthStart, to: monthEnd },
+    );
+    const currentMonthRevenue = currentMonthTotals.totalDebit;
 
-    // Today's revenue (subscriptions created today)
-    const todaysRevenue = allSubscriptions
-      .filter((s) => {
-        const created = new Date(s.createdAt);
-        return created >= startOfDay(today) && created <= endOfDay(today);
-      })
-      .reduce((sum, s) => sum + Number(s.discountedPrice || s.totalPrice), 0);
+    /** todaysRevenue – amount billed (DEBIT) today. */
+    const todaysTotals = await this.transactionsService.getTotalsForMessIds(
+      allowedMessIds,
+      { from: startOfDay(today), to: endOfDay(today) },
+    );
+    const todaysRevenue = todaysTotals.totalDebit;
 
     const completedOrders = allSubscriptions.filter((s) => s.is_active).length;
     const totalOrders = allSubscriptions.length;
@@ -941,7 +902,7 @@ export class AuthService {
       totalCustomers > 0 ? totalRevenue / totalCustomers : 0;
 
     // ---------------------------------------------------
-    // 6️⃣ Monthly Analytics (last 6 months breakdown)
+    // 6️⃣ Monthly Analytics (last 6 months breakdown) — ledger DEBIT per month bucket
     // ---------------------------------------------------
 
     const monthlyAnalytics: {
@@ -956,20 +917,21 @@ export class AuthService {
       const mEnd = endOfMonth(refDate);
       const label = format(refDate, 'MMM yyyy');
 
-      // Fetch month bucket from DB to avoid re-querying per month on large datasets
+      const monthTotals = await this.transactionsService.getTotalsForMessIds(
+        allowedMessIds,
+        { from: mStart, to: mEnd },
+      );
+
+      // Subscription count for this month bucket still comes from UserSubscriptions
+      // (not revenue-related).
       const monthSubs = allSubscriptions.filter((s) => {
         const created = new Date(s.createdAt);
         return created >= mStart && created <= mEnd;
       });
 
-      const monthRevenue = monthSubs.reduce(
-        (sum, s) => sum + Number(s.discountedPrice || s.totalPrice),
-        0,
-      );
-
       monthlyAnalytics.push({
         month: label,
-        revenue: monthRevenue,
+        revenue: monthTotals.totalDebit,
         subscriptions: monthSubs.length,
       });
     }
