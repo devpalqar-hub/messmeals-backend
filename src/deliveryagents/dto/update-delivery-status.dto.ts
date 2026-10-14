@@ -1,5 +1,6 @@
 import { DeliveryStatus } from '@prisma/client';
 import { ApiProperty } from '@nestjs/swagger';
+import { IsEnum, IsNotEmpty, IsString } from 'class-validator';
 
 export class UpdateDeliveryStatusDto {
   @ApiProperty({
@@ -8,6 +9,8 @@ export class UpdateDeliveryStatusDto {
     example: 'delivery-uuid-123',
     description: 'UUID of the delivery to update',
   })
+  @IsString()
+  @IsNotEmpty()
   deliveryId: string;
 
   @ApiProperty({
@@ -16,5 +19,8 @@ export class UpdateDeliveryStatusDto {
     example: DeliveryStatus.DELIVERED,
     description: 'New status for the delivery',
   })
+  @IsEnum(DeliveryStatus)
+  @IsNotEmpty()
   status: DeliveryStatus;
 }
+
