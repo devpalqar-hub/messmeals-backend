@@ -1039,21 +1039,53 @@ export class CustomerService {
    * amount owed back to the mess (sum of negative wallet balances) — all optionally
    * scoped to a single mess.
    */
-  async getCustomerSummary(messId?: string) {
+  async getCustomerSummary(user: any, messId?: string) {
     const now = new Date();
     const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    // ---------------------------------------------------
+    // Resolve allowed mess scope (same logic as AuthService.getDashboardStats)
+    // ---------------------------------------------------
+    let messIdsInScope: string[] = [];
+
+    if (user.role === 'SUPERADMIN') {
+      if (messId) {
+        messIdsInScope = [messId];
+      } else {
+        const messes = await this.prisma.mess.findMany({
+          select: { id: true },
+        });
+        messIdsInScope = messes.map((m) => m.id);
+      }
+    } else if (user.role === 'MESSADMIN') {
+      const adminProfile = await this.prisma.messAdminProfile.findUnique({
+        where: { userId: user.id },
+        select: {
+          messes: {
+            select: { id: true },
+          },
+        },
+      });
+
+      const adminMessIds = adminProfile?.messes.map((m) => m.id) || [];
+
+      if (messId) {
+        if (!adminMessIds.includes(messId)) {
+          throw new ForbiddenException(
+            'You are not allowed to access this mess',
+          );
+        }
+        messIdsInScope = [messId];
+      } else {
+        messIdsInScope = adminMessIds;
+      }
+    }
 
     const activeWhere = {
       is_active: true,
       OR: [{ end_date: null }, { end_date: { gte: now } }],
-      ...(messId ? { messId } : {}),
+      messId: { in: messIdsInScope },
     };
-
-    const messIdsInScope = messId
-      ? [messId]
-      : (await this.prisma.mess.findMany({ select: { id: true } })).map(
-        (m) => m.id,
-      );
 
     const [activeSubs, endingSoonSubs, ledgerTotals] = await Promise.all([
       this.prisma.userSubscriptions.findMany({

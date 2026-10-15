@@ -212,8 +212,8 @@ export class CustomerController {
       'Returns active-subscription count, how many are ending within 7 days, and the total amount owed back to the mess (sum of negative wallet balances) — optionally scoped to a mess.',
   })
   @ApiQuery({ name: 'messId', required: false })
-  async getSummary(@Query('messId') messId?: string) {
-    return this.cusomerservice.getCustomerSummary(messId);
+  async getSummary(@Req() req, @Query('messId') messId?: string) {
+    return this.cusomerservice.getCustomerSummary(req.user, messId);
   }
 
   // 🔍 GET /customer/:id
