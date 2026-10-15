@@ -247,6 +247,10 @@ export class CustomerService {
     }
 
     // ─── Pricing ──────────────────────────────────────────────────────────
+    // plan.price is the plan's cost price; plan.minPrice (when set) is the
+    // actual selling price shown to and charged to the customer — see
+    // AddPlanScreen's "Selling Price" field and PlanCard's displayed price.
+    const unitPrice = Number(plan.minPrice ?? plan.price);
     let totalPrice = 0;
 
     if (plan.isMonthlyPlan) {
@@ -257,7 +261,7 @@ export class CustomerService {
       const totalDays =
         Math.round((endDate.getTime() - startDate.getTime()) / msPerDay) + 1;
       const numMonths = Math.max(1, Math.round(totalDays / 30));
-      totalPrice = numMonths * Number(plan.price);
+      totalPrice = numMonths * unitPrice;
     } else {
       // Daily: count chargeable delivery days in [startDate, endDate]
       let chargeableDays = 0;
@@ -290,7 +294,7 @@ export class CustomerService {
         }
       }
 
-      totalPrice = chargeableDays * Number(plan.price);
+      totalPrice = chargeableDays * unitPrice;
     }
 
     const appliedDiscount = Math.max(0, Math.min(numericDiscount, totalPrice));
@@ -1390,6 +1394,10 @@ export class CustomerService {
     }
 
     // ─── 7. Calculate total price from date range ─────────────────────────
+    // plan.price is the plan's cost price; plan.minPrice (when set) is the
+    // actual selling price shown to and charged to the customer — see
+    // AddPlanScreen's "Selling Price" field and PlanCard's displayed price.
+    const unitPrice = Number(plan.minPrice ?? plan.price);
     let totalPrice = 0;
     const weekdayMap = [
       'SUNDAY',
@@ -1407,7 +1415,7 @@ export class CustomerService {
       const totalDays =
         Math.round((endDate.getTime() - startDate.getTime()) / msPerDay) + 1;
       const numMonths = Math.max(1, Math.round(totalDays / 30));
-      totalPrice = numMonths * Number(plan.price);
+      totalPrice = numMonths * unitPrice;
     } else {
       let chargeableDays = 0;
       const tempDate = new Date(startDate);
@@ -1426,7 +1434,7 @@ export class CustomerService {
           tempDate.setDate(tempDate.getDate() + 1);
         }
       }
-      totalPrice = chargeableDays * Number(plan.price);
+      totalPrice = chargeableDays * unitPrice;
     }
 
     const parsedDiscount = Number(discount);
@@ -2610,6 +2618,10 @@ export class CustomerService {
     }
 
     // ─── 7. Calculate total price ────────────────────────────────────────────
+    // plan.price is the plan's cost price; plan.minPrice (when set) is the
+    // actual selling price shown to and charged to the customer — see
+    // AddPlanScreen's "Selling Price" field and PlanCard's displayed price.
+    const unitPrice = Number(plan.minPrice ?? plan.price);
     let totalPrice = 0;
 
     if (plan.isMonthlyPlan) {
@@ -2622,7 +2634,7 @@ export class CustomerService {
         Math.round((endDate.getTime() - startDate.getTime()) / msPerDay) + 1;
       const numMonths = Math.max(1, Math.round(totalDays / 30));
 
-      totalPrice = numMonths * Number(plan.price);
+      totalPrice = numMonths * unitPrice;
     } else {
       // Daily plan: count chargeable delivery days
       const weekdayMap = [
@@ -2651,7 +2663,7 @@ export class CustomerService {
         tempDate.setUTCDate(tempDate.getUTCDate() + 1);
       }
 
-      totalPrice = chargeableDays * Number(plan.price);
+      totalPrice = chargeableDays * unitPrice;
     }
 
     // ─── 8. Apply discount ──────────────────────────────────────────────────

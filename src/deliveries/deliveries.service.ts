@@ -17,6 +17,7 @@ import {
   AssignDeliveryPartnerDto,
   AssignDeliveryPartnerPhs2Dto,
   AssignDeliveryPartnerToDeliveriesDto,
+  ChangeSubscriptionPartnerDto,
 } from './dto/assign-partner.dto';
 import {
   DeliveryStatus,
@@ -706,7 +707,7 @@ export class DeliveriesService {
           include: {
             mess: { include: { messAdmins: true } },
             partner: { include: { user: { select: { id: true } } } },
-            plan: { select: { price: true, isDailyPlan: true } },
+            plan: { select: { price: true, minPrice: true, isDailyPlan: true } },
             UserSubscriptions: {
               select: { totalPrice: true, discountedPrice: true },
             },
@@ -788,22 +789,25 @@ export class DeliveriesService {
         delivery.plan?.isDailyPlan
       ) {
         try {
-          // Charge the plan's price scaled by the subscription's own discount ratio
-          // (discountedPrice / totalPrice) — not the plan's full/undiscounted price —
-          // so a discount applied at registration is actually reflected per delivery.
+          // Charge the plan's selling price (minPrice, falling back to the cost
+          // price when no selling price is set — same basis used at subscription
+          // creation/renewal) scaled by the subscription's own discount ratio
+          // (discountedPrice / totalPrice), so a discount applied at registration
+          // is actually reflected per delivery.
           const subscription = delivery.UserSubscriptions;
           const subscriptionTotalPrice = Number(subscription?.totalPrice ?? 0);
           const discountRatio =
             subscription && subscriptionTotalPrice > 0
               ? Number(subscription.discountedPrice) / subscriptionTotalPrice
               : 1;
+          const unitPrice = Number(delivery.plan.minPrice ?? delivery.plan.price);
 
           await this.transactionsService.chargeDailyDeliveryCompleted({
             deliveryId,
             subscriptionId: delivery.subscriptionId,
             customerProfileId: delivery.customerId,
             messId: delivery.messId,
-            amount: Number(delivery.plan.price) * discountRatio,
+            amount: unitPrice * discountRatio,
           });
         } catch (err) {
           console.error(
@@ -1285,6 +1289,106 @@ export class DeliveriesService {
       data: {
         totalUpdated: result.count,
         partnerId,
+      },
+    };
+  }
+
+  /**
+   * Mess admin: list the subscriptions currently assigned to a given delivery partner.
+   */
+  async listPartnerSubscriptions(partnerId: string, userId: string) {
+    const partner = await this.prisma.deliveryPartnerProfile.findUnique({
+      where: { id: partnerId },
+    });
+    if (!partner) {
+      throw new NotFoundException('Delivery partner not found');
+    }
+
+    const subscriptions = await this.prisma.userSubscriptions.findMany({
+      where: {
+        deliveryPartnerProfileId: partnerId,
+        mess: { messAdmins: { some: { userId } } },
+      },
+      include: {
+        plan: {
+          select: { id: true, planName: true, price: true, minPrice: true },
+        },
+        CustomerProfile: {
+          include: {
+            user: { select: { id: true, name: true, phone: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return {
+      message: 'Assigned subscriptions fetched successfully',
+      count: subscriptions.length,
+      data: subscriptions,
+    };
+  }
+
+  /**
+   * Mess admin: change the delivery partner assigned to an existing subscription/plan.
+   * Updates the subscription's own deliveryPartnerProfileId (so any newly generated
+   * deliveries default to the new partner) and moves only this subscription's
+   * still-PENDING deliveries over to the new partner — deliveries that are already
+   * COMPLETED/DELIVERED/UNDELIVERED/CANCELLED keep their original partner so delivery
+   * history stays accurate.
+   */
+  async changeSubscriptionPartner(
+    dto: ChangeSubscriptionPartnerDto,
+    userId: string,
+  ) {
+    const { subscriptionId, partnerId } = dto;
+
+    const subscription = await this.prisma.userSubscriptions.findFirst({
+      where: {
+        id: subscriptionId,
+        mess: { messAdmins: { some: { userId } } },
+      },
+    });
+    if (!subscription) {
+      throw new NotFoundException('Subscription not found');
+    }
+
+    const partner = await this.prisma.deliveryPartnerProfile.findUnique({
+      where: { id: partnerId },
+    });
+    if (!partner) {
+      throw new NotFoundException('Delivery partner not found');
+    }
+    if (partner.messId !== subscription.messId) {
+      throw new BadRequestException(
+        "Delivery partner does not belong to the subscription's mess",
+      );
+    }
+    if (subscription.deliveryPartnerProfileId === partnerId) {
+      throw new BadRequestException(
+        'Subscription is already assigned to this delivery partner',
+      );
+    }
+
+    await this.prisma.userSubscriptions.update({
+      where: { id: subscriptionId },
+      data: { deliveryPartnerProfileId: partnerId },
+    });
+
+    const result = await this.prisma.deliveries.updateMany({
+      where: {
+        subscriptionId,
+        status: DeliveryStatus.PENDING,
+      },
+      data: { partnerId, updatedAt: new Date() },
+    });
+
+    return {
+      message: 'Delivery partner changed successfully for subscription',
+      data: {
+        subscriptionId,
+        newPartnerId: partnerId,
+        pendingDeliveriesReassigned: result.count,
       },
     };
   }

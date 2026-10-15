@@ -24,6 +24,7 @@ import {
   AssignDeliveryPartnerDto,
   AssignDeliveryPartnerPhs2Dto,
   AssignDeliveryPartnerToDeliveriesDto,
+  ChangeSubscriptionPartnerDto,
 } from './dto/assign-partner.dto';
 import { DeliveryStatus, Role, VariationStatus } from '@prisma/client';
 import { VariationCountQueryDto } from './dto/variation-count-query.dto';
@@ -449,6 +450,46 @@ export class DeliveriesController {
     @Req() req,
   ) {
     return this.deliveriesService.assignPartnerToDeliveries(dto, req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'List subscriptions assigned to a delivery partner',
+    description:
+      "Returns the requesting mess admin's subscriptions currently assigned " +
+      'to the given delivery partner.',
+  })
+  @ApiParam({ name: 'partnerId', description: 'Delivery partner UUID' })
+  @Get('partner/:partnerId/subscriptions')
+  listPartnerSubscriptions(
+    @Param('partnerId') partnerId: string,
+    @Req() req,
+  ) {
+    return this.deliveriesService.listPartnerSubscriptions(
+      partnerId,
+      req.user.id,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Change delivery partner for a subscription',
+    description:
+      "Reassigns an existing subscription's delivery partner. Updates the " +
+      "subscription's own partner (so future deliveries default to the new " +
+      "partner) and moves this subscription's still-PENDING deliveries over " +
+      'to the new partner — deliveries already completed/delivered/cancelled ' +
+      'keep their original partner.',
+  })
+  @Patch('change/partner/subscription')
+  changeSubscriptionPartner(
+    @Body() dto: ChangeSubscriptionPartnerDto,
+    @Req() req,
+  ) {
+    return this.deliveriesService.changeSubscriptionPartner(
+      dto,
+      req.user.id,
+    );
   }
 
   // ─── Analytics ─────────────────────────────────────────────────────────────
