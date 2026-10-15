@@ -102,11 +102,10 @@ export class UserService {
         break;
 
       case Role.DELIVERYAGENT:
-        includeOptions = { deliveryAgentProfile: true };
+        includeOptions = { deliveryPartnerProfile: true };
         break;
 
       case Role.SUPERADMIN:
-        includeOptions = { adminProfile: true };
         break;
 
       default:

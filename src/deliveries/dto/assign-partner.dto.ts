@@ -45,3 +45,14 @@ export class AssignDeliveryPartnerToDeliveriesDto {
   @IsDateString()
   toDate?: string;
 }
+
+// Mess admin changes the delivery partner assigned to an existing subscription/plan —
+// moves the subscription's still-PENDING deliveries over to the new partner.
+export class ChangeSubscriptionPartnerDto {
+  @IsString()
+  subscriptionId: string;
+
+  // New delivery partner's DeliveryPartnerProfile id
+  @IsString()
+  partnerId: string;
+}

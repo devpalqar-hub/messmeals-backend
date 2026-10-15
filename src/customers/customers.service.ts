@@ -225,7 +225,7 @@ export class CustomerService {
     // see resolvePlanSchedule's docstring.
     const requestedScheduleType =
       scheduleType === ScheduleType.CUSTOM ||
-      (Array.isArray(selectedDays) && selectedDays.length > 0)
+        (Array.isArray(selectedDays) && selectedDays.length > 0)
         ? ScheduleType.CUSTOM
         : ScheduleType.EVERYDAY;
 
@@ -247,6 +247,10 @@ export class CustomerService {
     }
 
     // ─── Pricing ──────────────────────────────────────────────────────────
+    // plan.price is the plan's cost price; plan.minPrice (when set) is the
+    // actual selling price shown to and charged to the customer — see
+    // AddPlanScreen's "Selling Price" field and PlanCard's displayed price.
+    const unitPrice = Number(plan.minPrice ?? plan.price);
     let totalPrice = 0;
 
     if (plan.isMonthlyPlan) {
@@ -257,7 +261,7 @@ export class CustomerService {
       const totalDays =
         Math.round((endDate.getTime() - startDate.getTime()) / msPerDay) + 1;
       const numMonths = Math.max(1, Math.round(totalDays / 30));
-      totalPrice = numMonths * Number(plan.price);
+      totalPrice = numMonths * unitPrice;
     } else {
       // Daily: count chargeable delivery days in [startDate, endDate]
       let chargeableDays = 0;
@@ -290,7 +294,7 @@ export class CustomerService {
         }
       }
 
-      totalPrice = chargeableDays * Number(plan.price);
+      totalPrice = chargeableDays * unitPrice;
     }
 
     const appliedDiscount = Math.max(0, Math.min(numericDiscount, totalPrice));
@@ -445,31 +449,31 @@ export class CustomerService {
     string,
     keyof BulkUploadCustomerRow
   > = {
-    name: 'name',
-    customername: 'name',
-    phone: 'phone',
-    phonenumber: 'phone',
-    mobile: 'phone',
-    email: 'email',
-    address: 'address',
-    deliveryaddress: 'address',
-    planid: 'planId',
-    plan: 'planName',
-    planname: 'planName',
-    walletamount: 'walletAmount',
-    wallet: 'walletAmount',
-    discount: 'discount',
-    startdate: 'start_date',
-    start: 'start_date',
-    enddate: 'end_date',
-    end: 'end_date',
-    scheduletype: 'scheduleType',
-    schedule: 'scheduleType',
-    selecteddays: 'selectedDays',
-    days: 'selectedDays',
-    deliverypartnerid: 'deliveryPartnerId',
-    deliverypartner: 'deliveryPartnerId',
-  };
+      name: 'name',
+      customername: 'name',
+      phone: 'phone',
+      phonenumber: 'phone',
+      mobile: 'phone',
+      email: 'email',
+      address: 'address',
+      deliveryaddress: 'address',
+      planid: 'planId',
+      plan: 'planName',
+      planname: 'planName',
+      walletamount: 'walletAmount',
+      wallet: 'walletAmount',
+      discount: 'discount',
+      startdate: 'start_date',
+      start: 'start_date',
+      enddate: 'end_date',
+      end: 'end_date',
+      scheduletype: 'scheduleType',
+      schedule: 'scheduleType',
+      selecteddays: 'selectedDays',
+      days: 'selectedDays',
+      deliverypartnerid: 'deliveryPartnerId',
+      deliverypartner: 'deliveryPartnerId',
+    };
 
   private normalizeBulkUploadHeader(header: string): string {
     return String(header ?? '')
@@ -533,7 +537,7 @@ export class CustomerService {
       for (const [rawHeader, rawValue] of Object.entries(rawRow)) {
         const key =
           CustomerService.BULK_UPLOAD_HEADER_ALIASES[
-            this.normalizeBulkUploadHeader(rawHeader)
+          this.normalizeBulkUploadHeader(rawHeader)
           ];
         if (!key) continue;
 
@@ -628,10 +632,10 @@ export class CustomerService {
 
         const selectedDays = row.selectedDays
           ? row.selectedDays
-              .toString()
-              .split(/[,/|]/)
-              .map((d) => d.trim().toUpperCase())
-              .filter(Boolean)
+            .toString()
+            .split(/[,/|]/)
+            .map((d) => d.trim().toUpperCase())
+            .filter(Boolean)
           : undefined;
 
         const dto: CreateCustomerDto = {
@@ -667,8 +671,8 @@ export class CustomerService {
       } catch (err) {
         const message =
           err instanceof BadRequestException ||
-          err instanceof ForbiddenException ||
-          err instanceof NotFoundException
+            err instanceof ForbiddenException ||
+            err instanceof NotFoundException
             ? (err.getResponse() as any)?.message || err.message
             : err instanceof Error
               ? err.message
@@ -845,60 +849,60 @@ export class CustomerService {
     const where: any = {
       ...(search
         ? {
-            OR: [
-              {
-                user: {
-                  name: { contains: search.toLowerCase() },
-                },
+          OR: [
+            {
+              user: {
+                name: { contains: search.toLowerCase() },
               },
-              {
-                user: {
-                  email: { contains: search.toLowerCase() },
-                },
+            },
+            {
+              user: {
+                email: { contains: search.toLowerCase() },
               },
-              {
-                userSubscriptions: {
-                  some: {
-                    plan: {
-                      planName: {
-                        contains: search.toLowerCase(),
-                      },
+            },
+            {
+              userSubscriptions: {
+                some: {
+                  plan: {
+                    planName: {
+                      contains: search.toLowerCase(),
                     },
                   },
                 },
               },
-            ],
-          }
+            },
+          ],
+        }
         : {}),
 
       ...(messId
         ? {
-            userSubscriptions: {
-              some: { messId },
-            },
-          }
+          userSubscriptions: {
+            some: { messId },
+          },
+        }
         : {}),
 
       // ✅ subscription-ending-soon filter — active subscriptions ending within 7 days
       ...(endingSoon
         ? {
-            userSubscriptions: {
-              some: {
-                ...(messId ? { messId } : {}),
-                is_active: true,
-                end_date: { gte: now, lte: in7Days },
-              },
+          userSubscriptions: {
+            some: {
+              ...(messId ? { messId } : {}),
+              is_active: true,
+              end_date: { gte: now, lte: in7Days },
             },
-          }
+          },
+        }
         : {}),
 
       // ✅ is_active filter
       ...(isActive !== undefined
         ? {
-            user: {
-              is_active: isActive,
-            },
-          }
+          user: {
+            is_active: isActive,
+          },
+        }
         : {}),
     };
 
@@ -936,13 +940,13 @@ export class CustomerService {
     const customerProfileIds = customers.map((c) => c.id);
     const ledgerTotals = customerProfileIds.length
       ? await this.prisma.customerMessTransaction.groupBy({
-          by: ['customerProfileId', 'type'],
-          where: {
-            customerProfileId: { in: customerProfileIds },
-            ...(messId ? { messId } : {}),
-          },
-          _sum: { amount: true },
-        })
+        by: ['customerProfileId', 'type'],
+        where: {
+          customerProfileId: { in: customerProfileIds },
+          ...(messId ? { messId } : {}),
+        },
+        _sum: { amount: true },
+      })
       : [];
     const walletBalanceByProfile = new Map<string, number>();
     for (const row of ledgerTotals) {
@@ -970,10 +974,10 @@ export class CustomerService {
       const daysLeft =
         activeSubs.length > 0 && activeSubs[0].end_date
           ? Math.ceil(
-              (new Date(activeSubs[0].end_date).getTime() -
-                new Date().getTime()) /
-                (1000 * 60 * 60 * 24),
-            )
+            (new Date(activeSubs[0].end_date).getTime() -
+              new Date().getTime()) /
+            (1000 * 60 * 60 * 24),
+          )
           : null;
 
       return {
@@ -1002,17 +1006,17 @@ export class CustomerService {
           deliveryPartnerProfileId: sub.deliveryPartnerProfileId,
           plan: sub.plan
             ? {
-                id: sub.plan.id,
-                name: sub.plan.planName,
-                price: Number(sub.plan.price),
-                description: sub.plan.description,
-                variation: sub.plan.Variation,
-                mess: sub.plan.mess,
-                images: sub.plan.images.map((img) => ({
-                  url: img.url,
-                  altText: img.altText,
-                })),
-              }
+              id: sub.plan.id,
+              name: sub.plan.planName,
+              price: Number(sub.plan.price),
+              description: sub.plan.description,
+              variation: sub.plan.Variation,
+              mess: sub.plan.mess,
+              images: sub.plan.images.map((img) => ({
+                url: img.url,
+                altText: img.altText,
+              })),
+            }
             : null,
         })),
       };
@@ -1048,8 +1052,8 @@ export class CustomerService {
     const messIdsInScope = messId
       ? [messId]
       : (await this.prisma.mess.findMany({ select: { id: true } })).map(
-          (m) => m.id,
-        );
+        (m) => m.id,
+      );
 
     const [activeSubs, endingSoonSubs, ledgerTotals] = await Promise.all([
       this.prisma.userSubscriptions.findMany({
@@ -1114,7 +1118,7 @@ export class CustomerService {
     });
     const totalDebit = Number(
       ledgerTotals.find((t) => t.type === LedgerEntryType.DEBIT)?._sum.amount ??
-        0,
+      0,
     );
     const totalCredit = Number(
       ledgerTotals.find((t) => t.type === LedgerEntryType.CREDIT)?._sum
@@ -1126,10 +1130,10 @@ export class CustomerService {
     const daysLeft =
       activeSubs.length > 0 && activeSubs[0].end_date
         ? Math.ceil(
-            (new Date(activeSubs[0].end_date).getTime() -
-              new Date().getTime()) /
-              (1000 * 60 * 60 * 24),
-          )
+          (new Date(activeSubs[0].end_date).getTime() -
+            new Date().getTime()) /
+          (1000 * 60 * 60 * 24),
+        )
         : null;
 
     // 🧾 Final response
@@ -1177,17 +1181,17 @@ export class CustomerService {
           status,
           plan: sub.plan
             ? {
-                id: sub.plan.id,
-                name: sub.plan.planName,
-                price: Number(sub.plan.price),
-                description: sub.plan.description,
-                isMonthlyPlan: sub.plan.isMonthlyPlan,
-                isDailyPlan: sub.plan.isDailyPlan,
-                images: sub.plan.images.map((img) => ({
-                  url: img.url,
-                  altText: img.altText,
-                })),
-              }
+              id: sub.plan.id,
+              name: sub.plan.planName,
+              price: Number(sub.plan.price),
+              description: sub.plan.description,
+              isMonthlyPlan: sub.plan.isMonthlyPlan,
+              isDailyPlan: sub.plan.isDailyPlan,
+              images: sub.plan.images.map((img) => ({
+                url: img.url,
+                altText: img.altText,
+              })),
+            }
             : null,
         };
       }),
@@ -1369,7 +1373,7 @@ export class CustomerService {
     // ─── 6. Normalize schedule (same as CreateUser) ──────────────────────
     const normalizedScheduleType =
       scheduleType === ScheduleType.CUSTOM ||
-      (Array.isArray(selectedDays) && selectedDays.length > 0)
+        (Array.isArray(selectedDays) && selectedDays.length > 0)
         ? ScheduleType.CUSTOM
         : ScheduleType.EVERYDAY;
 
@@ -1390,6 +1394,10 @@ export class CustomerService {
     }
 
     // ─── 7. Calculate total price from date range ─────────────────────────
+    // plan.price is the plan's cost price; plan.minPrice (when set) is the
+    // actual selling price shown to and charged to the customer — see
+    // AddPlanScreen's "Selling Price" field and PlanCard's displayed price.
+    const unitPrice = Number(plan.minPrice ?? plan.price);
     let totalPrice = 0;
     const weekdayMap = [
       'SUNDAY',
@@ -1407,7 +1415,7 @@ export class CustomerService {
       const totalDays =
         Math.round((endDate.getTime() - startDate.getTime()) / msPerDay) + 1;
       const numMonths = Math.max(1, Math.round(totalDays / 30));
-      totalPrice = numMonths * Number(plan.price);
+      totalPrice = numMonths * unitPrice;
     } else {
       let chargeableDays = 0;
       const tempDate = new Date(startDate);
@@ -1426,7 +1434,7 @@ export class CustomerService {
           tempDate.setDate(tempDate.getDate() + 1);
         }
       }
-      totalPrice = chargeableDays * Number(plan.price);
+      totalPrice = chargeableDays * unitPrice;
     }
 
     const parsedDiscount = Number(discount);
@@ -1453,7 +1461,7 @@ export class CustomerService {
     const isContinuousRenewal =
       previousEndDate !== null &&
       Math.abs(startDate.getTime() - new Date(previousEndDate).getTime()) <=
-        ONE_DAY_MS;
+      ONE_DAY_MS;
 
     // The effective start_date written to the DB:
     //   – continuous → keep original first start_date
@@ -1689,6 +1697,45 @@ export class CustomerService {
     return { message: 'Mess added to MessAdmin successfully' };
   }
 
+  /**
+   * Computes the dates that `count` deliveries should resume on after a pause,
+   * landing only on days the subscription actually runs (EVERYDAY/MONTHLY = any
+   * day, CUSTOM = only the selected weekdays), starting the day after pauseEnd.
+   */
+  private generateResumeDates(
+    pauseEnd: Date,
+    count: number,
+    scheduleType: ScheduleType,
+    selectedDays: string[] | null,
+  ): Date[] {
+    const weekdayMap = [
+      'SUNDAY',
+      'MONDAY',
+      'TUESDAY',
+      'WEDNESDAY',
+      'THURSDAY',
+      'FRIDAY',
+      'SATURDAY',
+    ];
+    const selectedDaysUpper =
+      scheduleType === ScheduleType.CUSTOM
+        ? (selectedDays ?? []).map((d) => d.toUpperCase())
+        : null;
+    const isAllowedDay = (date: Date) =>
+      !selectedDaysUpper || selectedDaysUpper.includes(weekdayMap[date.getDay()]);
+
+    const newDates: Date[] = [];
+    const cursor = new Date(pauseEnd);
+    cursor.setDate(cursor.getDate() + 1);
+    while (newDates.length < count) {
+      if (isAllowedDay(cursor)) {
+        newDates.push(new Date(cursor));
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return newDates;
+  }
+
   async PauseSubscription(subscriptionId: string, dto: PauseSubDto) {
     const { pause_start_date, pause_end_date } = dto;
 
@@ -1769,26 +1816,30 @@ export class CustomerService {
       throw new BadRequestException('No future deliveries found to pause.');
     }
 
-    // 7️⃣ Shift remaining deliveries forward by pause duration
-    const updates: Prisma.PrismaPromise<any>[] = [];
-    for (const delivery of remainingDeliveries) {
-      const newDate = new Date(delivery.date);
-      newDate.setDate(newDate.getDate() + pauseDurationDays);
+    // 7️⃣ Reschedule remaining deliveries onto the days the plan/subscription
+    // actually runs on, starting right after the pause ends — not a flat
+    // day-count shift, which could land a CUSTOM-schedule delivery on a
+    // weekday it was never meant to run on.
+    const newDates = this.generateResumeDates(
+      pauseEnd,
+      remainingDeliveries.length,
+      subscription.scheduleType,
+      subscription.selectedDays as string[] | null,
+    );
 
-      updates.push(
+    const updates: Prisma.PrismaPromise<any>[] = remainingDeliveries.map(
+      (delivery, index) =>
         this.prisma.deliveries.update({
           where: { id: delivery.id },
-          data: { date: newDate },
+          data: { date: newDates[index] },
         }),
-      );
-    }
+    );
 
     // Run all updates in one transaction
     await this.prisma.$transaction(updates);
 
-    // 8️⃣ Optionally, extend subscription end_date
-    const newEndDate = new Date(subscription.end_date);
-    newEndDate.setDate(newEndDate.getDate() + pauseDurationDays);
+    // 8️⃣ Extend subscription end_date to cover the last rescheduled delivery
+    const newEndDate = newDates[newDates.length - 1];
 
     // 9️⃣ Update subscription with pause info + new end date
     await this.prisma.userSubscriptions.update({
@@ -1835,7 +1886,7 @@ export class CustomerService {
       scheduleType === ScheduleType.MONTHLY
         ? ScheduleType.MONTHLY
         : scheduleType === ScheduleType.CUSTOM ||
-            (Array.isArray(selectedDays) && selectedDays.length > 0)
+          (Array.isArray(selectedDays) && selectedDays.length > 0)
           ? ScheduleType.CUSTOM
           : ScheduleType.EVERYDAY;
 
@@ -2107,26 +2158,26 @@ export class CustomerService {
         createdAt: sub.createdAt,
         plan: sub.plan
           ? {
-              id: sub.plan.id,
-              name: sub.plan.planName,
-              price: Number(sub.plan.price),
-              description: sub.plan.description,
-              isMonthlyPlan: sub.plan.isMonthlyPlan,
-              isDailyPlan: sub.plan.isDailyPlan,
-              images: sub.plan.images.map((img) => ({
-                url: img.url,
-                altText: img.altText,
-              })),
-            }
+            id: sub.plan.id,
+            name: sub.plan.planName,
+            price: Number(sub.plan.price),
+            description: sub.plan.description,
+            isMonthlyPlan: sub.plan.isMonthlyPlan,
+            isDailyPlan: sub.plan.isDailyPlan,
+            images: sub.plan.images.map((img) => ({
+              url: img.url,
+              altText: img.altText,
+            })),
+          }
           : null,
         address: sub.UserAddress
           ? {
-              id: sub.UserAddress.id,
-              name: sub.UserAddress.name,
-              street: sub.UserAddress.street,
-              townOrcity: sub.UserAddress.townOrcity,
-              postcode: sub.UserAddress.postcode,
-            }
+            id: sub.UserAddress.id,
+            name: sub.UserAddress.name,
+            street: sub.UserAddress.street,
+            townOrcity: sub.UserAddress.townOrcity,
+            postcode: sub.UserAddress.postcode,
+          }
           : null,
       })),
       meta: {
@@ -2187,7 +2238,7 @@ export class CustomerService {
       // Ensure cancellation start is at least 2 days from now
       const diffFromNowDays = Math.ceil(
         (cancelStartDate.getTime() - currentDate.getTime()) /
-          (1000 * 60 * 60 * 24),
+        (1000 * 60 * 60 * 24),
       );
       if (diffFromNowDays < 2) {
         throw new BadRequestException(
@@ -2386,26 +2437,30 @@ export class CustomerService {
       throw new BadRequestException('No future deliveries found to pause.');
     }
 
-    // 7️⃣ Shift remaining deliveries forward by pause duration
-    const updates: Prisma.PrismaPromise<any>[] = [];
-    for (const delivery of remainingDeliveries) {
-      const newDate = new Date(delivery.date);
-      newDate.setDate(newDate.getDate() + pauseDurationDays);
+    // 7️⃣ Reschedule remaining deliveries onto the days the plan/subscription
+    // actually runs on, starting right after the pause ends — not a flat
+    // day-count shift, which could land a CUSTOM-schedule delivery on a
+    // weekday it was never meant to run on.
+    const newDates = this.generateResumeDates(
+      pauseEnd,
+      remainingDeliveries.length,
+      subscription.scheduleType,
+      subscription.selectedDays as string[] | null,
+    );
 
-      updates.push(
+    const updates: Prisma.PrismaPromise<any>[] = remainingDeliveries.map(
+      (delivery, index) =>
         this.prisma.deliveries.update({
           where: { id: delivery.id },
-          data: { date: newDate },
+          data: { date: newDates[index] },
         }),
-      );
-    }
+    );
 
     // Run all updates in one transaction
     await this.prisma.$transaction(updates);
 
-    // 8️⃣ Optionally, extend subscription end_date
-    const newEndDate = new Date(subscription.end_date);
-    newEndDate.setDate(newEndDate.getDate() + pauseDurationDays);
+    // 8️⃣ Extend subscription end_date to cover the last rescheduled delivery
+    const newEndDate = newDates[newDates.length - 1];
 
     // 9️⃣ Update subscription with pause info + new end date
     await this.prisma.userSubscriptions.update({
@@ -2541,7 +2596,7 @@ export class CustomerService {
     // see resolvePlanSchedule's docstring.
     const requestedScheduleType =
       scheduleType === ScheduleType.CUSTOM ||
-      (Array.isArray(selectedDays) && selectedDays.length > 0)
+        (Array.isArray(selectedDays) && selectedDays.length > 0)
         ? ScheduleType.CUSTOM
         : ScheduleType.EVERYDAY;
 
@@ -2563,6 +2618,10 @@ export class CustomerService {
     }
 
     // ─── 7. Calculate total price ────────────────────────────────────────────
+    // plan.price is the plan's cost price; plan.minPrice (when set) is the
+    // actual selling price shown to and charged to the customer — see
+    // AddPlanScreen's "Selling Price" field and PlanCard's displayed price.
+    const unitPrice = Number(plan.minPrice ?? plan.price);
     let totalPrice = 0;
 
     if (plan.isMonthlyPlan) {
@@ -2575,7 +2634,7 @@ export class CustomerService {
         Math.round((endDate.getTime() - startDate.getTime()) / msPerDay) + 1;
       const numMonths = Math.max(1, Math.round(totalDays / 30));
 
-      totalPrice = numMonths * Number(plan.price);
+      totalPrice = numMonths * unitPrice;
     } else {
       // Daily plan: count chargeable delivery days
       const weekdayMap = [
@@ -2604,7 +2663,7 @@ export class CustomerService {
         tempDate.setUTCDate(tempDate.getUTCDate() + 1);
       }
 
-      totalPrice = chargeableDays * Number(plan.price);
+      totalPrice = chargeableDays * unitPrice;
     }
 
     // ─── 8. Apply discount ──────────────────────────────────────────────────
@@ -2714,7 +2773,7 @@ export class CustomerService {
     });
     const totalDebitAll = Number(
       ledgerTotals.find((t) => t.type === LedgerEntryType.DEBIT)?._sum.amount ??
-        0,
+      0,
     );
     const totalCreditAll = Number(
       ledgerTotals.find((t) => t.type === LedgerEntryType.CREDIT)?._sum
@@ -3035,11 +3094,11 @@ export class CustomerService {
         partnerId: d.partnerId,
         partner: d.partner
           ? {
-              id: d.partner.id,
-              name: d.partner.user.name,
-              phone: d.partner.user.phone,
-              email: d.partner.user.email,
-            }
+            id: d.partner.id,
+            name: d.partner.user.name,
+            phone: d.partner.user.phone,
+            email: d.partner.user.email,
+          }
           : null,
         variations: (d.plan as any)?.Variation ?? [],
       })),
@@ -3232,8 +3291,8 @@ export class CustomerService {
       const selectedDaysUpper =
         subscription.scheduleType === ScheduleType.CUSTOM
           ? ((subscription.selectedDays as string[]) ?? []).map((d) =>
-              d.toUpperCase(),
-            )
+            d.toUpperCase(),
+          )
           : [];
       let chargeableDays = 0;
       const tempDate = new Date(rangeStart);
