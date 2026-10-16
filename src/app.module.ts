@@ -33,6 +33,7 @@ import { OpenModule } from './open/open.module';
 import { CustomerAuthModule } from './customer-auth/customer-auth.module';
 import { MessBulkUploadModule } from './mess-bulk-upload/mess-bulk-upload.module';
 import { TransactionsModule } from './transactions/transactions.module';
+import { GeocodingModule } from './geocoding/geocoding.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { TransactionsModule } from './transactions/transactions.module';
     CustomerAuthModule,
     MessBulkUploadModule,
     TransactionsModule,
+    GeocodingModule,
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'uploads'),
       serveRoot: '/uploads',

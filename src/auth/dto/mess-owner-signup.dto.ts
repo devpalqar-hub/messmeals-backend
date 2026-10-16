@@ -30,27 +30,49 @@ export class MessOwnerSignupDto {
   @IsString()
   address!: string;
 
+  /**
+   * Deprecated — no longer resolved against the Districts table or stored anywhere.
+   * Declared only so older clients that still send it don't trip `forbidNonWhitelisted`;
+   * the value is accepted and silently discarded.
+   */
   @ApiPropertyOptional({
-    example: 'Ernakulam',
-    description: 'District name (must exist in Districts table).',
+    deprecated: true,
+    description: 'Deprecated — accepted but ignored. Use latitude/longitude instead.',
+  })
+  @IsOptional()
+  district?: unknown;
+
+  /** Deprecated — same discard behavior as `district`. See its comment. */
+  @ApiPropertyOptional({
+    deprecated: true,
+    description: 'Deprecated — accepted but ignored. Use latitude/longitude instead.',
+  })
+  @IsOptional()
+  zipcode?: unknown;
+
+  /** Deprecated — same discard behavior as `district`. See its comment. */
+  @ApiPropertyOptional({
+    deprecated: true,
+    description: 'Deprecated — accepted but ignored. Use latitude/longitude instead.',
+  })
+  @IsOptional()
+  postcode?: unknown;
+
+  @ApiPropertyOptional({
+    example: '9.9312',
+    description: 'Latitude of the mess location.',
   })
   @IsOptional()
   @IsString()
-  district?: string;
+  latitude?: string;
 
-  @ApiPropertyOptional({ example: '682024', description: 'Postal / ZIP code.' })
-  @IsOptional()
-  @IsString()
-  zipcode?: string;
-
-  /** Alias for zipcode — accepted if the client sends `postcode` instead of `zipcode`. */
   @ApiPropertyOptional({
-    example: '682024',
-    description: 'Alias for zipcode (sent by the mobile app as postcode).',
+    example: '76.2673',
+    description: 'Longitude of the mess location.',
   })
   @IsOptional()
   @IsString()
-  postcode?: string;
+  longitude?: string;
 
   @ApiProperty({ example: 'Annapoorna Mess' })
   @IsString()
@@ -90,27 +112,49 @@ export class MessOwnerSendOtpDto {
   @IsString()
   address!: string;
 
+  /**
+   * Deprecated — no longer resolved against the Districts table or stored anywhere.
+   * Declared only so older clients that still send it don't trip `forbidNonWhitelisted`;
+   * the value is accepted and silently discarded.
+   */
   @ApiPropertyOptional({
-    example: 'Ernakulam',
-    description: 'District name (must exist in Districts table).',
+    deprecated: true,
+    description: 'Deprecated — accepted but ignored. Use latitude/longitude instead.',
+  })
+  @IsOptional()
+  district?: unknown;
+
+  /** Deprecated — same discard behavior as `district`. See its comment. */
+  @ApiPropertyOptional({
+    deprecated: true,
+    description: 'Deprecated — accepted but ignored. Use latitude/longitude instead.',
+  })
+  @IsOptional()
+  zipcode?: unknown;
+
+  /** Deprecated — same discard behavior as `district`. See its comment. */
+  @ApiPropertyOptional({
+    deprecated: true,
+    description: 'Deprecated — accepted but ignored. Use latitude/longitude instead.',
+  })
+  @IsOptional()
+  postcode?: unknown;
+
+  @ApiPropertyOptional({
+    example: '9.9312',
+    description: 'Latitude of the mess location.',
   })
   @IsOptional()
   @IsString()
-  district?: string;
+  latitude?: string;
 
-  @ApiPropertyOptional({ example: '682024', description: 'Postal / ZIP code.' })
-  @IsOptional()
-  @IsString()
-  zipcode?: string;
-
-  /** Alias for zipcode — accepted if the client sends `postcode` instead of `zipcode`. */
   @ApiPropertyOptional({
-    example: '682024',
-    description: 'Alias for zipcode (sent by the mobile app as postcode).',
+    example: '76.2673',
+    description: 'Longitude of the mess location.',
   })
   @IsOptional()
   @IsString()
-  postcode?: string;
+  longitude?: string;
 
   @ApiProperty({ example: 'Annapoorna Mess' })
   @IsString()

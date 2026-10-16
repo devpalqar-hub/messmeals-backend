@@ -405,8 +405,6 @@ export class AuthService {
     const messName = dto.messName.trim();
     const phone = dto.phone.trim();
     const email = dto.email.trim().toLowerCase();
-    const districtName = dto.district?.trim() ?? null;
-    const zipcode = (dto.zipcode ?? dto.postcode)?.trim() ?? null;
 
     // Checks both the staff `User` table and the customer `Customer` table —
     // phone/email must stay globally unique across both.
@@ -414,18 +412,6 @@ export class AuthService {
       throw new BadRequestException(
         'User already exists with this phone or email',
       );
-    }
-
-    let district: { id: string; name: string } | null = null;
-    if (districtName) {
-      district = await this.prisma.district.findFirst({
-        where: { name: { equals: districtName } },
-        select: { id: true, name: true },
-      });
-
-      if (!district) {
-        throw new BadRequestException('District not found');
-      }
     }
 
     // Mirror existing OTP behavior, but keep a safe dev fallback.
@@ -444,8 +430,6 @@ export class AuthService {
             message: 'OTP_SESSION:bypass',
             enquiryType: EnquiryType.MESS_OWNER,
             messname: messName,
-            district: district?.name ?? null,
-            pincode: zipcode,
           },
         });
         return {
@@ -466,8 +450,6 @@ export class AuthService {
           message: `OTP_SESSION:${otpResponse.Details}`,
           enquiryType: EnquiryType.MESS_OWNER,
           messname: messName,
-          district: district?.name ?? null,
-          pincode: zipcode,
         },
       });
 
@@ -494,8 +476,6 @@ export class AuthService {
         message: 'OTP_SESSION:local-dev',
         enquiryType: EnquiryType.MESS_OWNER,
         messname: messName,
-        district: district?.name ?? null,
-        pincode: zipcode,
       },
     });
 
@@ -512,8 +492,8 @@ export class AuthService {
     const phone = dto.phone.trim();
     const email = dto.email.trim().toLowerCase();
     const address = dto.address.trim();
-    const districtName = dto.district?.trim() ?? null;
-    const zipcode = (dto.zipcode ?? dto.postcode)?.trim() ?? null;
+    const latitude = dto.latitude?.trim() ?? null;
+    const longitude = dto.longitude?.trim() ?? null;
 
     // 1) Resolve OTP sessionId internally by phone (last 10 minutes)
     const sessionRow = await this.prisma.enquiry.findFirst({
@@ -575,18 +555,6 @@ export class AuthService {
       );
     }
 
-    let district: { id: string; name: string } | null = null;
-    if (districtName) {
-      district = await this.prisma.district.findFirst({
-        where: { name: { equals: districtName } },
-        select: { id: true, name: true },
-      });
-
-      if (!district) {
-        throw new BadRequestException('District not found');
-      }
-    }
-
     const trialEndsAt = await (async () => {
       const cfg = await this.prisma.billingGlobalConfig.findFirst({
         orderBy: { createdAt: 'desc' },
@@ -613,8 +581,8 @@ export class AuthService {
                     address,
                     phone,
                     email,
-                    ...(district ? { districtId: district.id } : {}),
-                    zipcode,
+                    latitude,
+                    logitude: longitude,
                     is_verified: false,
                     MessBillingConfig: {
                       create: {
@@ -651,8 +619,6 @@ export class AuthService {
           enquiryType: EnquiryType.MESS_OWNER,
           messId: createdMess?.id,
           messname: messName,
-          district: district?.name ?? null,
-          pincode: zipcode,
         },
       });
 

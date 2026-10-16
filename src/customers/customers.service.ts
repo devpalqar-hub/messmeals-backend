@@ -3020,11 +3020,27 @@ export class CustomerService {
       },
     });
 
+    // Clean up any other PENDING subscription for this same plan (is_active: false,
+    // cancelled_on: null — created by choosePlan() but never activated because payment
+    // was never completed). Left alone, these linger forever since nothing but the
+    // Razorpay failure webhook ever clears them (see PaymentsService.handlePaymentFailure,
+    // which deletes the same way on a failed payment). Cascades to their Payments/ledger rows.
+    const pendingCleanup = await this.prisma.userSubscriptions.deleteMany({
+      where: {
+        id: { not: subscriptionId },
+        customerProfileId: subscription.CustomerProfile.id,
+        planId: subscription.planId,
+        is_active: false,
+        cancelled_on: null,
+      },
+    });
+
     return {
       message: 'Subscription fully cancelled',
       subscriptionId,
       remainingDeliveriesDeactivated: remainingDays,
       refundAmount,
+      pendingSubscriptionsRemoved: pendingCleanup.count,
       planType: subscription.plan.isMonthlyPlan ? 'monthly' : 'daily',
       note: subscription.plan.isMonthlyPlan
         ? 'No wallet refund for monthly plans'
