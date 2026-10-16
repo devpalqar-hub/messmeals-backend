@@ -199,7 +199,9 @@ model UserSubscriptions {
   customerProfileId        String?
   deliveryPriority         Int?
 
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+  /// Soft-delete timestamp. NULL = active; non-NULL = deleted.
+  deletedAt DateTime?
 
   isActive Boolean @default(true)
 
@@ -214,6 +216,7 @@ model UserSubscriptions {
 
   @@unique([messId, deliveryPriority])
   @@index([messId, deliveryPriority])
+  @@index([deletedAt])
 }
 
 model DeliveryPartnerProfile {
@@ -236,15 +239,17 @@ model DeliveryPartnerProfile {
 }
 
 model Plans {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   planName    String
-  price       Decimal  @default(0.00)
+  price       Decimal   @default(0.00)
   minPrice    Decimal?
-  description String?  @db.Text
+  description String?   @db.Text
   messId      String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  mess        Mess     @relation(fields: [messId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  /// Soft-delete timestamp. NULL = active; non-NULL = deleted.
+  deletedAt   DateTime?
+  mess        Mess      @relation(fields: [messId], references: [id], onDelete: Cascade)
 
   isMonthlyPlan Boolean @default(false)
   isDailyPlan   Boolean @default(true)
@@ -271,16 +276,20 @@ model Plans {
   Variation         Variation[]
   Enquiry           Enquiry[]
   menus             Menu[]
+
+  @@index([deletedAt])
 }
 
 model PlanImages {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   planId    String
   url       String
   altText   String?
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  /// Soft-delete timestamp. NULL = active; non-NULL = deleted.
+  deletedAt DateTime?
 
   plan Plans @relation(fields: [planId], references: [id], onDelete: Cascade)
 
@@ -334,6 +343,8 @@ model DeliveryVariation {
   status      VariationStatus @default(PENDING)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+  /// Soft-delete timestamp. NULL = active; non-NULL = deleted.
+  deletedAt   DateTime?
 
   delivery  Deliveries @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
   variation Variation  @relation(fields: [variationId], references: [id], onDelete: Cascade)
@@ -356,8 +367,10 @@ model Deliveries {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
-  isActive Boolean @default(true)
-  sequence Int?    @default(0)
+  isActive  Boolean   @default(true)
+  sequence  Int?      @default(0)
+  /// Soft-delete timestamp. NULL = active; non-NULL = deleted.
+  deletedAt DateTime?
 
   customer           CustomerProfile         @relation(fields: [customerId], references: [id], onDelete: Cascade)
   plan               Plans                   @relation(fields: [planId], references: [id], onDelete: Cascade)
@@ -367,6 +380,8 @@ model Deliveries {
   deliveryVariations DeliveryVariation[]
   deliveryAssignment DeliveryAssignment?
   ledgerTransactions CustomerMessTransaction[]
+
+  @@index([deletedAt])
 }
 
 model Mess {
@@ -450,6 +465,8 @@ model CustomerMessTransaction {
   balanceAfter      Decimal
   note              String?
   createdAt         DateTime          @default(now())
+  /// Soft-delete timestamp. NULL = active; non-NULL = deleted.
+  deletedAt         DateTime?
 
   relatedTransactionId String?
 
@@ -611,6 +628,8 @@ model Payments {
   processedAt       DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+  /// Soft-delete timestamp. NULL = active; non-NULL = deleted.
+  deletedAt         DateTime?
 
   userSubscriptions UserSubscriptions @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 }
@@ -727,9 +746,11 @@ model Enquiry {
 
   plan Plans? @relation(fields: [planId], references: [id], onDelete: Cascade)
 
-  messname String?
-  district String?
-  pincode  String?
+  messname  String?
+  district  String?
+  pincode   String?
+  /// Soft-delete timestamp. NULL = active; non-NULL = deleted.
+  deletedAt DateTime?
 
   mess      Mess?    @relation(fields: [messId], references: [id])
   createdAt DateTime @default(now())

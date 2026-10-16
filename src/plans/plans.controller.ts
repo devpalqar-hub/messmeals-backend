@@ -215,6 +215,11 @@ export class PlansController {
     required: false,
     description: 'Search by plan name',
   })
+  @ApiQuery({
+    name: 'includeDeleted',
+    required: false,
+    description: 'Pass true to include soft-deleted plans (admin use only)',
+  })
   @ApiResponse({ status: 200, description: 'Plans fetched successfully.' })
   @Get()
   findAll(
@@ -222,12 +227,14 @@ export class PlansController {
     @Query('limit') limit?: string,
     @Query('messId') messId?: string,
     @Query('search') search?: string,
+    @Query('includeDeleted') includeDeleted?: string,
   ) {
     return this.plansService.findAll(
       Number(page) || 1,
       Number(limit) || 10,
       messId,
       search,
+      includeDeleted === 'true',
     );
   }
 
@@ -322,10 +329,14 @@ export class PlansController {
     return this.plansService.updatePlan(id, dto);
   }
 
-  // ✅ DELETE
+  // ✅ DELETE (soft)
   @ApiOperation({
-    summary: 'Delete plan',
-    description: 'Deletes a plan by UUID.',
+    summary: 'Soft-delete plan',
+    description:
+      'Soft-deletes a plan by UUID. Sets deletedAt on the plan and all cascade children ' +
+      '(PlanImages, UserSubscriptions, Deliveries, DeliveryVariations, Payments, ' +
+      'CustomerMessTransactions, Enquiries). Records are retained in the database but ' +
+      'hidden from all standard API responses.',
   })
   @ApiParam({
     name: 'id',

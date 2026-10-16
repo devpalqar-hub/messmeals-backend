@@ -159,10 +159,14 @@ export class PlansService {
     limit: number = 10,
     messId?: string,
     search?: string,
+    includeDeleted = false,
   ) {
     const skip = (page - 1) * limit;
 
     const where: any = {};
+    if (!includeDeleted) {
+      where.deletedAt = null;
+    }
     if (messId) {
       where.messId = messId;
     }
@@ -176,7 +180,9 @@ export class PlansService {
         take: limit,
         where,
         include: {
-          images: true,
+          images: {
+            where: includeDeleted ? {} : { deletedAt: null },
+          },
           mess: {
             select: {
               id: true,
@@ -217,10 +223,10 @@ export class PlansService {
   }
 
   async findOne(id: string) {
-    const plan = await this.prisma.plans.findUnique({
-      where: { id },
+    const plan = await this.prisma.plans.findFirst({
+      where: { id, deletedAt: null },
       include: {
-        images: true,
+        images: { where: { deletedAt: null } },
         mess: {
           select: {
             id: true,
@@ -381,7 +387,98 @@ export class PlansService {
   }
 
   async remove(id: string) {
-    return this.prisma.plans.delete({ where: { id } });
+    const now = new Date();
+
+    // Verify plan exists and is not already deleted
+    const plan = await this.prisma.plans.findFirst({
+      where: { id, deletedAt: null },
+    });
+    if (!plan) throw new NotFoundException('Plan not found');
+
+    return this.prisma.$transaction(async (tx) => {
+      // Soft-delete the plan itself
+      await tx.plans.update({
+        where: { id },
+        data: { deletedAt: now, isActive: false },
+      });
+
+      // Soft-delete PlanImages
+      await tx.planImages.updateMany({
+        where: { planId: id, deletedAt: null },
+        data: { deletedAt: now },
+      });
+
+      // Soft-delete Enquiries linked to this plan
+      await tx.enquiry.updateMany({
+        where: { planId: id, deletedAt: null },
+        data: { deletedAt: now },
+      });
+
+      // Fetch active UserSubscriptions for this plan
+      const subscriptions = await tx.userSubscriptions.findMany({
+        where: { planId: id, deletedAt: null },
+        select: { id: true },
+      });
+      const subscriptionIds = subscriptions.map((s) => s.id);
+
+      if (subscriptionIds.length > 0) {
+        // Soft-delete Payments under these subscriptions
+        await tx.payments.updateMany({
+          where: { subscriptionId: { in: subscriptionIds }, deletedAt: null },
+          data: { deletedAt: now },
+        });
+
+        // Soft-delete CustomerMessTransactions under these subscriptions
+        await tx.customerMessTransaction.updateMany({
+          where: { subscriptionId: { in: subscriptionIds }, deletedAt: null },
+          data: { deletedAt: now },
+        });
+
+        // Soft-delete the UserSubscriptions
+        await tx.userSubscriptions.updateMany({
+          where: { id: { in: subscriptionIds }, deletedAt: null },
+          data: { deletedAt: now, isActive: false },
+        });
+      }
+
+      // Fetch active Deliveries linked to this plan
+      const deliveries = await tx.deliveries.findMany({
+        where: { planId: id, deletedAt: null },
+        select: { id: true },
+      });
+      const deliveryIds = deliveries.map((d) => d.id);
+
+      if (deliveryIds.length > 0) {
+        // Soft-delete DeliveryVariations
+        await tx.deliveryVariation.updateMany({
+          where: { deliveryId: { in: deliveryIds }, deletedAt: null },
+          data: { deletedAt: now },
+        });
+
+        // Soft-delete CustomerMessTransactions linked to these deliveries
+        // (those not already deleted via subscription above)
+        await tx.customerMessTransaction.updateMany({
+          where: { deliveryId: { in: deliveryIds }, deletedAt: null },
+          data: { deletedAt: now },
+        });
+
+        // Soft-delete Deliveries
+        await tx.deliveries.updateMany({
+          where: { id: { in: deliveryIds }, deletedAt: null },
+          data: { deletedAt: now, isActive: false },
+        });
+      }
+
+      return {
+        message: 'Plan soft-deleted successfully',
+        planId: id,
+        deletedAt: now,
+        cascadeStats: {
+          subscriptionsDeleted: subscriptionIds.length,
+          deliveriesDeleted: deliveryIds.length,
+        },
+      };
+    });
   }
 
   async addPlanImages(
@@ -395,8 +492,8 @@ export class PlansService {
       throw new BadRequestException('At least one image is required');
     }
 
-    const plan = await this.prisma.plans.findUnique({
-      where: { id: planId },
+    const plan = await this.prisma.plans.findFirst({
+      where: { id: planId, deletedAt: null },
     });
 
     if (!plan) {
@@ -428,8 +525,8 @@ export class PlansService {
   }
 
   async getPlanImages(planId: string) {
-    const plans = await this.prisma.plans.findUnique({
-      where: { id: planId },
+    const plans = await this.prisma.plans.findFirst({
+      where: { id: planId, deletedAt: null },
     });
 
     if (!plans) {
@@ -439,6 +536,7 @@ export class PlansService {
     const images = await this.prisma.planImages.findMany({
       where: {
         planId: plans.id,
+        deletedAt: null,
       },
       orderBy: {
         createdAt: 'asc',
@@ -453,8 +551,8 @@ export class PlansService {
   }
 
   async deletePlanImages(planId: string, imageId: string) {
-    const plans = await this.prisma.plans.findUnique({
-      where: { id: planId },
+    const plans = await this.prisma.plans.findFirst({
+      where: { id: planId, deletedAt: null },
     });
 
     if (!plans) {
