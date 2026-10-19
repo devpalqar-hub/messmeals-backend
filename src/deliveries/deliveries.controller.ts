@@ -14,6 +14,7 @@ import {
 import { DeliveriesService } from './deliveries.service';
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { UpdateDeliveryDto } from './dto/update-delivery.dto';
+import { UpdateDeliveryAddressDto } from './dto/update-delivery-address.dto';
 import { UpdateDeliverySequenceDto } from './dto/update-delivery-sequence.dto';
 import {
   UpdateDeliveryStatusDto,
@@ -209,6 +210,30 @@ export class DeliveriesController {
     @Query() query: ListDeliveryVariationsQueryDto,
   ) {
     return this.deliveriesService.findAllVariations(query, req.user);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.USER)
+  @ApiOperation({
+    summary: "Update a delivery's address location",
+    description:
+      "Updates only the latitude/longitude (and optionally the map location link) of the " +
+      "address linked to this delivery's subscription. Only the customer who owns the " +
+      'delivery may update it, and only that one address row is changed — no other address ' +
+      'fields (street, postcode, etc.) are touched.',
+  })
+  @ApiParam({ name: 'id', description: 'Delivery UUID' })
+  @Patch(':id/update-address')
+  updateDeliveryAddress(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: UpdateDeliveryAddressDto,
+    @Req() req: any,
+  ) {
+    return this.deliveriesService.updateDeliveryAddressLocation(
+      id,
+      req.user.customerProfileId,
+      dto,
+    );
   }
 
   // ✅ GET by ID

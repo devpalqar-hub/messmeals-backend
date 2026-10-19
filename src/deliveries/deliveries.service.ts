@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -7,6 +8,7 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateDeliveryDto } from './dto/create-delivery.dto';
 import { UpdateDeliveryDto } from './dto/update-delivery.dto';
+import { UpdateDeliveryAddressDto } from './dto/update-delivery-address.dto';
 import { UpdateDeliverySequenceDto } from './dto/update-delivery-sequence.dto';
 import {
   UpdateDeliveryOwnerStatusDto,
@@ -448,6 +450,25 @@ export class DeliveriesService {
                 },
               },
               plan: { select: { id: true, planName: true } },
+              UserSubscriptions: {
+                select: {
+                  UserAddress: {
+                    select: {
+                      id: true,
+                      name: true,
+                      street: true,
+                      townOrcity: true,
+                      country: true,
+                      postcode: true,
+                      landmark: true,
+                      latitudeLogitude: true,
+                      locationLink: true,
+                      phone: true,
+                      email: true,
+                    },
+                  },
+                },
+              },
             },
           },
         },
@@ -472,6 +493,7 @@ export class DeliveriesService {
       partner: row.delivery.partner,
       customer: row.delivery.customer,
       plan: row.delivery.plan,
+      address: row.delivery.UserSubscriptions?.UserAddress ?? null,
     }));
 
     return {
@@ -493,6 +515,56 @@ export class DeliveriesService {
       },
       data,
     };
+  }
+
+  /**
+   * Updates only the latitude/longitude (and optionally the map location link) of the
+   * UserAddress linked to a delivery's subscription. Scoped to the requesting customer —
+   * only the owner of the delivery may update it, and only that one address row is touched.
+   */
+  async updateDeliveryAddressLocation(
+    deliveryId: string,
+    customerProfileId: string,
+    dto: UpdateDeliveryAddressDto,
+  ) {
+    const delivery = await this.prisma.deliveries.findUnique({
+      where: { id: deliveryId },
+      select: {
+        id: true,
+        customerId: true,
+        UserSubscriptions: { select: { userAddressId: true } },
+      },
+    });
+
+    if (!delivery) {
+      throw new NotFoundException('Delivery not found');
+    }
+
+    if (delivery.customerId !== customerProfileId) {
+      throw new ForbiddenException(
+        'You are not authorized to update the address for this delivery',
+      );
+    }
+
+    const userAddressId = delivery.UserSubscriptions?.userAddressId;
+
+    if (!userAddressId) {
+      throw new BadRequestException(
+        'No address is linked to this delivery',
+      );
+    }
+
+    const updatedAddress = await this.prisma.userAddress.update({
+      where: { id: userAddressId },
+      data: {
+        latitudeLogitude: `${dto.latitude},${dto.longitude}`,
+        ...(dto.locationLink !== undefined && {
+          locationLink: dto.locationLink,
+        }),
+      },
+    });
+
+    return updatedAddress;
   }
 
   /**
