@@ -34,6 +34,14 @@ import { CustomerAuthModule } from './customer-auth/customer-auth.module';
 import { MessBulkUploadModule } from './mess-bulk-upload/mess-bulk-upload.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { GeocodingModule } from './geocoding/geocoding.module';
+import { OnboardingOtpModule } from './onboarding-otp/onboarding-otp.module';
+import { BusinessesModule } from './businesses/businesses.module';
+import { LocationsModule } from './locations/locations.module';
+import { OffersModule } from './offers/offers.module';
+import { BrandingModule } from './branding/branding.module';
+import { UploadsModule } from './uploads/uploads.module';
+import { WebsitesModule } from './websites/websites.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
 
 @Module({
   imports: [
@@ -64,6 +72,14 @@ import { GeocodingModule } from './geocoding/geocoding.module';
     MessBulkUploadModule,
     TransactionsModule,
     GeocodingModule,
+    OnboardingOtpModule,
+    BusinessesModule,
+    LocationsModule,
+    OffersModule,
+    BrandingModule,
+    UploadsModule,
+    WebsitesModule,
+    OnboardingModule,
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'uploads'),
       serveRoot: '/uploads',

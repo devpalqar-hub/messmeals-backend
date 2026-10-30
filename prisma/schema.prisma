@@ -131,6 +131,10 @@ model User {
   messAdminProfile       MessAdminProfile?
   expenses               Expense[]
 
+  // Onboarding relations
+  websiteOfferClaims WebsiteOfferClaim[]
+  onboardingSessions OnboardingSession[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -276,6 +280,7 @@ model Plans {
   Variation         Variation[]
   Enquiry           Enquiry[]
   menus             Menu[]
+  planPricing       PlanPricing?
 
   @@index([deletedAt])
 }
@@ -445,6 +450,13 @@ model Mess {
   expenses          Expense[]
 
   ledgerTransactions CustomerMessTransaction[]
+
+  // Onboarding relations
+  businessLocation   BusinessLocation?
+  businessBranding   BusinessBranding?
+  websiteOfferClaim  WebsiteOfferClaim?
+  onboardingSession  OnboardingSession?
+  website            Website?
 }
 
 /// Per-(customer, mess) billing ledger — see LedgerEntryType/LedgerEntryReason for the
@@ -792,3 +804,290 @@ model DeliveryAssignment {
 
   @@index([deliveryPartnerId])
 }
+
+// ============================================================
+// MESSMEALS ONBOARDING – New models added for the v1 onboarding
+// flow. All existing models above are UNCHANGED.
+// ============================================================
+
+/// Supported countries for kitchen location selection.
+/// IN = India, AE = United Arab Emirates, QA = Qatar.
+enum SupportedCountry {
+  IN
+  AE
+  QA
+}
+
+/// Billing periods for subscription plans.
+enum BillingPeriod {
+  MONTHLY
+  DAILY
+}
+
+/// Onboarding stages in sequence.
+enum OnboardingStage {
+  PHONE_VERIFICATION
+  BUSINESS_DETAILS
+  LOCATION
+  WEBSITE_OFFER
+  BRANDING
+  WEBSITE_IMAGES
+  MENU_DETAILS
+  MENU_DAYS
+  DAILY_DISHES
+  PLAN_DETAILS
+  PRICING
+  AVAILABILITY
+  PLAN_CREATED
+  WEBSITE_GENERATION
+  WEBSITE_READY
+  COMPLETED
+}
+
+/// Status for onboarding session.
+enum OnboardingStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+/// Status for a website offer claim by a business owner.
+enum OfferClaimStatus {
+  CLAIMED
+  DISMISSED
+}
+
+/// Status for website generation/publishing.
+enum WebsiteStatus {
+  DRAFT
+  GENERATING
+  GENERATED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+}
+
+/// Status for a website generation job.
+enum GenerationJobStatus {
+  PENDING
+  GENERATING
+  COMPLETED
+  FAILED
+}
+
+/// Website theme options.
+enum WebsiteTheme {
+  DEFAULT
+  WARM
+  COOL
+  EARTHY
+  VIBRANT
+  MINIMAL
+  CUSTOM
+}
+
+/// Structured business location separate from the Mess.address free-text field.
+/// Determines currency and timezone server-side based on country.
+model BusinessLocation {
+  id          String          @id @default(uuid())
+  messId      String          @unique
+  country     SupportedCountry
+  currency    String          // INR / AED / QAR — set server-side from country
+  timezone    String          // Asia/Kolkata, Asia/Dubai, Asia/Qatar
+  building    String?         @db.Text   // building / street address
+  area        String?                   // area / locality
+  city        String
+  state       String
+  postalCode  String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  mess Mess @relation(fields: [messId], references: [id], onDelete: Cascade)
+
+  @@map("business_locations")
+}
+
+/// Business branding configuration (theme, colors, logo, cover image).
+model BusinessBranding {
+  id              String       @id @default(uuid())
+  messId          String       @unique
+  displayName     String?
+  theme           WebsiteTheme @default(DEFAULT)
+  primaryColor    String?      // hex color e.g. #FF5733
+  secondaryColor  String?
+  logoUrl         String?      @db.Text
+  logoKey         String?      // S3 object key for deletion
+  coverUrl        String?      @db.Text
+  coverKey        String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  mess         Mess          @relation(fields: [messId], references: [id], onDelete: Cascade)
+  galleryItems BrandingGallery[]
+
+  @@map("business_brandings")
+}
+
+/// Gallery images belonging to a business's branding.
+model BrandingGallery {
+  id          String   @id @default(uuid())
+  brandingId  String
+  url         String   @db.Text
+  s3Key       String?  // S3 object key for deletion
+  altText     String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  branding BusinessBranding @relation(fields: [brandingId], references: [id], onDelete: Cascade)
+
+  @@index([brandingId])
+  @@map("branding_gallery")
+}
+
+/// Configurable website offer (e.g., free website for first 200 businesses).
+/// Only one active config should exist — managed by superadmin.
+model WebsiteOfferConfig {
+  id              String   @id @default(uuid())
+  maxClaims       Int      @default(200)       // e.g. first 200 businesses
+  originalPrice   Decimal  @default(9999.00)   // displayed original price
+  promoPrice      Decimal  @default(0.00)      // promotional price
+  isEnabled       Boolean  @default(true)
+  totalClaimed    Int      @default(0)         // atomic counter
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  claims WebsiteOfferClaim[]
+
+  @@map("website_offer_configs")
+}
+
+/// Tracks whether each business has claimed or dismissed the website offer.
+model WebsiteOfferClaim {
+  id        String          @id @default(uuid())
+  userId    String
+  messId    String          @unique   // one claim record per business
+  configId  String
+  status    OfferClaimStatus
+  claimedAt DateTime?
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  user   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mess   Mess               @relation(fields: [messId], references: [id], onDelete: Cascade)
+  config WebsiteOfferConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("website_offer_claims")
+}
+
+/// OTP rate-limiting and session tracking for the new v1 onboarding OTP flow.
+/// Separate from the Enquiry-based OTP session used by the existing signup flow.
+model OtpSession {
+  id          String   @id @default(uuid())
+  phone       String
+  countryCode String   @default("IN")
+  sessionId   String?  // 2factor.in session ID or FALLBACK-uuid
+  otp         String?  // only stored for dev/fallback
+  expiresAt   DateTime
+  attempts    Int      @default(0)
+  verified    Boolean  @default(false)
+  lastSentAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([phone])
+  @@map("otp_sessions")
+}
+
+/// Persistent onboarding session for each (user, mess) pair.
+/// Tracks the current stage and which stages have been completed.
+model OnboardingSession {
+  id               String          @id @default(uuid())
+  userId           String
+  messId           String?         @unique
+  currentStage     OnboardingStage @default(PHONE_VERIFICATION)
+  status           OnboardingStatus @default(IN_PROGRESS)
+  completedStages  Json            @default("[]")  // string[] of OnboardingStage
+  metadata         Json?           // arbitrary stage-specific data
+  completedAt      DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  user   User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mess   Mess? @relation(fields: [messId], references: [id], onDelete: Cascade)
+  events OnboardingEvent[]
+
+  @@index([userId])
+  @@map("onboarding_sessions")
+}
+
+/// Audit trail: one record per stage transition in an onboarding session.
+model OnboardingEvent {
+  id          String          @id @default(uuid())
+  sessionId   String
+  stage       OnboardingStage
+  eventType   String          // ENTERED | COMPLETED | FAILED | SKIPPED
+  metadata    Json?
+  createdAt   DateTime        @default(now())
+
+  session OnboardingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("onboarding_events")
+}
+
+/// Dedicated pricing record for a subscription plan.
+/// Replaces the flat price/minPrice fields for the onboarding flow
+/// while keeping existing Plans.price intact for backward compat.
+model PlanPricing {
+  id              String       @id @default(uuid())
+  planId          String       @unique
+  billingPeriod   BillingPeriod @default(MONTHLY)
+  regularPrice    Decimal      @default(0.00)
+  discountEnabled Boolean      @default(false)
+  discountedPrice Decimal?
+  currency        String       @default("INR")  // INR / AED / QAR
+  savings         Decimal?     // calculated server-side
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  plan Plans @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@map("plan_pricings")
+}
+
+/// Generated website for a business.
+model Website {
+  id          String        @id @default(uuid())
+  messId      String        @unique
+  slug        String        @unique
+  websiteUrl  String?       @db.Text
+  status      WebsiteStatus @default(DRAFT)
+  publishedAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  mess            Mess                  @relation(fields: [messId], references: [id], onDelete: Cascade)
+  generationJobs  WebsiteGenerationJob[]
+
+  @@map("websites")
+}
+
+/// Async website generation job record.
+model WebsiteGenerationJob {
+  id          String              @id @default(uuid())
+  websiteId   String
+  status      GenerationJobStatus @default(PENDING)
+  attempt     Int                 @default(1)
+  errorMessage String?            @db.Text
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  @@index([websiteId])
+  @@map("website_generation_jobs")
+}
+
