@@ -109,9 +109,6 @@ import { OnboardingModule } from './onboarding/onboarding.module';
           pass: process.env.MAIL_PASS,
         },
       },
-      defaults: {
-        from: '"No Reply" <no-wishyougrowth@gmail.com>',
-      },
       template: {
         dir: join(process.cwd(), 'src/templates'), // ✅ absolute path
         adapter: new PugAdapter(),
