@@ -143,7 +143,7 @@ export class LocationsService {
       },
     });
 
-    await this.advanceOnboarding(user.id, messId, 'LOCATION_CONFIG');
+    await this.advanceOnboarding(user.id, messId, 'LOCATION');
 
     return {
       success: true,
