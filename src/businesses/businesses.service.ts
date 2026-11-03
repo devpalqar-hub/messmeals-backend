@@ -12,7 +12,20 @@ type AuthUser = { id: string; role: string; messIds?: string[]; messAdminProfile
 
 @Injectable()
 export class BusinessesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
+  
+
+    private parseCompletedStages(raw: any): string[] {
+    if (Array.isArray(raw)) return raw as string[];
+    if (typeof raw === 'string') {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }
 
   private async assertOwnership(userId: string, messId: string) {
     const profile = await this.prisma.messAdminProfile.findFirst({
@@ -177,6 +190,8 @@ export class BusinessesService {
   }
 
   private formatBusiness(mess: any) {
+
+        const completed = this.parseCompletedStages(mess.onboardingSession.completedStages);
     return {
       id: mess.id,
       name: mess.name,
@@ -192,7 +207,7 @@ export class BusinessesService {
         ? {
             currentStage: mess.onboardingSession.currentStage,
             status: mess.onboardingSession.status,
-            completedStages: mess.onboardingSession.completedStages,
+            completedStages: completed,
           }
         : null,
       createdAt: mess.createdAt,
