@@ -42,6 +42,7 @@ import { BrandingModule } from './branding/branding.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { WebsitesModule } from './websites/websites.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
+import { InvoicesModule } from './invoices/invoices.module';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { OnboardingModule } from './onboarding/onboarding.module';
     PaymentsModule,
     AnalyticsModule,
     BillingModule,
+    InvoicesModule,
     MenuModule,
     ExpenseCategoriesModule,
     ExpensesModule,

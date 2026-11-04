@@ -8,8 +8,11 @@ import {
   Post,
   Query,
   Req,
+  Res,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
+import { Response } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -19,6 +22,7 @@ import {
 } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { BillingService } from './billing.service';
+import { InvoicesService } from 'src/invoices/invoices.service';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
@@ -40,7 +44,10 @@ import { MockBillingQueryDto } from './dto/mock-billing.dto';
 @Controller('billing')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class BillingController {
-  constructor(private readonly billingService: BillingService) {}
+  constructor(
+    private readonly billingService: BillingService,
+    private readonly invoicesService: InvoicesService,
+  ) {}
 
   @Get('global-config')
   @Roles(Role.SUPERADMIN)
@@ -112,6 +119,89 @@ export class BillingController {
   ) {
     await this.billingService.assertUserCanAccessMess(req.user, messId);
     return this.billingService.getOrGenerateInvoice(messId, query.month);
+  }
+
+  @Get('mess/:messId/invoice/pdf')
+  @Roles(Role.SUPERADMIN, Role.MESSADMIN)
+  @ApiOperation({
+    summary: 'Export current or specific mess invoice as PDF',
+    description: 'Downloads or previews the PDF version of a mess billing invoice.',
+  })
+  @ApiParam({ name: 'messId', description: 'Mess id (UUID)' })
+  @ApiQuery({
+    name: 'invoiceId',
+    required: false,
+    description: 'Optional specific invoice UUID',
+  })
+  async downloadInvoicePdf(
+    @Req() req: any,
+    @Param('messId', ParseUUIDPipe) messId: string,
+    @Query('invoiceId') invoiceId: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    await this.billingService.assertUserCanAccessMess(req.user, messId);
+    const buffer = await this.invoicesService.getMessInvoicePdf(
+      messId,
+      invoiceId,
+      req.user,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="mess-invoice-${messId.slice(0, 8)}.pdf"`,
+    });
+    return new StreamableFile(buffer);
+  }
+
+  @Get('mess/:messId/invoice/:invoiceId/pdf')
+  @Roles(Role.SUPERADMIN, Role.MESSADMIN)
+  @ApiOperation({
+    summary: 'Export specific mess invoice as PDF by invoiceId',
+  })
+  @ApiParam({ name: 'messId', description: 'Mess id (UUID)' })
+  @ApiParam({ name: 'invoiceId', description: 'Invoice id (UUID)' })
+  async downloadInvoicePdfById(
+    @Req() req: any,
+    @Param('messId', ParseUUIDPipe) messId: string,
+    @Param('invoiceId', ParseUUIDPipe) invoiceId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    await this.billingService.assertUserCanAccessMess(req.user, messId);
+    const buffer = await this.invoicesService.getMessInvoicePdf(
+      messId,
+      invoiceId,
+      req.user,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="mess-invoice-${invoiceId.slice(0, 8)}.pdf"`,
+    });
+    return new StreamableFile(buffer);
+  }
+
+  @Get('mess/:messId/invoice/:invoiceId/receipt/pdf')
+  @Roles(Role.SUPERADMIN, Role.MESSADMIN)
+  @ApiOperation({
+    summary: 'Export mess payment receipt as PDF for a settled invoice',
+  })
+  @ApiParam({ name: 'messId', description: 'Mess id (UUID)' })
+  @ApiParam({ name: 'invoiceId', description: 'Invoice id (UUID)' })
+  async downloadInvoiceReceiptPdf(
+    @Req() req: any,
+    @Param('messId', ParseUUIDPipe) messId: string,
+    @Param('invoiceId', ParseUUIDPipe) invoiceId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    await this.billingService.assertUserCanAccessMess(req.user, messId);
+    const buffer = await this.invoicesService.getMessReceiptPdf(
+      messId,
+      invoiceId,
+      req.user,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="mess-receipt-${invoiceId.slice(0, 8)}.pdf"`,
+    });
+    return new StreamableFile(buffer);
   }
 
   @Post('mess/:messId/invoice/pay')

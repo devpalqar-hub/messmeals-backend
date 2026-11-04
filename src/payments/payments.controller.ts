@@ -6,9 +6,13 @@ import {
   Param,
   UseGuards,
   Req,
+  Res,
+  StreamableFile,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { PaymentsService } from './payments.service';
+import { InvoicesService } from 'src/invoices/invoices.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { RazorpayWebhookDto } from './dto/razorpay-webhook.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
@@ -24,7 +28,10 @@ import {
 @ApiTags('Payments')
 @Controller('payments')
 export class PaymentsController {
-  constructor(private readonly paymentsService: PaymentsService) {}
+  constructor(
+    private readonly paymentsService: PaymentsService,
+    private readonly invoicesService: InvoicesService,
+  ) {}
 
   /**
    * Create a payment order for subscription
@@ -222,6 +229,31 @@ export class PaymentsController {
   @Get(':paymentId')
   async getPaymentDetails(@Param('paymentId') paymentId: string) {
     return await this.paymentsService.getPaymentDetails(paymentId);
+  }
+
+  /**
+   * Export payment receipt as PDF
+   * GET /payments/:paymentId/receipt/pdf
+   */
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Export payment receipt as PDF',
+    description: 'Streams a verified payment receipt PDF for this payment.',
+  })
+  @ApiParam({ name: 'paymentId', description: 'Payment UUID' })
+  @Get(':paymentId/receipt/pdf')
+  async downloadPaymentReceiptPdf(
+    @Req() req: any,
+    @Param('paymentId') paymentId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const buffer = await this.invoicesService.getPaymentReceiptPdf(paymentId, req.user);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="receipt-${paymentId.slice(0, 8)}.pdf"`,
+    });
+    return new StreamableFile(buffer);
   }
 
   /**

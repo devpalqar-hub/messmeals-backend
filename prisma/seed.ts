@@ -1,24 +1,10 @@
-import { PrismaClient, DeliveryStatus, Role } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
+import { seedMessData } from './seed-mess';
 
 const prisma = new PrismaClient();
 
 async function main() {
-    console.log('🌱 Seeding started...');
-
-    // -------------------------------
-
-    const messAdminUser = await prisma.user.create({
-        data: {
-            name: 'Suresh Mess Admin',
-            phone: '9895728129',
-            email: 'admin@messmeals.com',
-            password: "DevPalqar@2026",
-            role: Role.SUPERADMIN,
-            is_verified: true,
-        },
-    });
-
-    console.log('✅ Seeding completed successfully');
+    await seedMessData();
 }
 
 main()

@@ -7,9 +7,13 @@ import {
   Patch,
   Query,
   Req,
+  Res,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { UserSubscriptionsService } from './user-subscriptions.service';
+import { InvoicesService } from 'src/invoices/invoices.service';
 import { UpdateDeliveryPriorityDto } from './dto/update-delivery-priority.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
@@ -30,6 +34,7 @@ import {
 export class UserSubscriptionsController {
   constructor(
     private readonly userSubscriptionsService: UserSubscriptionsService,
+    private readonly invoicesService: InvoicesService,
   ) {}
 
   @Patch(':id/delivery-priority')
@@ -93,6 +98,78 @@ export class UserSubscriptionsController {
   @Get(':id')
   getById(@Param('id') id: string) {
     return this.userSubscriptionsService.getById(id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPERADMIN, Role.MESSADMIN, Role.USER)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get subscription invoice details (JSON)',
+    description: 'Returns invoice breakdown, line items, and payment status for this subscription.',
+  })
+  @ApiParam({ name: 'id', description: 'Subscription UUID' })
+  @Get(':id/invoice')
+  async getInvoice(@Param('id') id: string) {
+    const data = await this.invoicesService.getSubscriptionInvoiceData(id);
+    return { success: true, invoice: data };
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPERADMIN, Role.MESSADMIN, Role.USER)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Export subscription invoice as PDF',
+    description: 'Streams a tax invoice PDF for the customer subscription.',
+  })
+  @ApiParam({ name: 'id', description: 'Subscription UUID' })
+  @Get(':id/invoice/pdf')
+  async downloadInvoicePdf(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const buffer = await this.invoicesService.getSubscriptionInvoicePdf(id, req.user);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="invoice-${id.slice(0, 8)}.pdf"`,
+    });
+    return new StreamableFile(buffer);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPERADMIN, Role.MESSADMIN, Role.USER)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get subscription receipt details (JSON)',
+    description: 'Returns receipt details for payments made against this subscription.',
+  })
+  @ApiParam({ name: 'id', description: 'Subscription UUID' })
+  @Get(':id/receipt')
+  async getReceipt(@Param('id') id: string) {
+    const data = await this.invoicesService.getSubscriptionReceiptData(id);
+    return { success: true, receipt: data };
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPERADMIN, Role.MESSADMIN, Role.USER)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Export subscription payment receipt as PDF',
+    description: 'Streams a payment receipt PDF for the customer subscription.',
+  })
+  @ApiParam({ name: 'id', description: 'Subscription UUID' })
+  @Get(':id/receipt/pdf')
+  async downloadReceiptPdf(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const buffer = await this.invoicesService.getSubscriptionReceiptPdf(id, req.user);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="receipt-${id.slice(0, 8)}.pdf"`,
+    });
+    return new StreamableFile(buffer);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
