@@ -190,8 +190,9 @@ export class BusinessesService {
   }
 
   private formatBusiness(mess: any) {
-
-        const completed = this.parseCompletedStages(mess.onboardingSession.completedStages);
+    const completed = mess.onboardingSession
+      ? this.parseCompletedStages(mess.onboardingSession.completedStages)
+      : [];
     return {
       id: mess.id,
       name: mess.name,
