@@ -10,7 +10,11 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { OnboardingService } from './onboarding.service';
-import { StartOnboardingDto, TransitionStageDto } from './dto/onboarding.dto';
+import {
+  SaveOnboardingDataDto,
+  StartOnboardingDto,
+  TransitionStageDto,
+} from './dto/onboarding.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
@@ -76,5 +80,24 @@ export class OnboardingController {
   @ApiQuery({ name: 'messId', required: false, description: 'Optional business UUID' })
   complete(@Req() req: any, @Query('messId') messId?: string) {
     return this.svc.complete(req.user, messId);
+  }
+
+  @Post(['api/v1/onboarding/data', 'v1/onboarding/data'])
+  @ApiOperation({
+    summary: 'Save onboarding stage data (all fields optional)',
+    description: 'Unified endpoint to save or update onboarding data across business details, location, branding, offer, menu, and plans.',
+  })
+  saveData(@Req() req: any, @Body() dto: SaveOnboardingDataDto) {
+    return this.svc.saveOnboardingData(req.user, dto);
+  }
+
+  @Get(['api/v1/onboarding/session', 'v1/onboarding/session'])
+  @ApiOperation({
+    summary: 'Get full onboarding session with hydrated stage data',
+    description: 'Returns session status along with DB records for all onboarding stages.',
+  })
+  @ApiQuery({ name: 'messId', required: false, description: 'Optional business UUID' })
+  getSession(@Req() req: any, @Query('messId') messId?: string) {
+    return this.svc.getSessionWithData(req.user, messId);
   }
 }
