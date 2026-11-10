@@ -1,5 +1,5 @@
 -- AlterTable
-ALTER TABLE `usersubscriptions` ADD COLUMN `userId` VARCHAR(191) NULL,
+ALTER TABLE `UserSubscriptions` ADD COLUMN `userId` VARCHAR(191) NULL,
     ADD COLUMN `userProfileId` VARCHAR(191) NULL;
 
 -- CreateIndex
