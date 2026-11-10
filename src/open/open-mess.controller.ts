@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, Req } from '@nestjs/common';
 import {
   ApiOperation,
   ApiParam,
@@ -9,13 +9,17 @@ import {
 import { OpenMessService } from './open-mess.service';
 import { ListOpenMessesDto } from './dto/list-open-messes.dto';
 import { SearchSuggestionsDto } from './dto/search-suggestions.dto';
+import { WebsiteHostnameResolverService } from 'src/websites/provisioning/website-hostname-resolver.service';
 
 /// Public, unauthenticated API surface for the messmeals website — only ever returns
 /// messes a superadmin has explicitly listed (Mess.isListed) via PATCH /mess/:id/listing.
 @ApiTags('Open')
 @Controller('open')
 export class OpenMessController {
-  constructor(private readonly openMessService: OpenMessService) {}
+  constructor(
+    private readonly openMessService: OpenMessService,
+    private readonly hostnameResolver: WebsiteHostnameResolverService,
+  ) {}
 
   @Get('messes')
   @ApiOperation({
@@ -96,6 +100,21 @@ export class OpenMessController {
       latitude,
       longitude,
     );
+  }
+
+  @Get('by-hostname')
+  @ApiOperation({
+    summary: 'Resolve restaurant storefront by hostname',
+    description:
+      'Public endpoint to load a restaurant storefront by request hostname (e.g. annapoorna.messmeals.com or custom domain). ' +
+      'Extracts hostname automatically from Host header or allows passing ?hostname= query param.',
+  })
+  @ApiQuery({ name: 'hostname', required: false, description: 'Optional hostname override' })
+  @ApiResponse({ status: 200, description: 'Storefront loaded successfully.' })
+  @ApiResponse({ status: 404, description: 'Website not found, unpublished, or suspended.' })
+  resolveByHostname(@Req() req: any, @Query('hostname') hostnameQuery?: string) {
+    const rawHost = hostnameQuery || req.headers['x-forwarded-host'] || req.headers.host;
+    return this.hostnameResolver.resolveStorefront(rawHost);
   }
 
   @Get('seo/messes')

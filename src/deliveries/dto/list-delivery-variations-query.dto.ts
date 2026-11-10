@@ -36,6 +36,54 @@ export class ListDeliveryVariationsQueryDto {
   date?: string;
 
   @ApiPropertyOptional({
+    description: 'Filter by start date of range (YYYY-MM-DD)',
+    example: '2026-06-01',
+  })
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by end date of range (YYYY-MM-DD)',
+    example: '2026-06-30',
+  })
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+
+  @ApiPropertyOptional({
+    description: 'Alias for startDate (YYYY-MM-DD)',
+    example: '2026-06-01',
+  })
+  @IsOptional()
+  @IsDateString()
+  fromDate?: string;
+
+  @ApiPropertyOptional({
+    description: 'Alias for endDate (YYYY-MM-DD)',
+    example: '2026-06-30',
+  })
+  @IsOptional()
+  @IsDateString()
+  toDate?: string;
+
+  @ApiPropertyOptional({
+    description: 'Legacy start date alias (YYYY-MM-DD)',
+    example: '2026-06-01',
+  })
+  @IsOptional()
+  @IsDateString()
+  date1?: string;
+
+  @ApiPropertyOptional({
+    description: 'Legacy end date alias (YYYY-MM-DD)',
+    example: '2026-06-30',
+  })
+  @IsOptional()
+  @IsDateString()
+  date2?: string;
+
+  @ApiPropertyOptional({
     description:
       'Filter by mess (UUID). SUPERADMIN only — MESSADMIN is already scoped to their own mess(es).',
   })

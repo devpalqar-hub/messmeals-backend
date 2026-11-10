@@ -6,13 +6,22 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { GenerateWebsiteDto } from './dto/website.dto';
-import { GenerationJobStatus, WebsiteStatus } from '@prisma/client';
+import {
+  GenerationJobStatus,
+  OnboardingStage,
+  ProvisioningStatus,
+  WebsiteStatus,
+} from '@prisma/client';
+import { WebsiteProvisioningService } from './provisioning/website-provisioning.service';
 
 type AuthUser = { id: string; role: string };
 
 @Injectable()
 export class WebsitesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly provisioningService: WebsiteProvisioningService,
+  ) {}
 
   private async assertOwnership(userId: string, messId: string) {
     const profile = await this.prisma.messAdminProfile.findFirst({
@@ -41,6 +50,19 @@ export class WebsitesService {
     return profile.messes[0].id;
   }
 
+  // GET /api/v1/websites/subdomain/check?name=<slug>
+  async checkSubdomainAvailability(name: string, user?: AuthUser) {
+    let excludeMessId: string | undefined = undefined;
+    if (user) {
+      try {
+        excludeMessId = await this.resolveMessId(user);
+      } catch {
+        // User may not have registered a mess yet; proceed without exclusion
+      }
+    }
+    return this.provisioningService.checkAvailability(name, excludeMessId);
+  }
+
   // POST /api/v1/websites/generate
   async generate(user: AuthUser, dto: GenerateWebsiteDto) {
     const messId = await this.resolveMessId(user, dto.messId);
@@ -51,34 +73,21 @@ export class WebsitesService {
 
     if (!mess) throw new NotFoundException('Business not found');
 
-    const slug = mess.slug || `mess-${mess.id.substring(0, 8)}`;
-    const domain = dto.customDomain || `${slug}.messmeals.com`;
-    const websiteUrl = `https://${domain}`;
+    // 1. Reserve subdomain atomically via provisioning service
+    const { websiteId, slug, websiteUrl } =
+      await this.provisioningService.reserveSubdomain(messId, dto.subdomain);
 
-    const website = await this.prisma.website.upsert({
-      where: { messId },
-      create: {
-        messId,
-        slug,
-        websiteUrl,
-        status: WebsiteStatus.GENERATED,
-      },
-      update: {
-        slug,
-        websiteUrl,
-        status: WebsiteStatus.GENERATED,
-      },
-    });
-
+    // 2. Track real generation job lifecycle: PENDING -> GENERATING -> COMPLETED
+    const startedAt = new Date();
     const job = await this.prisma.websiteGenerationJob.create({
       data: {
-        websiteId: website.id,
-        status: GenerationJobStatus.COMPLETED,
-        startedAt: new Date(),
-        completedAt: new Date(),
+        websiteId,
+        status: GenerationJobStatus.GENERATING,
+        startedAt,
       },
     });
 
+    // 3. Apply branding theme if specified
     if (dto.theme) {
       await this.prisma.businessBranding.upsert({
         where: { messId },
@@ -87,19 +96,33 @@ export class WebsitesService {
       });
     }
 
-    await this.advanceOnboarding(user.id, messId, 'WEBSITE_GENERATION');
+    // 4. Mark generation job as completed
+    const completedAt = new Date();
+    const updatedJob = await this.prisma.websiteGenerationJob.update({
+      where: { id: job.id },
+      data: {
+        status: GenerationJobStatus.COMPLETED,
+        completedAt,
+      },
+    });
+
+    // 5. Advance onboarding stage
+    await this.advanceOnboarding(user.id, messId, OnboardingStage.WEBSITE_GENERATION);
 
     return {
       success: true,
-      message: 'Website generated successfully',
+      message: 'Website generated and subdomain reserved successfully',
       data: {
-        jobId: job.id,
-        websiteId: website.id,
-        status: job.status,
-        slug: website.slug,
-        websiteUrl: website.websiteUrl,
-        previewUrl: `${website.websiteUrl}?preview=true`,
-        generatedAt: job.completedAt,
+        jobId: updatedJob.id,
+        websiteId,
+        status: updatedJob.status,
+        provisioningStatus: ProvisioningStatus.RESERVED,
+        slug,
+        subdomain: `${slug}.messmeals.com`,
+        websiteUrl,
+        previewUrl: `${websiteUrl}?preview=true`,
+        startedAt: updatedJob.startedAt,
+        generatedAt: updatedJob.completedAt,
       },
     };
   }
@@ -120,12 +143,22 @@ export class WebsitesService {
         jobId: job.id,
         websiteId: job.websiteId,
         status: job.status,
-        progress: job.status === GenerationJobStatus.COMPLETED ? 100 : 50,
+        progress:
+          job.status === GenerationJobStatus.COMPLETED
+            ? 100
+            : job.status === GenerationJobStatus.GENERATING
+              ? 60
+              : job.status === GenerationJobStatus.PENDING
+                ? 20
+                : 0,
         slug: job.website.slug,
+        subdomain: `${job.website.slug}.messmeals.com`,
         websiteUrl: job.website.websiteUrl,
         previewUrl: `${job.website.websiteUrl}?preview=true`,
+        provisioningStatus: job.website.provisioningStatus,
         startedAt: job.startedAt,
         completedAt: job.completedAt,
+        errorMessage: job.errorMessage,
       },
     };
   }
@@ -137,7 +170,17 @@ export class WebsitesService {
       where: { messId },
       include: {
         mess: {
-          select: { id: true, name: true, slug: true, businessLocation: true, businessBranding: true },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            is_active: true,
+            businessLocation: true,
+            businessBranding: true,
+          },
+        },
+        customDomains: {
+          where: { status: { not: 'DISCONNECTED' } },
         },
       },
     });
@@ -153,7 +196,10 @@ export class WebsitesService {
     return {
       success: true,
       message: 'Website retrieved successfully',
-      data: website,
+      data: {
+        ...website,
+        subdomain: `${website.slug}.messmeals.com`,
+      },
     };
   }
 
@@ -163,7 +209,17 @@ export class WebsitesService {
       where: { id },
       include: {
         mess: {
-          select: { id: true, name: true, slug: true, businessLocation: true, businessBranding: true },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            is_active: true,
+            businessLocation: true,
+            businessBranding: true,
+          },
+        },
+        customDomains: {
+          where: { status: { not: 'DISCONNECTED' } },
         },
       },
     });
@@ -177,7 +233,10 @@ export class WebsitesService {
     return {
       success: true,
       message: 'Website retrieved successfully',
-      data: website,
+      data: {
+        ...website,
+        subdomain: `${website.slug}.messmeals.com`,
+      },
     };
   }
 
@@ -190,20 +249,36 @@ export class WebsitesService {
       await this.assertOwnership(user.id, website.messId);
     }
 
+    // 1. Activate subdomain
+    await this.provisioningService.activateSubdomain(website.id);
+
+    // 2. Publish website record
     const updated = await this.prisma.website.update({
       where: { id },
       data: {
         status: WebsiteStatus.PUBLISHED,
+        provisioningStatus: ProvisioningStatus.ACTIVE,
         publishedAt: new Date(),
       },
     });
 
-    await this.advanceOnboarding(user.id, website.messId, 'REVIEW_LAUNCH');
+    // 3. Activate the mess business on the platform
+    await this.prisma.mess.update({
+      where: { id: website.messId },
+      data: { is_active: true },
+    });
+
+    // 4. Advance onboarding
+    await this.advanceOnboarding(user.id, website.messId, OnboardingStage.COMPLETED);
 
     return {
       success: true,
       message: 'Website published successfully! Your online storefront is live.',
-      data: updated,
+      data: {
+        ...updated,
+        subdomain: `${updated.slug}.messmeals.com`,
+        isLive: true,
+      },
     };
   }
 
@@ -220,6 +295,7 @@ export class WebsitesService {
       where: { id },
       data: {
         status: WebsiteStatus.PUBLISHED,
+        provisioningStatus: ProvisioningStatus.ACTIVE,
         updatedAt: new Date(),
       },
     });
@@ -227,7 +303,10 @@ export class WebsitesService {
     return {
       success: true,
       message: 'Website republished successfully with latest menu and plan updates',
-      data: updated,
+      data: {
+        ...updated,
+        subdomain: `${updated.slug}.messmeals.com`,
+      },
     };
   }
 
@@ -246,14 +325,18 @@ export class WebsitesService {
       data: {
         websiteId: website.id,
         slug: website.slug,
+        subdomain: `${website.slug}.messmeals.com`,
         status: website.status,
+        provisioningStatus: website.provisioningStatus,
+        subdomainReservedAt: website.subdomainReservedAt,
         websiteUrl: website.websiteUrl,
         publishedAt: website.publishedAt,
+        isPublished: website.status === WebsiteStatus.PUBLISHED,
       },
     };
   }
 
-  private async advanceOnboarding(userId: string, messId: string, stage: string) {
+  private async advanceOnboarding(userId: string, messId: string, stage: OnboardingStage) {
     const session = await this.prisma.onboardingSession.findFirst({
       where: { userId },
       orderBy: { updatedAt: 'desc' },

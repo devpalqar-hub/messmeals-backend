@@ -71,6 +71,16 @@ export class UserSubscriptionsController {
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'messId', required: false })
   @ApiQuery({ name: 'isActive', required: false })
+  @ApiQuery({
+    name: 'userProfileId',
+    required: false,
+    description: 'Filter by customer profile UUID (userProfileId / customerProfileId)',
+  })
+  @ApiQuery({
+    name: 'userId',
+    required: false,
+    description: 'Filter by customer user UUID',
+  })
   @Get()
   getAll(
     @Req() req: any,
@@ -78,12 +88,16 @@ export class UserSubscriptionsController {
     @Query('limit') limit?: string,
     @Query('messId') messId?: string,
     @Query('isActive') isActive?: string,
+    @Query('userProfileId') userProfileId?: string,
+    @Query('userId') userId?: string,
   ) {
     return this.userSubscriptionsService.getAll(req.user, {
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
       messId,
       isActive: isActive !== undefined ? isActive === 'true' : undefined,
+      userProfileId,
+      userId,
     });
   }
 

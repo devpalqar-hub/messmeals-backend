@@ -30,6 +30,10 @@ export class AnalyticsController {
       'advanceBalance (prepaid, not yet consumed). Unlike revenue/summary, this also ' +
       'captures wallet-settled registrations and daily-plan per-delivery charges.',
   })
+  @ApiQuery({ name: 'startDate', required: false, description: 'Start date (YYYY-MM-DD)' })
+  @ApiQuery({ name: 'endDate', required: false, description: 'End date (YYYY-MM-DD)' })
+  @ApiQuery({ name: 'date1', required: false, description: 'Legacy start date (YYYY-MM-DD)' })
+  @ApiQuery({ name: 'date2', required: false, description: 'Legacy end date (YYYY-MM-DD)' })
   @ApiQuery({ name: 'messId', required: false })
   @ApiQuery({ name: 'ownerId', required: false })
   async ledgerSummary(
@@ -45,10 +49,12 @@ export class AnalyticsController {
   @ApiOperation({
     summary: 'Revenue summary',
     description:
-      'Returns total revenue and payment count for the given date range.',
+      'Returns total revenue and payment count for the given date range. Defaults to past 30 days if omitted.',
   })
-  @ApiQuery({ name: 'date1', required: true })
-  @ApiQuery({ name: 'date2', required: false })
+  @ApiQuery({ name: 'startDate', required: false, description: 'Start date (YYYY-MM-DD)' })
+  @ApiQuery({ name: 'endDate', required: false, description: 'End date (YYYY-MM-DD)' })
+  @ApiQuery({ name: 'date1', required: false, description: 'Legacy start date (YYYY-MM-DD)' })
+  @ApiQuery({ name: 'date2', required: false, description: 'Legacy end date (YYYY-MM-DD)' })
   @ApiQuery({ name: 'messId', required: false })
   @ApiQuery({ name: 'ownerId', required: false })
   @ApiQuery({ name: 'variationId', required: false })
@@ -65,10 +71,12 @@ export class AnalyticsController {
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Revenue graph',
-    description: 'Returns a date-bucketed revenue series for line charting.',
+    description: 'Returns a date-bucketed revenue series for line charting. Defaults to past 30 days if omitted.',
   })
-  @ApiQuery({ name: 'date1', required: true })
-  @ApiQuery({ name: 'date2', required: false })
+  @ApiQuery({ name: 'startDate', required: false, description: 'Start date (YYYY-MM-DD)' })
+  @ApiQuery({ name: 'endDate', required: false, description: 'End date (YYYY-MM-DD)' })
+  @ApiQuery({ name: 'date1', required: false, description: 'Legacy start date (YYYY-MM-DD)' })
+  @ApiQuery({ name: 'date2', required: false, description: 'Legacy end date (YYYY-MM-DD)' })
   @ApiQuery({ name: 'messId', required: false })
   @ApiQuery({ name: 'ownerId', required: false })
   @ApiQuery({ name: 'variationId', required: false })
@@ -85,10 +93,12 @@ export class AnalyticsController {
   @ApiOperation({
     summary: 'Order statistics graph',
     description:
-      'Returns a date-bucketed order count series for line charting.',
+      'Returns a date-bucketed order count series for line charting. Defaults to past 30 days if omitted.',
   })
-  @ApiQuery({ name: 'date1', required: true })
-  @ApiQuery({ name: 'date2', required: false })
+  @ApiQuery({ name: 'startDate', required: false, description: 'Start date (YYYY-MM-DD)' })
+  @ApiQuery({ name: 'endDate', required: false, description: 'End date (YYYY-MM-DD)' })
+  @ApiQuery({ name: 'date1', required: false, description: 'Legacy start date (YYYY-MM-DD)' })
+  @ApiQuery({ name: 'date2', required: false, description: 'Legacy end date (YYYY-MM-DD)' })
   @ApiQuery({ name: 'messId', required: false })
   @ApiQuery({ name: 'ownerId', required: false })
   @ApiQuery({ name: 'variationId', required: false })
@@ -106,10 +116,12 @@ export class AnalyticsController {
   @ApiOperation({
     summary: 'Delivery agent graph',
     description:
-      'Returns a date-bucketed delivery count series for a delivery agent dashboard.',
+      'Returns a date-bucketed delivery count series for a delivery agent dashboard. Defaults to past 30 days if omitted.',
   })
-  @ApiQuery({ name: 'date1', required: true })
-  @ApiQuery({ name: 'date2', required: false })
+  @ApiQuery({ name: 'startDate', required: false, description: 'Start date (YYYY-MM-DD)' })
+  @ApiQuery({ name: 'endDate', required: false, description: 'End date (YYYY-MM-DD)' })
+  @ApiQuery({ name: 'date1', required: false, description: 'Legacy start date (YYYY-MM-DD)' })
+  @ApiQuery({ name: 'date2', required: false, description: 'Legacy end date (YYYY-MM-DD)' })
   @ApiQuery({
     name: 'agentId',
     required: false,

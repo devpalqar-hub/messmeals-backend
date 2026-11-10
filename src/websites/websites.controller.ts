@@ -5,12 +5,14 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { WebsitesService } from './websites.service';
 import { GenerateWebsiteDto } from './dto/website.dto';
+import { CheckSubdomainDto } from './dto/subdomain-check.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/decorators/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
@@ -23,10 +25,19 @@ import { Roles } from 'src/common/decorators/roles.decorator';
 export class WebsitesController {
   constructor(private readonly svc: WebsitesService) {}
 
+  @Get(['api/v1/websites/subdomain/check', 'v1/websites/subdomain/check'])
+  @ApiOperation({
+    summary: 'Check subdomain availability',
+    description: 'Checks whether a requested subdomain name is available for registration under *.messmeals.com',
+  })
+  checkSubdomain(@Req() req: any, @Query() query: CheckSubdomainDto) {
+    return this.svc.checkSubdomainAvailability(query.name, req.user);
+  }
+
   @Post(['api/v1/websites/generate', 'v1/websites/generate'])
   @ApiOperation({
     summary: 'Trigger website generation',
-    description: 'Generates a branded public website for the business incorporating theme, menu, and plans.',
+    description: 'Generates a branded public website for the business with an automatically reserved subdomain.',
   })
   generate(@Req() req: any, @Body() dto: GenerateWebsiteDto) {
     return this.svc.generate(req.user, dto);

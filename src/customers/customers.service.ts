@@ -304,6 +304,8 @@ export class CustomerService {
     const userSubscription = await this.prisma.userSubscriptions.create({
       data: {
         customerProfileId: customerProfile.id,
+        userProfileId: customerProfile.id,
+        userId: customerProfile.userId,
         start_date: startDate,
         end_date: endDate,
         discount: appliedDiscount,
@@ -2059,6 +2061,8 @@ export class CustomerService {
     const userSubscription = await this.prisma.userSubscriptions.create({
       data: {
         customerProfileId: customerProfile.id,
+        userProfileId: customerProfile.id,
+        userId: customerProfile.userId || userId,
         start_date: startDate,
         end_date: endDate,
         discount: 0,
@@ -2527,7 +2531,9 @@ export class CustomerService {
    */
   async createSubscriptionForCustomer(dto: CreateSubscriptionForCustomerDto) {
     const {
-      customerProfileId: rawCustomerProfileId,
+      customerProfileId,
+      userProfileId,
+      userId,
       planId,
       deliveryPartnerId,
       start_date,
@@ -2538,6 +2544,13 @@ export class CustomerService {
       userAddressId,
       address,
     } = dto;
+
+    const rawCustomerProfileId = userProfileId || customerProfileId || userId;
+    if (!rawCustomerProfileId) {
+      throw new BadRequestException(
+        'userProfileId, customerProfileId, or userId is required',
+      );
+    }
 
     // ─── 1. Resolve customer profile (accept CustomerProfile.id OR User.id) ───
     const customerProfile = await this.prisma.customerProfile.findFirst({
@@ -2709,6 +2722,8 @@ export class CustomerService {
     const userSubscription = await this.prisma.userSubscriptions.create({
       data: {
         customerProfileId: customerProfile.id,
+        userProfileId: customerProfile.id,
+        userId: customerProfile.userId,
         planId,
         messId: plan.messId,
         deliveryPartnerProfileId: deliveryPartnerId,

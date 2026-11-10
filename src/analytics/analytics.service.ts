@@ -24,6 +24,49 @@ export class AnalyticsService {
   }
 
   /**
+   * Helper to parse and resolve date range from query parameters.
+   * Supports `startDate`/`endDate`, `fromDate`/`toDate`, and legacy `date1`/`date2`.
+   * If required is true and dates are omitted, defaults to the last 30 days.
+   */
+  private resolveDateRange(
+    query: {
+      startDate?: string;
+      endDate?: string;
+      fromDate?: string;
+      toDate?: string;
+      date1?: string;
+      date2?: string;
+    },
+    required = false,
+  ): { from: Date; to: Date } | undefined {
+    const startStr = query.startDate || query.fromDate || query.date1;
+    const endStr = query.endDate || query.toDate || query.date2;
+
+    if (!startStr && !endStr) {
+      if (required) {
+        const to = endOfDay(new Date());
+        const from = startOfDay(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+        return { from, to };
+      }
+      return undefined;
+    }
+
+    const fromRaw = startStr ? new Date(startStr) : new Date(endStr!);
+    const toRaw = endStr ? new Date(endStr) : new Date(startStr!);
+
+    if (isNaN(fromRaw.getTime()) || isNaN(toRaw.getTime())) {
+      throw new BadRequestException('Invalid date format provided');
+    }
+
+    const from = startOfDay(fromRaw);
+    const to = endOfDay(toRaw);
+
+    return from <= to
+      ? { from, to }
+      : { from: startOfDay(toRaw), to: endOfDay(fromRaw) };
+  }
+
+  /**
    * Ledger-based revenue/pending-payment totals — built on the customer↔mess billing
    * ledger (see TransactionsService), which (unlike revenueSummary's Payments-only
    * total) also captures wallet-settled registrations and daily-plan per-delivery
@@ -32,28 +75,47 @@ export class AnalyticsService {
    * floored at 0); advanceBalance = prepaid but not yet consumed by a completed
    * delivery's charge.
    */
-  async ledgerSummary({ messId, ownerId }: { messId?: string; ownerId?: string }) {
+  async ledgerSummary(query: {
+    messId?: string;
+    ownerId?: string;
+    startDate?: string;
+    endDate?: string;
+    fromDate?: string;
+    toDate?: string;
+    date1?: string;
+    date2?: string;
+  }) {
+    const { messId, ownerId } = query;
     const messIds = await this.resolveMessIds(messId, ownerId);
     if (!messIds) {
       throw new BadRequestException('messId or ownerId is required');
     }
 
-    const totals = await this.transactionsService.getTotalsForMessIds(messIds);
+    const dateRange = this.resolveDateRange(query, false);
+    const totals = await this.transactionsService.getTotalsForMessIds(
+      messIds,
+      dateRange,
+    );
 
     return {
       totalRevenue: totals.totalCredit,
       totalCharged: totals.totalDebit,
       pendingPayment: totals.balanceDue,
       advanceBalance: totals.advanceBalance,
+      ...(dateRange
+        ? {
+            startDate: dateRange.from.toISOString(),
+            endDate: dateRange.to.toISOString(),
+          }
+        : {}),
     };
   }
 
-  async revenueSummary({ date1, date2, messId, ownerId, variationId }: any) {
-    if (!date1) throw new BadRequestException('date1 is required');
-    const from = startOfDay(new Date(date1));
-    const to = endOfDay(new Date(date2 || date1));
+  async revenueSummary(query: any) {
+    const dateRange = this.resolveDateRange(query, true)!;
+    const { from, to } = dateRange;
 
-    const messIds = await this.resolveMessIds(messId, ownerId);
+    const messIds = await this.resolveMessIds(query.messId, query.ownerId);
 
     const where: any = {
       status: 'SUCCESS',
@@ -63,8 +125,8 @@ export class AnalyticsService {
     // Build userSubscriptions nested where if needed
     const userSubsWhere: any = {};
     if (messIds) userSubsWhere.messId = { in: messIds };
-    if (variationId) {
-      userSubsWhere.plan = { Variation: { some: { id: variationId } } };
+    if (query.variationId) {
+      userSubsWhere.plan = { Variation: { some: { id: query.variationId } } };
     }
     if (Object.keys(userSubsWhere).length) {
       where.userSubscriptions = userSubsWhere;
@@ -79,15 +141,16 @@ export class AnalyticsService {
     return {
       totalRevenue: Number(agg._sum.amount || 0),
       totalPayments: agg._count.id || 0,
+      startDate: from.toISOString(),
+      endDate: to.toISOString(),
     };
   }
 
-  async revenueGraph({ date1, date2, messId, ownerId, variationId }: any) {
-    if (!date1) throw new BadRequestException('date1 is required');
-    const from = startOfDay(new Date(date1));
-    const to = endOfDay(new Date(date2 || date1));
+  async revenueGraph(query: any) {
+    const dateRange = this.resolveDateRange(query, true)!;
+    const { from, to } = dateRange;
 
-    const messIds = await this.resolveMessIds(messId, ownerId);
+    const messIds = await this.resolveMessIds(query.messId, query.ownerId);
 
     const where: any = {
       status: 'SUCCESS',
@@ -96,8 +159,8 @@ export class AnalyticsService {
 
     const userSubsWhere: any = {};
     if (messIds) userSubsWhere.messId = { in: messIds };
-    if (variationId)
-      userSubsWhere.plan = { Variation: { some: { id: variationId } } };
+    if (query.variationId)
+      userSubsWhere.plan = { Variation: { some: { id: query.variationId } } };
     if (Object.keys(userSubsWhere).length)
       where.userSubscriptions = userSubsWhere;
 
@@ -127,22 +190,25 @@ export class AnalyticsService {
       date: d,
       revenue: buckets[d],
     }));
-    return { series };
+    return {
+      series,
+      startDate: from.toISOString(),
+      endDate: to.toISOString(),
+    };
   }
 
-  async orderStatsGraph({ date1, date2, messId, ownerId, variationId }: any) {
-    if (!date1) throw new BadRequestException('date1 is required');
-    const from = startOfDay(new Date(date1));
-    const to = endOfDay(new Date(date2 || date1));
+  async orderStatsGraph(query: any) {
+    const dateRange = this.resolveDateRange(query, true)!;
+    const { from, to } = dateRange;
 
-    const messIds = await this.resolveMessIds(messId, ownerId);
+    const messIds = await this.resolveMessIds(query.messId, query.ownerId);
 
     const where: any = {
       date: { gte: from, lte: to },
     } as any;
     if (messIds) where.messId = { in: messIds };
-    if (variationId) {
-      where.plan = { Variation: { some: { id: variationId } } };
+    if (query.variationId) {
+      where.plan = { Variation: { some: { id: query.variationId } } };
     }
 
     const deliveries = await this.prisma.deliveries.findMany({
@@ -168,14 +234,18 @@ export class AnalyticsService {
       date: d,
       orders: buckets[d],
     }));
-    return { series };
+    return {
+      series,
+      startDate: from.toISOString(),
+      endDate: to.toISOString(),
+    };
   }
 
   // Delivery agent specific deliveries per day (time-series)
-  async deliveryAgentGraph({ date1, date2, agentId }: any) {
-    if (!date1) throw new BadRequestException('date1 is required');
-    const from = startOfDay(new Date(date1));
-    const to = endOfDay(new Date(date2 || date1));
+  async deliveryAgentGraph(query: any) {
+    const dateRange = this.resolveDateRange(query, true)!;
+    const { from, to } = dateRange;
+    const agentId = query.agentId;
 
     if (!agentId) throw new BadRequestException('agentId is required');
 
@@ -221,6 +291,10 @@ export class AnalyticsService {
       date: d,
       deliveries: buckets[d],
     }));
-    return { series };
+    return {
+      series,
+      startDate: from.toISOString(),
+      endDate: to.toISOString(),
+    };
   }
 }

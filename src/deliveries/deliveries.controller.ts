@@ -75,6 +75,16 @@ export class DeliveriesController {
     required: false,
     description: 'Filter by exact date (YYYY-MM-DD)',
   })
+  @ApiQuery({
+    name: 'startDate',
+    required: false,
+    description: 'Filter deliveries starting from date (YYYY-MM-DD)',
+  })
+  @ApiQuery({
+    name: 'endDate',
+    required: false,
+    description: 'Filter deliveries up to date (YYYY-MM-DD)',
+  })
   @ApiQuery({ name: 'messId', required: false })
   @ApiQuery({ name: 'partnerId', required: false })
   @ApiQuery({
@@ -100,6 +110,8 @@ export class DeliveriesController {
     @Query('limit') limit?: number | string,
     @Query('status') status?: DeliveryStatus,
     @Query('date') date?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
     @Query('messId') messId?: string,
     @Query('partnerId') partnerId?: string,
     @Query('variationId') variationId?: string,
@@ -112,6 +124,8 @@ export class DeliveriesController {
         limit,
         status,
         date,
+        startDate,
+        endDate,
         messId,
         partnerId,
         variationId,
@@ -135,6 +149,16 @@ export class DeliveriesController {
     required: false,
     description: 'Filter by exact date (YYYY-MM-DD)',
   })
+  @ApiQuery({
+    name: 'startDate',
+    required: false,
+    description: 'Filter deliveries starting from date (YYYY-MM-DD)',
+  })
+  @ApiQuery({
+    name: 'endDate',
+    required: false,
+    description: 'Filter deliveries up to date (YYYY-MM-DD)',
+  })
   @ApiQuery({ name: 'messId', required: false })
   @ApiQuery({ name: 'partnerId', required: false })
   @ApiQuery({ name: 'variationId', required: false })
@@ -149,6 +173,8 @@ export class DeliveriesController {
     @Req() req: any,
     @Query('status') status?: DeliveryStatus,
     @Query('date') date?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
     @Query('messId') messId?: string,
     @Query('partnerId') partnerId?: string,
     @Query('variationId') variationId?: string,
@@ -156,7 +182,17 @@ export class DeliveriesController {
     @Query('subscriptionId') subscriptionId?: string,
   ) {
     return this.deliveriesService.getSummary(
-      { status, date, messId, partnerId, variationId, search, subscriptionId },
+      {
+        status,
+        date,
+        startDate,
+        endDate,
+        messId,
+        partnerId,
+        variationId,
+        search,
+        subscriptionId,
+      },
       req.user,
     );
   }
@@ -183,6 +219,16 @@ export class DeliveriesController {
     name: 'date',
     required: false,
     description: 'Filter by exact delivery date (YYYY-MM-DD)',
+  })
+  @ApiQuery({
+    name: 'startDate',
+    required: false,
+    description: 'Filter delivery variations starting from date (YYYY-MM-DD)',
+  })
+  @ApiQuery({
+    name: 'endDate',
+    required: false,
+    description: 'Filter delivery variations up to date (YYYY-MM-DD)',
   })
   @ApiQuery({
     name: 'messId',

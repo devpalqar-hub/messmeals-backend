@@ -237,13 +237,30 @@ export class choosePlanDto {
 }
 
 export class CreateSubscriptionForCustomerDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: '9b8c7d6e-1234-5678-90ab-cdef12345678',
     description:
       'CustomerProfile.id (preferred) or User.id of the existing customer',
   })
+  @IsOptional()
   @IsString()
-  customerProfileId: string;
+  customerProfileId?: string;
+
+  @ApiPropertyOptional({
+    example: '9b8c7d6e-1234-5678-90ab-cdef12345678',
+    description: 'CustomerProfile.id (alias for customerProfileId)',
+  })
+  @IsOptional()
+  @IsString()
+  userProfileId?: string;
+
+  @ApiPropertyOptional({
+    example: 'c1a57700-4a7d-432c-85f8-03b03e3fc0bb',
+    description: 'User.id of the customer',
+  })
+  @IsOptional()
+  @IsString()
+  userId?: string;
 
   @ApiProperty({ example: '7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111' })
   @IsString()

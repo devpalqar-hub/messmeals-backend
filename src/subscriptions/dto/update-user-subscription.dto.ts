@@ -95,4 +95,14 @@ export class UpdateUserSubscriptionDto {
   @IsOptional()
   @IsUUID()
   customerProfileId?: string;
+
+  @ApiPropertyOptional({ example: '9b8c7d6e-1234-5678-90ab-cdef12345678' })
+  @IsOptional()
+  @IsUUID()
+  userProfileId?: string;
+
+  @ApiPropertyOptional({ example: 'c1a57700-4a7d-432c-85f8-03b03e3fc0bb' })
+  @IsOptional()
+  @IsUUID()
+  userId?: string;
 }

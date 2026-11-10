@@ -28,6 +28,7 @@ import {
   VariationStatus,
 } from '@prisma/client';
 import { TransactionsService } from 'src/transactions/transactions.service';
+import { startOfDay, endOfDay } from 'date-fns';
 
 @Injectable()
 export class DeliveriesService {
@@ -65,6 +66,12 @@ export class DeliveriesService {
     query: {
       status?: DeliveryStatus;
       date?: string;
+      startDate?: string;
+      endDate?: string;
+      fromDate?: string;
+      toDate?: string;
+      date1?: string;
+      date2?: string;
       messId?: string;
       messIds?: string[];
       partnerId?: string;
@@ -116,7 +123,20 @@ export class DeliveriesService {
       where.status = status;
     }
 
-    if (date) {
+    const startStr = query.startDate || query.fromDate || query.date1;
+    const endStr = query.endDate || query.toDate || query.date2;
+
+    if (startStr || endStr) {
+      const fromRaw = startStr ? new Date(startStr) : new Date(endStr!);
+      const toRaw = endStr ? new Date(endStr) : new Date(startStr!);
+      const from = startOfDay(fromRaw);
+      const to = endOfDay(toRaw);
+
+      where.date = {
+        gte: from <= to ? from : to,
+        lte: from <= to ? to : from,
+      };
+    } else if (date) {
       const selectedDate = new Date(date);
       const nextDate = new Date(selectedDate);
       nextDate.setDate(selectedDate.getDate() + 1);
@@ -170,6 +190,12 @@ export class DeliveriesService {
       limit?: number | string;
       status?: DeliveryStatus;
       date?: string;
+      startDate?: string;
+      endDate?: string;
+      fromDate?: string;
+      toDate?: string;
+      date1?: string;
+      date2?: string;
       messId?: string;
       messIds?: string[];
       partnerId?: string;
@@ -262,6 +288,8 @@ export class DeliveriesService {
       filters: {
         status: status || 'ALL',
         date: date || null,
+        startDate: query.startDate || query.fromDate || query.date1 || null,
+        endDate: query.endDate || query.toDate || query.date2 || null,
         variationId: query.variationId || null,
         messId: user.role === Role.SUPERADMIN ? query.messId || null : null,
         partnerId:
@@ -282,6 +310,12 @@ export class DeliveriesService {
     query: {
       status?: DeliveryStatus;
       date?: string;
+      startDate?: string;
+      endDate?: string;
+      fromDate?: string;
+      toDate?: string;
+      date1?: string;
+      date2?: string;
       messId?: string;
       messIds?: string[];
       partnerId?: string;
@@ -328,6 +362,8 @@ export class DeliveriesService {
       filters: {
         status: query.status || 'ALL',
         date: query.date || null,
+        startDate: query.startDate || query.fromDate || query.date1 || null,
+        endDate: query.endDate || query.toDate || query.date2 || null,
         variationId: query.variationId || null,
         search: query.search || null,
       },
@@ -348,6 +384,12 @@ export class DeliveriesService {
       limit?: number | string;
       status?: VariationStatus;
       date?: string;
+      startDate?: string;
+      endDate?: string;
+      fromDate?: string;
+      toDate?: string;
+      date1?: string;
+      date2?: string;
       messId?: string;
       partnerId?: string;
       variationId?: string;
@@ -405,7 +447,20 @@ export class DeliveriesService {
       deliveryWhere.partnerId = query.partnerId;
     }
 
-    if (query.date) {
+    const startStr = query.startDate || query.fromDate || query.date1;
+    const endStr = query.endDate || query.toDate || query.date2;
+
+    if (startStr || endStr) {
+      const fromRaw = startStr ? new Date(startStr) : new Date(endStr!);
+      const toRaw = endStr ? new Date(endStr) : new Date(startStr!);
+      const from = startOfDay(fromRaw);
+      const to = endOfDay(toRaw);
+
+      deliveryWhere.date = {
+        gte: from <= to ? from : to,
+        lte: from <= to ? to : from,
+      };
+    } else if (query.date) {
       const selectedDate = new Date(query.date);
       const nextDate = new Date(selectedDate);
       nextDate.setDate(selectedDate.getDate() + 1);
@@ -505,6 +560,8 @@ export class DeliveriesService {
       filters: {
         status: query.status || 'ALL',
         date: query.date || null,
+        startDate: query.startDate || query.fromDate || query.date1 || null,
+        endDate: query.endDate || query.toDate || query.date2 || null,
         variationId: query.variationId || null,
         messId: user.role === Role.SUPERADMIN ? query.messId || null : null,
         partnerId:

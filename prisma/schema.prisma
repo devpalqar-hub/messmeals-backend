@@ -201,6 +201,8 @@ model UserSubscriptions {
   is_active                Boolean      @default(true)
   cancelled_on             DateTime?
   customerProfileId        String?
+  userProfileId            String?
+  userId                   String?
   deliveryPriority         Int?
 
   createdAt DateTime  @default(now())
@@ -220,6 +222,8 @@ model UserSubscriptions {
 
   @@unique([messId, deliveryPriority])
   @@index([messId, deliveryPriority])
+  @@index([userProfileId])
+  @@index([userId])
   @@index([deletedAt])
 }
 
@@ -867,6 +871,25 @@ enum WebsiteStatus {
   FAILED
 }
 
+/// Subdomain provisioning status for a website.
+enum ProvisioningStatus {
+  PENDING
+  RESERVED
+  ACTIVE
+  FAILED
+}
+
+/// Verification and SSL lifecycle status for custom domains.
+enum CustomDomainStatus {
+  PENDING
+  VERIFYING
+  VERIFIED
+  SSL_PENDING
+  ACTIVE
+  FAILED
+  DISCONNECTED
+}
+
 /// Status for a website generation job.
 enum GenerationJobStatus {
   PENDING
@@ -1058,17 +1081,20 @@ model PlanPricing {
 
 /// Generated website for a business.
 model Website {
-  id          String        @id @default(uuid())
-  messId      String        @unique
-  slug        String        @unique
-  websiteUrl  String?       @db.Text
-  status      WebsiteStatus @default(DRAFT)
-  publishedAt DateTime?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id                  String              @id @default(uuid())
+  messId              String              @unique
+  slug                String              @unique
+  websiteUrl          String?             @db.Text
+  status              WebsiteStatus       @default(DRAFT)
+  provisioningStatus  ProvisioningStatus  @default(PENDING)
+  subdomainReservedAt DateTime?
+  publishedAt         DateTime?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
 
   mess            Mess                  @relation(fields: [messId], references: [id], onDelete: Cascade)
   generationJobs  WebsiteGenerationJob[]
+  customDomains   CustomDomain[]
 
   @@map("websites")
 }
@@ -1089,5 +1115,23 @@ model WebsiteGenerationJob {
 
   @@index([websiteId])
   @@map("website_generation_jobs")
+}
+
+/// Custom domain mapping for a business website (e.g. www.annapoorna.com)
+model CustomDomain {
+  id              String             @id @default(uuid())
+  websiteId       String
+  domain          String             @unique
+  status          CustomDomainStatus @default(PENDING)
+  verificationTxt String?            // TXT record value for DNS verification
+  verifiedAt      DateTime?
+  failureReason   String?            @db.Text
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  @@index([websiteId])
+  @@map("custom_domains")
 }
 

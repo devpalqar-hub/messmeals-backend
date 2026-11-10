@@ -154,9 +154,11 @@ export class UserSubscriptionsService {
       limit?: number;
       messId?: string;
       isActive?: boolean;
+      userProfileId?: string;
+      userId?: string;
     },
   ) {
-    const { page, limit, isActive } = params;
+    const { page, limit, isActive, userProfileId, userId } = params;
     const where: any = {};
 
     /**
@@ -190,7 +192,11 @@ export class UserSubscriptionsService {
         if (!user.customerProfileId) {
           throw new ForbiddenException('Customer profile not found');
         }
-        where.customerProfileId = user.customerProfileId;
+        where.OR = [
+          { customerProfileId: user.customerProfileId },
+          { userProfileId: user.customerProfileId },
+          { userId: user.id },
+        ];
         break;
 
       default:
@@ -202,6 +208,15 @@ export class UserSubscriptionsService {
      */
     if (isActive !== undefined) {
       where.isActive = isActive;
+    }
+
+    if (userProfileId) {
+      where.OR = [
+        { userProfileId: userProfileId },
+        { customerProfileId: userProfileId },
+      ];
+    } else if (userId) {
+      where.userId = userId;
     }
 
     return paginate({
@@ -244,7 +259,18 @@ export class UserSubscriptionsService {
       include: {
         plan: true,
         mess: true,
-        CustomerProfile: true,
+        CustomerProfile: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                phone: true,
+                email: true,
+              },
+            },
+          },
+        },
         UserAddress: true,
         DeliveryPartnerProfile: true,
         deliveries: true,
