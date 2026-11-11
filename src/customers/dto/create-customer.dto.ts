@@ -240,15 +240,23 @@ export class CreateSubscriptionForCustomerDto {
   @ApiPropertyOptional({
     example: '9b8c7d6e-1234-5678-90ab-cdef12345678',
     description:
-      'CustomerProfile.id (preferred) or User.id of the existing customer',
+      'CustomerProfile.id (preferred) or Customer.id of the existing customer',
   })
   @IsOptional()
   @IsString()
   customerProfileId?: string;
 
   @ApiPropertyOptional({
+    example: 'c1a57700-4a7d-432c-85f8-03b03e3fc0bb',
+    description: 'Customer.id of the customer',
+  })
+  @IsOptional()
+  @IsString()
+  customerId?: string;
+
+  @ApiPropertyOptional({
     example: '9b8c7d6e-1234-5678-90ab-cdef12345678',
-    description: 'CustomerProfile.id (alias for customerProfileId)',
+    description: 'Alias for customerProfileId',
   })
   @IsOptional()
   @IsString()
@@ -256,7 +264,7 @@ export class CreateSubscriptionForCustomerDto {
 
   @ApiPropertyOptional({
     example: 'c1a57700-4a7d-432c-85f8-03b03e3fc0bb',
-    description: 'User.id of the customer',
+    description: 'Alias for customerId',
   })
   @IsOptional()
   @IsString()

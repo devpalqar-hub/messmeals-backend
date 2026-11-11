@@ -72,14 +72,24 @@ export class UserSubscriptionsController {
   @ApiQuery({ name: 'messId', required: false })
   @ApiQuery({ name: 'isActive', required: false })
   @ApiQuery({
+    name: 'customerId',
+    required: false,
+    description: 'Filter by Customer UUID',
+  })
+  @ApiQuery({
+    name: 'customerProfileId',
+    required: false,
+    description: 'Filter by CustomerProfile UUID',
+  })
+  @ApiQuery({
     name: 'userProfileId',
     required: false,
-    description: 'Filter by customer profile UUID (userProfileId / customerProfileId)',
+    description: 'Alias for customerProfileId',
   })
   @ApiQuery({
     name: 'userId',
     required: false,
-    description: 'Filter by customer user UUID',
+    description: 'Alias for customerId',
   })
   @Get()
   getAll(
@@ -88,6 +98,8 @@ export class UserSubscriptionsController {
     @Query('limit') limit?: string,
     @Query('messId') messId?: string,
     @Query('isActive') isActive?: string,
+    @Query('customerId') customerId?: string,
+    @Query('customerProfileId') customerProfileId?: string,
     @Query('userProfileId') userProfileId?: string,
     @Query('userId') userId?: string,
   ) {
@@ -96,6 +108,8 @@ export class UserSubscriptionsController {
       limit: limit ? Number(limit) : undefined,
       messId,
       isActive: isActive !== undefined ? isActive === 'true' : undefined,
+      customerId,
+      customerProfileId,
       userProfileId,
       userId,
     });

@@ -154,11 +154,21 @@ export class UserSubscriptionsService {
       limit?: number;
       messId?: string;
       isActive?: boolean;
+      customerId?: string;
+      customerProfileId?: string;
       userProfileId?: string;
       userId?: string;
     },
   ) {
-    const { page, limit, isActive, userProfileId, userId } = params;
+    const {
+      page,
+      limit,
+      isActive,
+      customerId,
+      customerProfileId,
+      userProfileId,
+      userId,
+    } = params;
     const where: any = {};
 
     /**
@@ -189,13 +199,12 @@ export class UserSubscriptionsService {
       }
 
       case Role.USER:
-        if (!user.customerProfileId) {
+        if (!user.customerProfileId && !user.id) {
           throw new ForbiddenException('Customer profile not found');
         }
         where.OR = [
-          { customerProfileId: user.customerProfileId },
-          { userProfileId: user.customerProfileId },
-          { userId: user.id },
+          ...(user.customerProfileId ? [{ customerProfileId: user.customerProfileId }] : []),
+          ...(user.id ? [{ customerId: user.id }] : []),
         ];
         break;
 
@@ -210,13 +219,14 @@ export class UserSubscriptionsService {
       where.isActive = isActive;
     }
 
-    if (userProfileId) {
-      where.OR = [
-        { userProfileId: userProfileId },
-        { customerProfileId: userProfileId },
-      ];
-    } else if (userId) {
-      where.userId = userId;
+    const effectiveProfileId = customerProfileId || userProfileId;
+    const effectiveCustomerId = customerId || userId;
+
+    if (effectiveProfileId) {
+      where.customerProfileId = effectiveProfileId;
+    }
+    if (effectiveCustomerId) {
+      where.customerId = effectiveCustomerId;
     }
 
     return paginate({
@@ -229,6 +239,7 @@ export class UserSubscriptionsService {
         mess: true,
         UserAddress: true,
         DeliveryPartnerProfile: true,
+        Customer: true,
 
         // ✅ INCLUDE CUSTOMER + USER DETAILS
         CustomerProfile: {
@@ -259,6 +270,7 @@ export class UserSubscriptionsService {
       include: {
         plan: true,
         mess: true,
+        Customer: true,
         CustomerProfile: {
           include: {
             user: {

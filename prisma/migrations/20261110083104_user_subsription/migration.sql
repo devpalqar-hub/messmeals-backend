@@ -1,9 +1,8 @@
 -- AlterTable
-ALTER TABLE `UserSubscriptions` ADD COLUMN `userId` VARCHAR(191) NULL,
-    ADD COLUMN `userProfileId` VARCHAR(191) NULL;
+ALTER TABLE `UserSubscriptions` ADD COLUMN `customerId` VARCHAR(191) NULL;
 
 -- CreateIndex
-CREATE INDEX `UserSubscriptions_userProfileId_idx` ON `UserSubscriptions`(`userProfileId`);
+CREATE INDEX `UserSubscriptions_customerId_idx` ON `UserSubscriptions`(`customerId`);
 
--- CreateIndex
-CREATE INDEX `UserSubscriptions_userId_idx` ON `UserSubscriptions`(`userId`);
+-- AddForeignKey
+ALTER TABLE `UserSubscriptions` ADD CONSTRAINT `UserSubscriptions_customerId_fkey` FOREIGN KEY (`customerId`) REFERENCES `Customer`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;

@@ -304,8 +304,7 @@ export class CustomerService {
     const userSubscription = await this.prisma.userSubscriptions.create({
       data: {
         customerProfileId: customerProfile.id,
-        userProfileId: customerProfile.id,
-        userId: customerProfile.userId,
+        customerId: customerProfile.userId,
         start_date: startDate,
         end_date: endDate,
         discount: appliedDiscount,
@@ -939,26 +938,52 @@ export class CustomerService {
 
     // Ledger-based wallet balance (credit - debit) per customer on this page — replaces
     // the old stored walletAmount field, scoped the same way as the rest of this query.
-    const customerProfileIds = customers.map((c) => c.id);
-    const ledgerTotals = customerProfileIds.length
-      ? await this.prisma.customerMessTransaction.groupBy({
-        by: ['customerProfileId', 'type'],
-        where: {
-          customerProfileId: { in: customerProfileIds },
-          ...(messId ? { messId } : {}),
-        },
-        _sum: { amount: true },
-      })
-      : [];
-    const walletBalanceByProfile = new Map<string, number>();
-    for (const row of ledgerTotals) {
-      const amount = Number(row._sum.amount ?? 0);
-      const prev = walletBalanceByProfile.get(row.customerProfileId) ?? 0;
-      walletBalanceByProfile.set(
-        row.customerProfileId,
-        prev + (row.type === LedgerEntryType.CREDIT ? amount : -amount),
-      );
-    }
+const customerProfileIds = customers.map((c) => c.id);
+
+const ledgerTotals = customerProfileIds.length
+  ? await this.prisma.customerMessTransaction.groupBy({
+      by: ['customerProfileId', 'type'],
+      where: {
+        customerProfileId: { in: customerProfileIds },
+        deletedAt: null,
+        ...(messId ? { messId } : {}),
+      },
+      _sum: { amount: true },
+    })
+  : [];
+
+const walletBalanceByProfile = new Map<string, number>();
+const outstandingPaymentByProfile = new Map<string, number>();
+
+for (const row of ledgerTotals) {
+  const amount = Number(row._sum.amount ?? 0);
+
+  const prevWallet = walletBalanceByProfile.get(row.customerProfileId) ?? 0;
+  const prevOutstanding =
+    outstandingPaymentByProfile.get(row.customerProfileId) ?? 0;
+
+  if (row.type === LedgerEntryType.CREDIT) {
+    walletBalanceByProfile.set(
+      row.customerProfileId,
+      prevWallet + amount,
+    );
+
+    outstandingPaymentByProfile.set(
+      row.customerProfileId,
+      prevOutstanding - amount,
+    );
+  } else {
+    walletBalanceByProfile.set(
+      row.customerProfileId,
+      prevWallet - amount,
+    );
+
+    outstandingPaymentByProfile.set(
+      row.customerProfileId,
+      prevOutstanding + amount,
+    );
+  }
+}
 
     const result = customers.map((c) => {
       const activeSubs = c.userSubscriptions.filter(
@@ -990,6 +1015,8 @@ export class CustomerService {
         phone: c.user.phone,
         is_active: c.user.is_active,
         walletBalance: walletBalanceByProfile.get(c.id) ?? 0,
+          outstandingPayment:
+    outstandingPaymentByProfile.get(c.id) ?? 0,
         address: c.address,
         current_location: c.current_location,
         latitude_logitude: c.latitude_logitude,
@@ -2061,8 +2088,7 @@ export class CustomerService {
     const userSubscription = await this.prisma.userSubscriptions.create({
       data: {
         customerProfileId: customerProfile.id,
-        userProfileId: customerProfile.id,
-        userId: customerProfile.userId || userId,
+        customerId: customerProfile.userId || userId,
         start_date: startDate,
         end_date: endDate,
         discount: 0,
@@ -2531,6 +2557,7 @@ export class CustomerService {
    */
   async createSubscriptionForCustomer(dto: CreateSubscriptionForCustomerDto) {
     const {
+      customerId,
       customerProfileId,
       userProfileId,
       userId,
@@ -2545,14 +2572,15 @@ export class CustomerService {
       address,
     } = dto;
 
-    const rawCustomerProfileId = userProfileId || customerProfileId || userId;
+    const rawCustomerProfileId =
+      customerProfileId || userProfileId || customerId || userId;
     if (!rawCustomerProfileId) {
       throw new BadRequestException(
-        'userProfileId, customerProfileId, or userId is required',
+        'customerProfileId or customerId is required',
       );
     }
 
-    // ─── 1. Resolve customer profile (accept CustomerProfile.id OR User.id) ───
+    // ─── 1. Resolve customer profile (accept CustomerProfile.id OR Customer.id) ───
     const customerProfile = await this.prisma.customerProfile.findFirst({
       where: {
         OR: [{ id: rawCustomerProfileId }, { userId: rawCustomerProfileId }],
@@ -2561,7 +2589,7 @@ export class CustomerService {
     });
     if (!customerProfile) {
       throw new BadRequestException(
-        'Customer profile not found. Provide a valid CustomerProfile.id or User.id.',
+        'Customer profile not found. Provide a valid CustomerProfile.id or Customer.id.',
       );
     }
 
@@ -2722,8 +2750,7 @@ export class CustomerService {
     const userSubscription = await this.prisma.userSubscriptions.create({
       data: {
         customerProfileId: customerProfile.id,
-        userProfileId: customerProfile.id,
-        userId: customerProfile.userId,
+        customerId: customerProfile.userId,
         planId,
         messId: plan.messId,
         deliveryPartnerProfileId: deliveryPartnerId,

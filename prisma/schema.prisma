@@ -156,6 +156,7 @@ model Customer {
   is_active       Boolean          @default(true)
   password        String?
   customerProfile CustomerProfile?
+  userSubscriptions UserSubscriptions[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -200,9 +201,8 @@ model UserSubscriptions {
   messId                   String
   is_active                Boolean      @default(true)
   cancelled_on             DateTime?
+  customerId               String?
   customerProfileId        String?
-  userProfileId            String?
-  userId                   String?
   deliveryPriority         Int?
 
   createdAt DateTime  @default(now())
@@ -211,19 +211,19 @@ model UserSubscriptions {
 
   isActive Boolean @default(true)
 
-  DeliveryPartnerProfile DeliveryPartnerProfile? @relation(fields: [deliveryPartnerProfileId], references: [id])
-  plan                   Plans                   @relation(fields: [planId], references: [id], onDelete: Cascade)
-  CustomerProfile        CustomerProfile?        @relation(fields: [customerProfileId], references: [id], onDelete: Cascade)
-  mess                   Mess                    @relation(fields: [messId], references: [id], onDelete: Cascade)
-  UserAddress            UserAddress?            @relation(fields: [userAddressId], references: [id])
-  deliveries             Deliveries[]
-  payments               Payments[]
-  ledgerTransactions     CustomerMessTransaction[]
+  Customer                 Customer?               @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  DeliveryPartnerProfile   DeliveryPartnerProfile? @relation(fields: [deliveryPartnerProfileId], references: [id])
+  plan                     Plans                   @relation(fields: [planId], references: [id], onDelete: Cascade)
+  CustomerProfile          CustomerProfile?        @relation(fields: [customerProfileId], references: [id], onDelete: Cascade)
+  mess                     Mess                    @relation(fields: [messId], references: [id], onDelete: Cascade)
+  UserAddress              UserAddress?            @relation(fields: [userAddressId], references: [id])
+  deliveries               Deliveries[]
+  payments                 Payments[]
+  ledgerTransactions       CustomerMessTransaction[]
 
   @@unique([messId, deliveryPriority])
   @@index([messId, deliveryPriority])
-  @@index([userProfileId])
-  @@index([userId])
+  @@index([customerId])
   @@index([deletedAt])
 }
 
