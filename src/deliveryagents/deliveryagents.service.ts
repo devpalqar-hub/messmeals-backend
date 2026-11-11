@@ -13,7 +13,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UserService } from 'src/user/user.service';
 import * as bcrypt from 'bcrypt';
-import { DeliveryStatus, Role } from '@prisma/client';
+import { DeliveryStatus, Prisma, Role } from '@prisma/client';
 import { contains } from 'class-validator';
 import { UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
 import { isPhoneOrEmailTaken } from 'src/common/utility/identity.util';
@@ -223,16 +223,24 @@ export class DeliveryAgentService {
     }
 
     // 3️⃣ Prepare update objects
-    const userUpdateData: any = {};
-    const profileUpdateData: any = {};
+    const userUpdateData: Prisma.UserUpdateInput = {};
+    const profileUpdateData: Prisma.DeliveryPartnerProfileUpdateInput = {};
+
     if (dto.name !== undefined) userUpdateData.name = dto.name;
     if (dto.phone !== undefined) userUpdateData.phone = dto.phone;
     if (dto.is_active !== undefined) userUpdateData.is_active = dto.is_active;
-    if (dto.address !== undefined) profileUpdateData.address = dto.address;
-    if (dto.deliverAgentRegion !== undefined)
-      profileUpdateData.deliverAgentRegion = dto.deliverAgentRegion;
-    if (dto.messId !== undefined) profileUpdateData.messId = dto.messId;
 
+    if (dto.address !== undefined) {
+      profileUpdateData.address = dto.address;
+    }
+
+    if (dto.deliverAgentRegion !== undefined) {
+      profileUpdateData.deliveryRegion = dto.deliverAgentRegion;
+    }
+
+    if (dto.messId !== undefined) {
+      profileUpdateData.mess = { connect: { id: dto.messId } };
+    }
     // 4️⃣ Execute updates in a transaction (atomic)
     await this.prisma.$transaction(async (tx) => {
       if (Object.keys(userUpdateData).length > 0) {
