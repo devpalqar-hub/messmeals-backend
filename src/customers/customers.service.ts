@@ -304,7 +304,7 @@ export class CustomerService {
     const userSubscription = await this.prisma.userSubscriptions.create({
       data: {
         customerProfileId: customerProfile.id,
-        customerId: customerProfile.userId,
+       // customerId: customerProfile.userId,
         start_date: startDate,
         end_date: endDate,
         discount: appliedDiscount,
