@@ -304,7 +304,6 @@ export class CustomerService {
     const userSubscription = await this.prisma.userSubscriptions.create({
       data: {
         customerProfileId: customerProfile.id,
-       // customerId: customerProfile.userId,
         start_date: startDate,
         end_date: endDate,
         discount: appliedDiscount,
@@ -2088,7 +2087,6 @@ for (const row of ledgerTotals) {
     const userSubscription = await this.prisma.userSubscriptions.create({
       data: {
         customerProfileId: customerProfile.id,
-        customerId: customerProfile.userId || userId,
         start_date: startDate,
         end_date: endDate,
         discount: 0,
@@ -2750,7 +2748,6 @@ for (const row of ledgerTotals) {
     const userSubscription = await this.prisma.userSubscriptions.create({
       data: {
         customerProfileId: customerProfile.id,
-        customerId: customerProfile.userId,
         planId,
         messId: plan.messId,
         deliveryPartnerProfileId: deliveryPartnerId,

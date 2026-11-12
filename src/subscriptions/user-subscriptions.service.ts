@@ -198,15 +198,21 @@ export class UserSubscriptionsService {
         break;
       }
 
-      case Role.USER:
-        if (!user.customerProfileId && !user.id) {
+      case Role.USER: {
+        let profileId = user.customerProfileId;
+        if (!profileId && user.id) {
+          const profile = await this.prisma.customerProfile.findUnique({
+            where: { userId: user.id },
+            select: { id: true },
+          });
+          profileId = profile?.id;
+        }
+        if (!profileId) {
           throw new ForbiddenException('Customer profile not found');
         }
-        where.OR = [
-          ...(user.customerProfileId ? [{ customerProfileId: user.customerProfileId }] : []),
-          ...(user.id ? [{ customerId: user.id }] : []),
-        ];
+        where.customerProfileId = profileId;
         break;
+      }
 
       default:
         throw new ForbiddenException('Invalid role');
@@ -220,13 +226,19 @@ export class UserSubscriptionsService {
     }
 
     const effectiveProfileId = customerProfileId || userProfileId;
-    const effectiveCustomerId = customerId || userId;
-
     if (effectiveProfileId) {
       where.customerProfileId = effectiveProfileId;
-    }
-    if (effectiveCustomerId) {
-      where.customerId = effectiveCustomerId;
+    } else if (customerId || userId) {
+      const targetUserId = customerId || userId;
+      const profile = await this.prisma.customerProfile.findUnique({
+        where: { userId: targetUserId },
+        select: { id: true },
+      });
+      if (profile) {
+        where.customerProfileId = profile.id;
+      } else {
+        where.customerProfileId = targetUserId;
+      }
     }
 
     return paginate({
@@ -239,7 +251,6 @@ export class UserSubscriptionsService {
         mess: true,
         UserAddress: true,
         DeliveryPartnerProfile: true,
-        Customer: true,
 
         // ✅ INCLUDE CUSTOMER + USER DETAILS
         CustomerProfile: {
@@ -270,7 +281,6 @@ export class UserSubscriptionsService {
       include: {
         plan: true,
         mess: true,
-        Customer: true,
         CustomerProfile: {
           include: {
             user: {
@@ -333,10 +343,28 @@ export class UserSubscriptionsService {
       throw new BadRequestException('Invalid end_date');
     }
 
+    const {
+      customerId: _cId,
+      userId: _uId,
+      userProfileId: _upId,
+      customerProfileId,
+      ...restDto
+    } = dto;
+
+    let targetProfileId = customerProfileId || _upId;
+    if (!targetProfileId && (_cId || _uId)) {
+      const p = await this.prisma.customerProfile.findUnique({
+        where: { userId: _cId || _uId },
+        select: { id: true },
+      });
+      targetProfileId = p?.id;
+    }
+
     const updated = await this.prisma.userSubscriptions.update({
       where: { id },
       data: {
-        ...dto,
+        ...restDto,
+        ...(targetProfileId ? { customerProfileId: targetProfileId } : {}),
 
         start_date: startDate,
         end_date: endDate,

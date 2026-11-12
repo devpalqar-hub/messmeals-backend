@@ -156,7 +156,6 @@ model Customer {
   is_active       Boolean          @default(true)
   password        String?
   customerProfile CustomerProfile?
-  userSubscriptions UserSubscriptions[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -201,7 +200,6 @@ model UserSubscriptions {
   messId                   String
   is_active                Boolean      @default(true)
   cancelled_on             DateTime?
-  customerId               String?
   customerProfileId        String?
   deliveryPriority         Int?
 
@@ -211,7 +209,6 @@ model UserSubscriptions {
 
   isActive Boolean @default(true)
 
-  Customer                 Customer?               @relation(fields: [customerId], references: [id], onDelete: Cascade)
   DeliveryPartnerProfile   DeliveryPartnerProfile? @relation(fields: [deliveryPartnerProfileId], references: [id])
   plan                     Plans                   @relation(fields: [planId], references: [id], onDelete: Cascade)
   CustomerProfile          CustomerProfile?        @relation(fields: [customerProfileId], references: [id], onDelete: Cascade)
@@ -223,7 +220,6 @@ model UserSubscriptions {
 
   @@unique([messId, deliveryPriority])
   @@index([messId, deliveryPriority])
-  @@index([customerId])
   @@index([deletedAt])
 }
 
