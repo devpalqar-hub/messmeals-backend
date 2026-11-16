@@ -43,6 +43,7 @@ import { UploadsModule } from './uploads/uploads.module';
 import { WebsitesModule } from './websites/websites.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { InvoicesModule } from './invoices/invoices.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -66,6 +67,7 @@ import { InvoicesModule } from './invoices/invoices.module';
     AnalyticsModule,
     BillingModule,
     InvoicesModule,
+    ReportsModule,
     MenuModule,
     ExpenseCategoriesModule,
     ExpensesModule,
