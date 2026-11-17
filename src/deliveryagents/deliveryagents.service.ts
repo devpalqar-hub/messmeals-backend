@@ -607,8 +607,10 @@ export class DeliveryAgentService {
     };
   }
 
-  async activeOrders(userId: string) {
+  async activeOrders(userId: string, page: number = 1, limit: number = 10) {
     const today = new Date();
+    page = Math.max(1, Number(page) || 1);
+    limit = Math.min(100, Math.max(1, Number(limit) || 10));
 
     // 1️⃣ Fetch user + delivery agent profile
     const user = await this.prisma.user.findUnique({
@@ -623,14 +625,20 @@ export class DeliveryAgentService {
     const profileId = user.deliveryPartnerProfile.id;
 
     // 2️⃣ Fetch active subscriptions assigned to this delivery agent
+    const activeWhere = {
+      deliveryPartnerProfileId: profileId,
+      is_active: true,
+      cancelled_on: null,
+      start_date: { lte: today },
+      OR: [{ end_date: null }, { end_date: { gte: today } }],
+    };
+    const total = await this.prisma.userSubscriptions.count({
+      where: activeWhere,
+    });
     const activeSubs = await this.prisma.userSubscriptions.findMany({
-      where: {
-        deliveryPartnerProfileId: profileId,
-        is_active: true,
-        cancelled_on: null,
-        start_date: { lte: today },
-        OR: [{ end_date: null }, { end_date: { gte: today } }],
-      },
+      where: activeWhere,
+      skip: (page - 1) * limit,
+      take: limit,
       include: {
         plan: {
           select: {
@@ -662,14 +670,18 @@ export class DeliveryAgentService {
         },
         UserAddress: true,
       },
-      orderBy: {
-        createdAt: 'desc',
-      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
     });
 
     // 3️⃣ Format response
     return {
       message: 'Active delivery orders fetched successfully',
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
       agent: {
         userId: user.id,
         name: user.name,

@@ -191,10 +191,16 @@ export class DeliveryAgentController {
     summary: 'Get active orders',
     description: 'Returns active orders for the authenticated delivery agent.',
   })
+  @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Items per page (default 10, max 100)' })
   @Get('active/orders')
-  async activeOrders(@Req() req) {
+  async activeOrders(
+    @Req() req,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+  ) {
     const userId = req.user.id;
-    return this.service.activeOrders(userId);
+    return this.service.activeOrders(userId, page, limit);
   }
 
   @UseGuards(JwtAuthGuard)

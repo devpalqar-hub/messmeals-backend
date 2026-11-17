@@ -2153,7 +2153,14 @@ for (const row of ledgerTotals) {
    * ACTIVE | PAUSED | CANCELLED | INACTIVE status used in the admin-facing findOne(). Defaults
    * to active subscriptions only; pass status='all' to include paused/cancelled/inactive too.
    */
-  async getMySubscriptions(userId: string, status?: string) {
+  async getMySubscriptions(
+    userId: string,
+    status?: string,
+    page: number = 1,
+    limit: number = 20,
+  ) {
+    page = Math.max(1, Number(page) || 1);
+    limit = Math.min(100, Math.max(1, Number(limit) || 20));
     const customerProfile = await this.prisma.customerProfile.findUnique({
       where: { userId },
       include: {
@@ -2197,8 +2204,10 @@ for (const row of ledgerTotals) {
       ? withStatus
       : withStatus.filter((x) => x.computedStatus === 'ACTIVE');
 
+    const paged = filtered.slice((page - 1) * limit, page * limit);
+
     return {
-      data: filtered.map(({ sub, computedStatus }) => ({
+      data: paged.map(({ sub, computedStatus }) => ({
         id: sub.id,
         messId: sub.messId,
         start_date: sub.start_date,
@@ -2242,6 +2251,9 @@ for (const row of ledgerTotals) {
       })),
       meta: {
         total: filtered.length,
+        page,
+        limit,
+        totalPages: Math.ceil(filtered.length / limit),
       },
     };
   }

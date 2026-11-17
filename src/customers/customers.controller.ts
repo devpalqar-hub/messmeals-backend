@@ -468,8 +468,20 @@ export class CustomerController {
     example: 'active',
     description: '"active" (default) or "all"',
   })
-  async getMySubscriptions(@Req() req, @Query('status') status?: string) {
-    return this.cusomerservice.getMySubscriptions(req.user.id, status);
+  @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Items per page (default 20, max 100)' })
+  async getMySubscriptions(
+    @Req() req,
+    @Query('status') status?: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number = 20,
+  ) {
+    return this.cusomerservice.getMySubscriptions(
+      req.user.id,
+      status,
+      page,
+      limit,
+    );
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

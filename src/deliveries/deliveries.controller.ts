@@ -7,6 +7,8 @@ import {
   Param,
   Body,
   Query,
+  DefaultValuePipe,
+  ParseIntPipe,
   ParseUUIDPipe,
   Req,
   UseGuards,
@@ -532,13 +534,19 @@ export class DeliveriesController {
   })
   @ApiParam({ name: 'partnerId', description: 'Delivery partner UUID' })
   @Get('partner/:partnerId/subscriptions')
+  @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Items per page (default 20, max 100)' })
   listPartnerSubscriptions(
     @Param('partnerId') partnerId: string,
     @Req() req,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
   ) {
     return this.deliveriesService.listPartnerSubscriptions(
       partnerId,
       req.user.id,
+      page,
+      limit,
     );
   }
 

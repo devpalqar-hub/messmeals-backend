@@ -1425,7 +1425,14 @@ export class DeliveriesService {
   /**
    * Mess admin: list the subscriptions currently assigned to a given delivery partner.
    */
-  async listPartnerSubscriptions(partnerId: string, userId: string) {
+  async listPartnerSubscriptions(
+    partnerId: string,
+    userId: string,
+    page: number = 1,
+    limit: number = 20,
+  ) {
+    page = Math.max(1, Number(page) || 1);
+    limit = Math.min(100, Math.max(1, Number(limit) || 20));
     const partner = await this.prisma.deliveryPartnerProfile.findUnique({
       where: { id: partnerId },
     });
@@ -1433,11 +1440,15 @@ export class DeliveriesService {
       throw new NotFoundException('Delivery partner not found');
     }
 
+    const where = {
+      deliveryPartnerProfileId: partnerId,
+      mess: { messAdmins: { some: { userId } } },
+    };
+    const total = await this.prisma.userSubscriptions.count({ where });
     const subscriptions = await this.prisma.userSubscriptions.findMany({
-      where: {
-        deliveryPartnerProfileId: partnerId,
-        mess: { messAdmins: { some: { userId } } },
-      },
+      where,
+      skip: (page - 1) * limit,
+      take: limit,
       include: {
         plan: {
           select: { id: true, planName: true, price: true, minPrice: true },
@@ -1448,13 +1459,14 @@ export class DeliveriesService {
           },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
     });
 
     return {
       message: 'Assigned subscriptions fetched successfully',
       count: subscriptions.length,
       data: subscriptions,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }
 
