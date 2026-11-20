@@ -34,20 +34,6 @@ interface ScopeStop {
   coords: LatLng | null;
 }
 
-export const ADDRESS_SELECT = {
-  id: true,
-  name: true,
-  street: true,
-  townOrcity: true,
-  country: true,
-  postcode: true,
-  landmark: true,
-  latitudeLogitude: true,
-  locationLink: true,
-  phone: true,
-  email: true,
-} satisfies Prisma.UserAddressSelect;
-
 /** A stop is "done" for routing once its meal is no longer PENDING. */
 export function isTerminal(status: VariationStatus) {
   return status !== VariationStatus.PENDING;
@@ -77,22 +63,14 @@ export function effectiveStatus(
   return variationStatus;
 }
 
-/** Resolve customer coordinates: subscription address → its map link → profile. */
+/**
+ * Delivery location of a customer: CustomerProfile.latitude_logitude — the
+ * "lat,lng" saved by POST /customer/register-user (and the customer update API).
+ */
 export function resolveStopCoords(delivery: {
   customer?: { latitude_logitude: string | null } | null;
-  UserSubscriptions?: {
-    UserAddress?: {
-      latitudeLogitude: string | null;
-      locationLink: string | null;
-    } | null;
-  } | null;
 }): LatLng | null {
-  const addr = delivery.UserSubscriptions?.UserAddress;
-  return (
-    parseLatLng(addr?.latitudeLogitude) ??
-    parseLatLng(addr?.locationLink) ??
-    parseLatLng(delivery.customer?.latitude_logitude)
-  );
+  return parseLatLng(delivery.customer?.latitude_logitude);
 }
 
 @Injectable()
@@ -311,13 +289,6 @@ export class DeliveryRouteService {
           select: {
             status: true,
             customer: { select: { latitude_logitude: true } },
-            UserSubscriptions: {
-              select: {
-                UserAddress: {
-                  select: { latitudeLogitude: true, locationLink: true },
-                },
-              },
-            },
           },
         },
       },

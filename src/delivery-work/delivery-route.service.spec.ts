@@ -27,10 +27,7 @@ function setup(initial: Row[]) {
           deliveryId: r.deliveryId,
           delivery: {
             status: r.deliveryStatus,
-            customer: { latitude_logitude: null },
-            UserSubscriptions: {
-              UserAddress: { latitudeLogitude: r.latLng, locationLink: null },
-            },
+            customer: { latitude_logitude: r.latLng },
           },
         })),
       ),

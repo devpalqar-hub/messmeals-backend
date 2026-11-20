@@ -11,149 +11,181 @@ import {
   IsJSON,
   IsArray,
   IsUUID,
+  IsDateString,
+  IsIn,
+  Matches,
+  Min,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ScheduleType, DayOfWeek } from '@prisma/client';
 
+/** "lat,lng" — e.g. "9.434495,76.35037". */
+export const LAT_LNG_REGEX =
+  /^\s*-?\d{1,2}(\.\d+)?\s*,\s*-?\d{1,3}(\.\d+)?\s*$/;
+
+export const DELIVERY_TYPES = ['EVERYDAY', 'CUSTOM'] as const;
+export type DeliveryType = (typeof DELIVERY_TYPES)[number];
+
+const trimToUndefined = ({ value }: { value: unknown }) =>
+  typeof value === 'string' && value.trim() === '' ? undefined : value;
+
+/** Body of POST /customer/register-user — only these fields are accepted. */
 export class CreateCustomerDto {
-  //user model
-  @ApiProperty({ example: 'John Doe' })
+  @ApiProperty({ example: 'Fayas' })
   @IsString()
+  @IsNotEmpty({ message: 'name is required' })
   name: string;
 
-  @ApiProperty({ example: '+919876543218' })
+  @ApiProperty({ example: '+919638527410' })
   @IsString()
   @IsNotEmpty({ message: 'phone is required' })
   phone: string;
 
-  @ApiPropertyOptional({ example: 'john@example.com' })
-  @IsOptional()
-  @IsEmail()
-  email?: string;
-
-  @ApiProperty({ example: '123 Main Street' })
+  @ApiProperty({
+    example: 'test address',
+    description:
+      "Delivery address. Saved on the customer profile and as the new subscription's delivery address.",
+  })
   @IsString()
+  @IsNotEmpty({ message: 'address is required' })
   address: string;
 
-  @ApiPropertyOptional({ example: '12.9716,77.5946' })
-  @IsOptional()
-  @IsString()
-  latitude_logitude?: string;
-
-  @ApiPropertyOptional({ example: 'Bangalore' })
-  @IsOptional()
-  @IsString()
-  currentLocation?: string;
-
-  @ApiPropertyOptional({ example: true })
-  @IsOptional()
-  @IsBoolean()
-  is_active?: boolean;
-
-  //customer profile model
-  @ApiProperty({ example: '1000' })
-  @IsString()
-  walletAmount: string;
-
-  @ApiPropertyOptional({ example: '50' })
-  @IsOptional()
-  @IsString()
-  discount?: string;
-
-  @ApiProperty({ example: '7a6f2f43-9f6b-4c50-8d49-3f0f7f2ed111' })
-  @IsString()
-  planId: string;
-
   @ApiPropertyOptional({
-    example: 'b3f4fb3e-0e61-43c3-8b3b-b833f18b2f55',
+    example: '9.434495,76.35037',
     description:
-      'Optional. A customer can be registered without a delivery partner and assigned one later.',
+      'Delivery location as "latitude,longitude". Saved as the customer\'s latitude_logitude ' +
+      "(used for delivery route optimisation) and on the subscription's delivery address.",
   })
+  @Transform(trimToUndefined)
   @IsOptional()
   @IsString()
-  deliveryPartnerId?: string;
-
-  @ApiProperty({ example: '2026-05-07' })
-  @IsString()
-  start_date: string;
-
-  @ApiPropertyOptional({ example: '2026-06-07' })
-  @IsString()
-  @IsOptional()
-  end_date: string;
-
-  //phase 2 changes:
-
-  @ApiPropertyOptional({ example: 'EVERYDAY', enum: ScheduleType })
-  @IsOptional()
-  @IsEnum(ScheduleType)
-  scheduleType?: ScheduleType;
-
-  @ApiPropertyOptional({ example: ['MONDAY', 'WEDNESDAY', 'FRIDAY'] })
-  @IsOptional()
-  @IsArray()
-  @IsEnum(DayOfWeek, { each: true }) // optional if you have enum
-  selectedDays: string[];
-
-  @ApiPropertyOptional({
-    example: '5f6a1b2c-3d4e-5f60-7a8b-9c0d1e2f3a4b',
-    description: 'Optional district the customer belongs to',
+  @Matches(LAT_LNG_REGEX, {
+    message: 'location must be "latitude,longitude", e.g. "9.434495,76.35037"',
   })
-  @IsOptional()
-  @IsUUID()
-  districtId?: string;
-
-  // ── Legacy / extra fields sent by the mobile app ──────────────────────────
-  // These were not originally in the DTO but the app sends them. Accepting
-  // them as optional prevents 400s from forbidNonWhitelisted=true.
-
-  @ApiPropertyOptional({
-    example: 'Bangalore',
-    description: 'Legacy location field from the mobile app',
-  })
-  @IsOptional()
-  @IsString()
   location?: string;
 
   @ApiPropertyOptional({
-    example: 'ae0c67f3-7dbb-45dd-a742-8702afd66fff',
-    description: 'Mess ID sent by the mobile app',
+    example: 'f14600ac-abf0-4197-b608-4d478bc664e7',
+    description: "Mess of the plan. When sent, it must match the plan's mess.",
   })
+  @Transform(trimToUndefined)
   @IsOptional()
-  @IsString()
+  @IsUUID()
   messId?: string;
 
+  @ApiProperty({ example: '7041f26f-9141-4224-a6e9-e37b19119d20' })
+  @IsUUID()
+  planId: string;
+
   @ApiPropertyOptional({
-    example: 100,
-    description: 'Discount amount sent by the mobile app',
+    example: '093dd44e-66c8-4c85-8acd-209f926afcbf',
+    description:
+      'Optional. A customer can be registered without a delivery partner and assigned one later.',
+  })
+  @Transform(trimToUndefined)
+  @IsOptional()
+  @IsUUID()
+  deliveryPartnerId?: string;
+
+  @ApiProperty({ example: '2026-11-20' })
+  @IsDateString()
+  start_date: string;
+
+  @ApiPropertyOptional({
+    example: '2026-12-19',
+    description:
+      'Defaults to one month (monthly plans) or the start date (daily plans).',
+  })
+  @Transform(trimToUndefined)
+  @IsOptional()
+  @IsDateString()
+  end_date?: string;
+
+  @ApiPropertyOptional({
+    example: 0.0,
+    description: 'Amount paid now (cash/UPI collected at registration).',
   })
   @IsOptional()
   @IsNumber()
-  discountAmount?: number;
+  @Min(0)
+  walletAmount?: number;
 
-  @ApiPropertyOptional({
-    example: 'HOME',
-    description: 'Delivery type sent by the mobile app',
-  })
+  @ApiPropertyOptional({ example: 0.0, description: 'Discount amount.' })
   @IsOptional()
-  @IsString()
-  deliveryType?: string;
+  @IsNumber()
+  @Min(0)
+  discount?: number;
 
   @ApiPropertyOptional({
-    example: '09:00',
-    description: 'Preferred delivery time sent by the mobile app',
+    example: 'Everyday',
+    enum: ['Everyday', 'Custom'],
+    description:
+      'Everyday = deliver every day. Custom = deliver only on deliveryDays. Case-insensitive.',
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string'
+      ? value.trim() === ''
+        ? undefined
+        : value.trim().toUpperCase()
+      : value,
+  )
+  @IsOptional()
+  @IsIn(DELIVERY_TYPES, { message: 'deliveryType must be Everyday or Custom' })
+  deliveryType?: DeliveryType;
+
+  @ApiPropertyOptional({
+    example: '',
+    description: 'Preferred delivery time (accepted, not stored yet).',
   })
   @IsOptional()
   @IsString()
   preferredTime?: string;
 
   @ApiPropertyOptional({
-    example: ['MONDAY', 'WEDNESDAY'],
-    description: 'Delivery days sent by the mobile app',
+    example: [
+      'MONDAY',
+      'TUESDAY',
+      'WEDNESDAY',
+      'THURSDAY',
+      'FRIDAY',
+      'SATURDAY',
+      'SUNDAY',
+    ],
+    enum: DayOfWeek,
+    isArray: true,
+    description: 'Delivery weekdays — required when deliveryType is Custom.',
   })
+  @Transform(({ value }: { value: unknown }) =>
+    Array.isArray(value)
+      ? value.map((d) => (typeof d === 'string' ? d.trim().toUpperCase() : d))
+      : value,
+  )
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
-  deliveryDays?: string[];
+  @IsEnum(DayOfWeek, { each: true })
+  deliveryDays?: DayOfWeek[];
+}
+
+/**
+ * Internal input of CustomerService.CreateUser — the register-user body after mapping,
+ * plus the extra columns the bulk upload provides (email, schedule).
+ */
+export interface CreateCustomerInput {
+  name: string;
+  phone: string;
+  email?: string;
+  address: string;
+  /** "lat,lng" — stored as CustomerProfile.latitude_logitude. */
+  latitude_logitude?: string;
+  messId?: string;
+  planId: string;
+  deliveryPartnerId?: string;
+  start_date: string;
+  end_date?: string;
+  walletAmount?: string | number;
+  discount?: string | number;
+  scheduleType?: ScheduleType;
+  selectedDays?: string[];
 }
 
 export class UpdateCustomerDto {

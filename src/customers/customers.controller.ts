@@ -78,7 +78,7 @@ export class CustomerController {
       'Daily plans: totalPrice = chargeable delivery days × plan.price.',
   })
   async register(@Body() dto: CreateCustomerDto) {
-    return this.cusomerservice.CreateUser(dto);
+    return this.cusomerservice.registerCustomer(dto);
   }
 
   @Get('bulk-upload/template')
@@ -468,8 +468,16 @@ export class CustomerController {
     example: 'active',
     description: '"active" (default) or "all"',
   })
-  @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
-  @ApiQuery({ name: 'limit', required: false, description: 'Items per page (default 20, max 100)' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    description: 'Page number (default 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    description: 'Items per page (default 20, max 100)',
+  })
   async getMySubscriptions(
     @Req() req,
     @Query('status') status?: string,

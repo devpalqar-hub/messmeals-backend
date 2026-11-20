@@ -17,7 +17,6 @@ import { DeliveriesService } from 'src/deliveries/deliveries.service';
 import { assertMessAccess } from 'src/common/utility/mess-access.util';
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
-  ADDRESS_SELECT,
   DeliveryRouteService,
   effectiveStatus,
   resolveStopCoords,
@@ -47,19 +46,22 @@ const PENDING_DELIVERY: Prisma.DeliveriesWhereInput = {
   OR: [{ status: null }, { status: DeliveryStatus.PENDING }],
 };
 
-function formatAddress(
-  a?: {
-    street?: string | null;
-    landmark?: string | null;
-    townOrcity?: string | null;
-    postcode?: string | null;
-    country?: string | null;
-  } | null,
-) {
-  if (!a) return null;
-  return [a.street, a.landmark, a.townOrcity, a.postcode, a.country]
-    .filter((p) => p && String(p).trim())
-    .join(', ');
+/** Customer address as saved by POST /customer/register-user (CustomerProfile). */
+function customerAddress(c: {
+  address: string | null;
+  current_location: string | null;
+  latitude_logitude: string | null;
+}) {
+  if (!c.address && !c.current_location && !c.latitude_logitude) return null;
+  return {
+    address: c.address,
+    currentLocation: c.current_location,
+    latitudeLongitude: c.latitude_logitude,
+    formatted:
+      [c.address, c.current_location]
+        .filter((p) => p && String(p).trim())
+        .join(', ') || null,
+  };
 }
 
 function navigationUrl(loc: LatLng | null) {
@@ -582,6 +584,7 @@ export class DeliveryWorkService {
           select: {
             id: true,
             address: true,
+            current_location: true,
             latitude_logitude: true,
             user: { select: { name: true, phone: true, email: true } },
           },
@@ -606,7 +609,6 @@ export class DeliveryWorkService {
             end_date: true,
             scheduleType: true,
             selectedDays: true,
-            UserAddress: { select: ADDRESS_SELECT },
           },
         },
         deliveryVariations: {
@@ -623,7 +625,6 @@ export class DeliveryWorkService {
     await this.assertDeliveryAccess(user, d);
 
     const location = resolveStopCoords(d);
-    const address = d.UserSubscriptions?.UserAddress ?? null;
     const variations = d.deliveryVariations.map((dv) => ({
       deliveryVariationId: dv.id,
       variationId: dv.variation.id,
@@ -677,13 +678,8 @@ export class DeliveryWorkService {
         phone,
         email: d.customer.user.email,
         callUrl: phone ? `tel:${phone}` : null,
-        alternatePhone: address?.phone ?? null,
       },
-      address: address
-        ? { ...address, formatted: formatAddress(address) }
-        : d.customer.address
-          ? { formatted: d.customer.address }
-          : null,
+      address: customerAddress(d.customer),
       location,
       navigationUrl: navigationUrl(location),
       plan: d.plan,
@@ -877,12 +873,15 @@ export class DeliveryWorkService {
           id: true,
           status: true,
           customer: {
-            select: { id: true, user: { select: { name: true, phone: true } } },
+            select: {
+              id: true,
+              address: true,
+              current_location: true,
+              latitude_logitude: true,
+              user: { select: { name: true, phone: true } },
+            },
           },
           plan: { select: { id: true, planName: true } },
-          UserSubscriptions: {
-            select: { UserAddress: { select: ADDRESS_SELECT } },
-          },
           deliveryVariations: {
             where: { variationId: plan.variationId, deletedAt: null },
             select: { id: true, status: true },
@@ -933,7 +932,6 @@ export class DeliveryWorkService {
         remainingDurationSeconds += s.legDurationSeconds ?? 0;
       }
       const location = stopLocation(s);
-      const address = d.UserSubscriptions?.UserAddress ?? null;
 
       return [
         {
@@ -949,9 +947,7 @@ export class DeliveryWorkService {
             phone: d.customer.user.phone,
           },
           plan: d.plan,
-          address: address
-            ? { ...address, formatted: formatAddress(address) }
-            : null,
+          address: customerAddress(d.customer),
           location,
           routable: s.routable,
           leg:

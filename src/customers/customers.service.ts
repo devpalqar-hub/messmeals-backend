@@ -12,11 +12,13 @@ import { TransactionsService } from 'src/transactions/transactions.service';
 import {
   choosePlanDto,
   CreateCustomerDto,
+  CreateCustomerInput,
   CreateSubscriptionForCustomerDto,
   UpdateCustomerDto,
 } from './dto/create-customer.dto';
 import { RenewSubscriptionDto } from './dto/renew-Subscription.dto';
 import {
+  DayOfWeek,
   ScheduleType,
   Prisma,
   DeliveryStatus,
@@ -64,15 +66,42 @@ export class CustomerService {
     return `${baseUrl}${path}`;
   }
 
-  async CreateUser(dto: CreateCustomerDto) {
+  /**
+   * POST /customer/register-user — maps the app's body onto CreateUser:
+   * location → latitude_logitude, deliveryType/deliveryDays → schedule.
+   */
+  async registerCustomer(dto: CreateCustomerDto) {
+    const days = [...new Set(dto.deliveryDays ?? [])];
+    const allWeek = days.length === Object.keys(DayOfWeek).length;
+    const custom =
+      dto.deliveryType === 'CUSTOM'
+        ? !allWeek
+        : dto.deliveryType === undefined && days.length > 0 && !allWeek;
+
+    return this.CreateUser({
+      name: dto.name.trim(),
+      phone: dto.phone.trim(),
+      address: dto.address.trim(),
+      latitude_logitude: dto.location?.replace(/\s+/g, ''),
+      messId: dto.messId,
+      planId: dto.planId,
+      deliveryPartnerId: dto.deliveryPartnerId,
+      start_date: dto.start_date,
+      end_date: dto.end_date,
+      walletAmount: dto.walletAmount ?? 0,
+      discount: dto.discount ?? 0,
+      scheduleType: custom ? ScheduleType.CUSTOM : ScheduleType.EVERYDAY,
+      selectedDays: custom ? days : undefined,
+    });
+  }
+
+  async CreateUser(dto: CreateCustomerInput) {
     const {
       name,
       phone,
       email,
       address,
-      currentLocation,
       latitude_logitude,
-      is_active,
       walletAmount,
       discount,
       planId,
@@ -104,6 +133,11 @@ export class CustomerService {
       where: { id: planId },
     });
     if (!plan) throw new BadRequestException('Plan not found');
+    if (dto.messId && dto.messId !== plan.messId) {
+      throw new BadRequestException(
+        'Plan does not belong to the specified Mess',
+      );
+    }
 
     // 2️⃣ Validate delivery partner — optional. A customer can be registered without one
     // (e.g. assigned to a delivery agent later); only cross-checked against the plan's mess when given.
@@ -126,10 +160,12 @@ export class CustomerService {
     // customer is reused as-is — this is what lets a *different* mess admin register
     // the same person for their own mess/plan: the existing Customer + CustomerProfile
     // is shared, only a new UserSubscriptions row (scoped to plan.messId below) is created.
+    // Only match on values actually given — `{ email: undefined }` is an empty filter in
+    // Prisma and would match every customer.
+    const identity: Prisma.CustomerWhereInput[] = [{ phone }];
+    if (email) identity.push({ email });
     let user = await this.prisma.customer.findFirst({
-      where: {
-        OR: [{ email: email }, { phone: phone }],
-      },
+      where: { OR: identity },
     });
     const wasExistingUser = !!user;
 
@@ -145,7 +181,6 @@ export class CustomerService {
           name,
           email,
           phone,
-          is_active,
         },
       });
 
@@ -154,7 +189,6 @@ export class CustomerService {
         data: {
           userId: user.id,
           address,
-          current_location: currentLocation,
           latitude_logitude,
         },
       });
@@ -170,8 +204,17 @@ export class CustomerService {
           data: {
             userId: user.id,
             address,
-            current_location: currentLocation,
             latitude_logitude,
+          },
+        });
+      } else if (address || latitude_logitude) {
+        // Latest registration's address/location wins — delivery routing reads
+        // CustomerProfile.latitude_logitude.
+        customerProfile = await this.prisma.customerProfile.update({
+          where: { id: customerProfile.id },
+          data: {
+            ...(address && { address }),
+            ...(latitude_logitude && { latitude_logitude }),
           },
         });
       }
@@ -225,7 +268,7 @@ export class CustomerService {
     // see resolvePlanSchedule's docstring.
     const requestedScheduleType =
       scheduleType === ScheduleType.CUSTOM ||
-        (Array.isArray(selectedDays) && selectedDays.length > 0)
+      (Array.isArray(selectedDays) && selectedDays.length > 0)
         ? ScheduleType.CUSTOM
         : ScheduleType.EVERYDAY;
 
@@ -300,25 +343,48 @@ export class CustomerService {
     const appliedDiscount = Math.max(0, Math.min(numericDiscount, totalPrice));
     const discountedPrice = totalPrice - appliedDiscount;
 
-    // 5️⃣ Create subscription
-    const userSubscription = await this.prisma.userSubscriptions.create({
-      data: {
-        customerProfileId: customerProfile.id,
-        start_date: startDate,
-        end_date: endDate,
-        discount: appliedDiscount,
-        totalPrice,
-        discountedPrice,
-        messId: plan.messId,
-        deliveryPartnerProfileId: deliveryPartnerId,
-        planId,
-        scheduleType: normalizedScheduleType,
-        selectedDays:
-          normalizedScheduleType === ScheduleType.CUSTOM
-            ? normalizedSelectedDays
-            : undefined,
+    // 5️⃣ Create the subscription's delivery address (UserAddress) + the subscription.
+    const customer = user;
+    const { userAddress, userSubscription } = await this.prisma.$transaction(
+      async (tx) => {
+        const userAddress = address?.trim()
+          ? await tx.userAddress.create({
+              data: {
+                profileId: customerProfile.id,
+                name: customer.name,
+                phone: customer.phone,
+                street: address.trim(),
+                townOrcity: '',
+                postcode: '',
+                latitudeLogitude: latitude_logitude ?? null,
+                locationLink: latitude_logitude
+                  ? `https://www.google.com/maps?q=${latitude_logitude}`
+                  : null,
+              },
+            })
+          : null;
+        const userSubscription = await tx.userSubscriptions.create({
+          data: {
+            userAddressId: userAddress?.id,
+            customerProfileId: customerProfile.id,
+            start_date: startDate,
+            end_date: endDate,
+            discount: appliedDiscount,
+            totalPrice,
+            discountedPrice,
+            messId: plan.messId,
+            deliveryPartnerProfileId: deliveryPartnerId,
+            planId,
+            scheduleType: normalizedScheduleType,
+            selectedDays:
+              normalizedScheduleType === ScheduleType.CUSTOM
+                ? normalizedSelectedDays
+                : undefined,
+          },
+        });
+        return { userAddress, userSubscription };
       },
-    });
+    );
 
     // Increment popular-plan counter
     await this.prisma.plans.update({
@@ -434,6 +500,7 @@ export class CustomerService {
         user,
         customerProfile,
         userSubscription,
+        userAddress,
         deliveriesCreated: deliveriesToCreate.length,
         isNewCustomer: !wasExistingUser,
       },
@@ -449,31 +516,31 @@ export class CustomerService {
     string,
     keyof BulkUploadCustomerRow
   > = {
-      name: 'name',
-      customername: 'name',
-      phone: 'phone',
-      phonenumber: 'phone',
-      mobile: 'phone',
-      email: 'email',
-      address: 'address',
-      deliveryaddress: 'address',
-      planid: 'planId',
-      plan: 'planName',
-      planname: 'planName',
-      walletamount: 'walletAmount',
-      wallet: 'walletAmount',
-      discount: 'discount',
-      startdate: 'start_date',
-      start: 'start_date',
-      enddate: 'end_date',
-      end: 'end_date',
-      scheduletype: 'scheduleType',
-      schedule: 'scheduleType',
-      selecteddays: 'selectedDays',
-      days: 'selectedDays',
-      deliverypartnerid: 'deliveryPartnerId',
-      deliverypartner: 'deliveryPartnerId',
-    };
+    name: 'name',
+    customername: 'name',
+    phone: 'phone',
+    phonenumber: 'phone',
+    mobile: 'phone',
+    email: 'email',
+    address: 'address',
+    deliveryaddress: 'address',
+    planid: 'planId',
+    plan: 'planName',
+    planname: 'planName',
+    walletamount: 'walletAmount',
+    wallet: 'walletAmount',
+    discount: 'discount',
+    startdate: 'start_date',
+    start: 'start_date',
+    enddate: 'end_date',
+    end: 'end_date',
+    scheduletype: 'scheduleType',
+    schedule: 'scheduleType',
+    selecteddays: 'selectedDays',
+    days: 'selectedDays',
+    deliverypartnerid: 'deliveryPartnerId',
+    deliverypartner: 'deliveryPartnerId',
+  };
 
   private normalizeBulkUploadHeader(header: string): string {
     return String(header ?? '')
@@ -537,7 +604,7 @@ export class CustomerService {
       for (const [rawHeader, rawValue] of Object.entries(rawRow)) {
         const key =
           CustomerService.BULK_UPLOAD_HEADER_ALIASES[
-          this.normalizeBulkUploadHeader(rawHeader)
+            this.normalizeBulkUploadHeader(rawHeader)
           ];
         if (!key) continue;
 
@@ -632,13 +699,13 @@ export class CustomerService {
 
         const selectedDays = row.selectedDays
           ? row.selectedDays
-            .toString()
-            .split(/[,/|]/)
-            .map((d) => d.trim().toUpperCase())
-            .filter(Boolean)
+              .toString()
+              .split(/[,/|]/)
+              .map((d) => d.trim().toUpperCase())
+              .filter(Boolean)
           : undefined;
 
-        const dto: CreateCustomerDto = {
+        const dto: CreateCustomerInput = {
           name,
           phone,
           email: row.email?.trim() || undefined,
@@ -671,8 +738,8 @@ export class CustomerService {
       } catch (err) {
         const message =
           err instanceof BadRequestException ||
-            err instanceof ForbiddenException ||
-            err instanceof NotFoundException
+          err instanceof ForbiddenException ||
+          err instanceof NotFoundException
             ? (err.getResponse() as any)?.message || err.message
             : err instanceof Error
               ? err.message
@@ -849,60 +916,60 @@ export class CustomerService {
     const where: any = {
       ...(search
         ? {
-          OR: [
-            {
-              user: {
-                name: { contains: search.toLowerCase() },
+            OR: [
+              {
+                user: {
+                  name: { contains: search.toLowerCase() },
+                },
               },
-            },
-            {
-              user: {
-                email: { contains: search.toLowerCase() },
+              {
+                user: {
+                  email: { contains: search.toLowerCase() },
+                },
               },
-            },
-            {
-              userSubscriptions: {
-                some: {
-                  plan: {
-                    planName: {
-                      contains: search.toLowerCase(),
+              {
+                userSubscriptions: {
+                  some: {
+                    plan: {
+                      planName: {
+                        contains: search.toLowerCase(),
+                      },
                     },
                   },
                 },
               },
-            },
-          ],
-        }
+            ],
+          }
         : {}),
 
       ...(messId
         ? {
-          userSubscriptions: {
-            some: { messId },
-          },
-        }
+            userSubscriptions: {
+              some: { messId },
+            },
+          }
         : {}),
 
       // ✅ subscription-ending-soon filter — active subscriptions ending within 7 days
       ...(endingSoon
         ? {
-          userSubscriptions: {
-            some: {
-              ...(messId ? { messId } : {}),
-              is_active: true,
-              end_date: { gte: now, lte: in7Days },
+            userSubscriptions: {
+              some: {
+                ...(messId ? { messId } : {}),
+                is_active: true,
+                end_date: { gte: now, lte: in7Days },
+              },
             },
-          },
-        }
+          }
         : {}),
 
       // ✅ is_active filter
       ...(isActive !== undefined
         ? {
-          user: {
-            is_active: isActive,
-          },
-        }
+            user: {
+              is_active: isActive,
+            },
+          }
         : {}),
     };
 
@@ -937,52 +1004,46 @@ export class CustomerService {
 
     // Ledger-based wallet balance (credit - debit) per customer on this page — replaces
     // the old stored walletAmount field, scoped the same way as the rest of this query.
-const customerProfileIds = customers.map((c) => c.id);
+    const customerProfileIds = customers.map((c) => c.id);
 
-const ledgerTotals = customerProfileIds.length
-  ? await this.prisma.customerMessTransaction.groupBy({
-      by: ['customerProfileId', 'type'],
-      where: {
-        customerProfileId: { in: customerProfileIds },
-        deletedAt: null,
-        ...(messId ? { messId } : {}),
-      },
-      _sum: { amount: true },
-    })
-  : [];
+    const ledgerTotals = customerProfileIds.length
+      ? await this.prisma.customerMessTransaction.groupBy({
+          by: ['customerProfileId', 'type'],
+          where: {
+            customerProfileId: { in: customerProfileIds },
+            deletedAt: null,
+            ...(messId ? { messId } : {}),
+          },
+          _sum: { amount: true },
+        })
+      : [];
 
-const walletBalanceByProfile = new Map<string, number>();
-const outstandingPaymentByProfile = new Map<string, number>();
+    const walletBalanceByProfile = new Map<string, number>();
+    const outstandingPaymentByProfile = new Map<string, number>();
 
-for (const row of ledgerTotals) {
-  const amount = Number(row._sum.amount ?? 0);
+    for (const row of ledgerTotals) {
+      const amount = Number(row._sum.amount ?? 0);
 
-  const prevWallet = walletBalanceByProfile.get(row.customerProfileId) ?? 0;
-  const prevOutstanding =
-    outstandingPaymentByProfile.get(row.customerProfileId) ?? 0;
+      const prevWallet = walletBalanceByProfile.get(row.customerProfileId) ?? 0;
+      const prevOutstanding =
+        outstandingPaymentByProfile.get(row.customerProfileId) ?? 0;
 
-  if (row.type === LedgerEntryType.CREDIT) {
-    walletBalanceByProfile.set(
-      row.customerProfileId,
-      prevWallet + amount,
-    );
+      if (row.type === LedgerEntryType.CREDIT) {
+        walletBalanceByProfile.set(row.customerProfileId, prevWallet + amount);
 
-    outstandingPaymentByProfile.set(
-      row.customerProfileId,
-      prevOutstanding - amount,
-    );
-  } else {
-    walletBalanceByProfile.set(
-      row.customerProfileId,
-      prevWallet - amount,
-    );
+        outstandingPaymentByProfile.set(
+          row.customerProfileId,
+          prevOutstanding - amount,
+        );
+      } else {
+        walletBalanceByProfile.set(row.customerProfileId, prevWallet - amount);
 
-    outstandingPaymentByProfile.set(
-      row.customerProfileId,
-      prevOutstanding + amount,
-    );
-  }
-}
+        outstandingPaymentByProfile.set(
+          row.customerProfileId,
+          prevOutstanding + amount,
+        );
+      }
+    }
 
     const result = customers.map((c) => {
       const activeSubs = c.userSubscriptions.filter(
@@ -1000,10 +1061,10 @@ for (const row of ledgerTotals) {
       const daysLeft =
         activeSubs.length > 0 && activeSubs[0].end_date
           ? Math.ceil(
-            (new Date(activeSubs[0].end_date).getTime() -
-              new Date().getTime()) /
-            (1000 * 60 * 60 * 24),
-          )
+              (new Date(activeSubs[0].end_date).getTime() -
+                new Date().getTime()) /
+                (1000 * 60 * 60 * 24),
+            )
           : null;
 
       return {
@@ -1014,8 +1075,7 @@ for (const row of ledgerTotals) {
         phone: c.user.phone,
         is_active: c.user.is_active,
         walletBalance: walletBalanceByProfile.get(c.id) ?? 0,
-          outstandingPayment:
-    outstandingPaymentByProfile.get(c.id) ?? 0,
+        outstandingPayment: outstandingPaymentByProfile.get(c.id) ?? 0,
         address: c.address,
         current_location: c.current_location,
         latitude_logitude: c.latitude_logitude,
@@ -1034,17 +1094,17 @@ for (const row of ledgerTotals) {
           deliveryPartnerProfileId: sub.deliveryPartnerProfileId,
           plan: sub.plan
             ? {
-              id: sub.plan.id,
-              name: sub.plan.planName,
-              price: Number(sub.plan.price),
-              description: sub.plan.description,
-              variation: sub.plan.Variation,
-              mess: sub.plan.mess,
-              images: sub.plan.images.map((img) => ({
-                url: img.url,
-                altText: img.altText,
-              })),
-            }
+                id: sub.plan.id,
+                name: sub.plan.planName,
+                price: Number(sub.plan.price),
+                description: sub.plan.description,
+                variation: sub.plan.Variation,
+                mess: sub.plan.mess,
+                images: sub.plan.images.map((img) => ({
+                  url: img.url,
+                  altText: img.altText,
+                })),
+              }
             : null,
         })),
       };
@@ -1178,7 +1238,7 @@ for (const row of ledgerTotals) {
     });
     const totalDebit = Number(
       ledgerTotals.find((t) => t.type === LedgerEntryType.DEBIT)?._sum.amount ??
-      0,
+        0,
     );
     const totalCredit = Number(
       ledgerTotals.find((t) => t.type === LedgerEntryType.CREDIT)?._sum
@@ -1190,10 +1250,10 @@ for (const row of ledgerTotals) {
     const daysLeft =
       activeSubs.length > 0 && activeSubs[0].end_date
         ? Math.ceil(
-          (new Date(activeSubs[0].end_date).getTime() -
-            new Date().getTime()) /
-          (1000 * 60 * 60 * 24),
-        )
+            (new Date(activeSubs[0].end_date).getTime() -
+              new Date().getTime()) /
+              (1000 * 60 * 60 * 24),
+          )
         : null;
 
     // 🧾 Final response
@@ -1241,17 +1301,17 @@ for (const row of ledgerTotals) {
           status,
           plan: sub.plan
             ? {
-              id: sub.plan.id,
-              name: sub.plan.planName,
-              price: Number(sub.plan.price),
-              description: sub.plan.description,
-              isMonthlyPlan: sub.plan.isMonthlyPlan,
-              isDailyPlan: sub.plan.isDailyPlan,
-              images: sub.plan.images.map((img) => ({
-                url: img.url,
-                altText: img.altText,
-              })),
-            }
+                id: sub.plan.id,
+                name: sub.plan.planName,
+                price: Number(sub.plan.price),
+                description: sub.plan.description,
+                isMonthlyPlan: sub.plan.isMonthlyPlan,
+                isDailyPlan: sub.plan.isDailyPlan,
+                images: sub.plan.images.map((img) => ({
+                  url: img.url,
+                  altText: img.altText,
+                })),
+              }
             : null,
         };
       }),
@@ -1433,7 +1493,7 @@ for (const row of ledgerTotals) {
     // ─── 6. Normalize schedule (same as CreateUser) ──────────────────────
     const normalizedScheduleType =
       scheduleType === ScheduleType.CUSTOM ||
-        (Array.isArray(selectedDays) && selectedDays.length > 0)
+      (Array.isArray(selectedDays) && selectedDays.length > 0)
         ? ScheduleType.CUSTOM
         : ScheduleType.EVERYDAY;
 
@@ -1521,7 +1581,7 @@ for (const row of ledgerTotals) {
     const isContinuousRenewal =
       previousEndDate !== null &&
       Math.abs(startDate.getTime() - new Date(previousEndDate).getTime()) <=
-      ONE_DAY_MS;
+        ONE_DAY_MS;
 
     // The effective start_date written to the DB:
     //   – continuous → keep original first start_date
@@ -1782,7 +1842,8 @@ for (const row of ledgerTotals) {
         ? (selectedDays ?? []).map((d) => d.toUpperCase())
         : null;
     const isAllowedDay = (date: Date) =>
-      !selectedDaysUpper || selectedDaysUpper.includes(weekdayMap[date.getDay()]);
+      !selectedDaysUpper ||
+      selectedDaysUpper.includes(weekdayMap[date.getDay()]);
 
     const newDates: Date[] = [];
     const cursor = new Date(pauseEnd);
@@ -1946,7 +2007,7 @@ for (const row of ledgerTotals) {
       scheduleType === ScheduleType.MONTHLY
         ? ScheduleType.MONTHLY
         : scheduleType === ScheduleType.CUSTOM ||
-          (Array.isArray(selectedDays) && selectedDays.length > 0)
+            (Array.isArray(selectedDays) && selectedDays.length > 0)
           ? ScheduleType.CUSTOM
           : ScheduleType.EVERYDAY;
 
@@ -2227,26 +2288,26 @@ for (const row of ledgerTotals) {
         createdAt: sub.createdAt,
         plan: sub.plan
           ? {
-            id: sub.plan.id,
-            name: sub.plan.planName,
-            price: Number(sub.plan.price),
-            description: sub.plan.description,
-            isMonthlyPlan: sub.plan.isMonthlyPlan,
-            isDailyPlan: sub.plan.isDailyPlan,
-            images: sub.plan.images.map((img) => ({
-              url: img.url,
-              altText: img.altText,
-            })),
-          }
+              id: sub.plan.id,
+              name: sub.plan.planName,
+              price: Number(sub.plan.price),
+              description: sub.plan.description,
+              isMonthlyPlan: sub.plan.isMonthlyPlan,
+              isDailyPlan: sub.plan.isDailyPlan,
+              images: sub.plan.images.map((img) => ({
+                url: img.url,
+                altText: img.altText,
+              })),
+            }
           : null,
         address: sub.UserAddress
           ? {
-            id: sub.UserAddress.id,
-            name: sub.UserAddress.name,
-            street: sub.UserAddress.street,
-            townOrcity: sub.UserAddress.townOrcity,
-            postcode: sub.UserAddress.postcode,
-          }
+              id: sub.UserAddress.id,
+              name: sub.UserAddress.name,
+              street: sub.UserAddress.street,
+              townOrcity: sub.UserAddress.townOrcity,
+              postcode: sub.UserAddress.postcode,
+            }
           : null,
       })),
       meta: {
@@ -2310,7 +2371,7 @@ for (const row of ledgerTotals) {
       // Ensure cancellation start is at least 2 days from now
       const diffFromNowDays = Math.ceil(
         (cancelStartDate.getTime() - currentDate.getTime()) /
-        (1000 * 60 * 60 * 24),
+          (1000 * 60 * 60 * 24),
       );
       if (diffFromNowDays < 2) {
         throw new BadRequestException(
@@ -2679,7 +2740,7 @@ for (const row of ledgerTotals) {
     // see resolvePlanSchedule's docstring.
     const requestedScheduleType =
       scheduleType === ScheduleType.CUSTOM ||
-        (Array.isArray(selectedDays) && selectedDays.length > 0)
+      (Array.isArray(selectedDays) && selectedDays.length > 0)
         ? ScheduleType.CUSTOM
         : ScheduleType.EVERYDAY;
 
@@ -2856,7 +2917,7 @@ for (const row of ledgerTotals) {
     });
     const totalDebitAll = Number(
       ledgerTotals.find((t) => t.type === LedgerEntryType.DEBIT)?._sum.amount ??
-      0,
+        0,
     );
     const totalCreditAll = Number(
       ledgerTotals.find((t) => t.type === LedgerEntryType.CREDIT)?._sum
@@ -3193,11 +3254,11 @@ for (const row of ledgerTotals) {
         partnerId: d.partnerId,
         partner: d.partner
           ? {
-            id: d.partner.id,
-            name: d.partner.user.name,
-            phone: d.partner.user.phone,
-            email: d.partner.user.email,
-          }
+              id: d.partner.id,
+              name: d.partner.user.name,
+              phone: d.partner.user.phone,
+              email: d.partner.user.email,
+            }
           : null,
         variations: (d.plan as any)?.Variation ?? [],
       })),
@@ -3390,8 +3451,8 @@ for (const row of ledgerTotals) {
       const selectedDaysUpper =
         subscription.scheduleType === ScheduleType.CUSTOM
           ? ((subscription.selectedDays as string[]) ?? []).map((d) =>
-            d.toUpperCase(),
-          )
+              d.toUpperCase(),
+            )
           : [];
       let chargeableDays = 0;
       const tempDate = new Date(rangeStart);
