@@ -42,6 +42,17 @@ interface ComputeRoutesResponse {
   }[];
 }
 
+/** After a 401/403 (key not allowed to call the Routes API), skip Google for this long. */
+const AUTH_FAILURE_COOLDOWN_MS = 15 * 60 * 1000;
+
+interface GoogleApiErrorBody {
+  error?: {
+    message?: string;
+    status?: string;
+    details?: { reason?: string; metadata?: Record<string, string> }[];
+  };
+}
+
 const FIELD_MASK = [
   'routes.optimizedIntermediateWaypointIndex',
   'routes.distanceMeters',
@@ -66,6 +77,8 @@ const FIELD_MASK = [
 @Injectable()
 export class RouteOptimizerService {
   private readonly logger = new Logger(RouteOptimizerService.name);
+  /** Google is skipped until this time after an auth/permission failure. */
+  private googleDisabledUntil = 0;
 
   async optimize(
     origin: LatLng,
@@ -93,9 +106,10 @@ export class RouteOptimizerService {
     let current: LatLng = origin;
     for (let i = 0; i < heuristicOrder.length; i += MAX_STOPS_PER_REQUEST) {
       const chunk = heuristicOrder.slice(i, i + MAX_STOPS_PER_REQUEST);
-      const google = apiKey
-        ? await this.optimizeChunkWithGoogle(apiKey, current, chunk)
-        : null;
+      const google =
+        apiKey && Date.now() >= this.googleDisabledUntil
+          ? await this.optimizeChunkWithGoogle(apiKey, current, chunk)
+          : null;
 
       if (google) {
         googleChunks++;
@@ -154,13 +168,32 @@ export class RouteOptimizerService {
         return await this.callRoutesApi(apiKey, origin, chunk, travelMode);
       } catch (err: unknown) {
         const status = isAxiosError(err) ? err.response?.status : undefined;
-        const apiMessage = isAxiosError<{ error?: { message?: string } }>(err)
-          ? err.response?.data?.error?.message
+        const apiError = isAxiosError<GoogleApiErrorBody>(err)
+          ? err.response?.data?.error
           : undefined;
         const message =
-          apiMessage ?? (err instanceof Error ? err.message : String(err));
+          apiError?.message ??
+          (err instanceof Error ? err.message : String(err));
+        // e.g. SERVICE_DISABLED, API_KEY_SERVICE_BLOCKED, BILLING_DISABLED,
+        // API_KEY_HTTP_REFERRER_BLOCKED, API_KEY_IP_ADDRESS_BLOCKED.
+        const reasons = (apiError?.details ?? [])
+          .map((d) => d.reason)
+          .filter(Boolean)
+          .join(',');
+
+        if (status === 401 || status === 403) {
+          this.googleDisabledUntil = Date.now() + AUTH_FAILURE_COOLDOWN_MS;
+          this.logger.error(
+            `Google Routes API rejected the key (${status} ${apiError?.status ?? ''}` +
+              `${reasons ? ` ${reasons}` : ''}): ${message} — using heuristic routes for the next ` +
+              `${AUTH_FAILURE_COOLDOWN_MS / 60000} min. Enable "Routes API" (routes.googleapis.com) ` +
+              `with billing on the key's Google Cloud project, and allow it in the key's API restrictions.`,
+          );
+          return null;
+        }
+
         this.logger.warn(
-          `Google Routes (${travelMode}) failed for ${chunk.length} stops: ${status ?? ''} ${message}`,
+          `Google Routes (${travelMode}) failed for ${chunk.length} stops: ${status ?? ''} ${message}${reasons ? ` [${reasons}]` : ''}`,
         );
         // Only a request-shape rejection (e.g. TWO_WHEELER unsupported in the region)
         // is worth retrying with DRIVE; auth/quota/network errors won't change.
