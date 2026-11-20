@@ -207,14 +207,18 @@ export class CustomerService {
             latitude_logitude,
           },
         });
-      } else if (address || latitude_logitude) {
-        // Latest registration's address/location wins — delivery routing reads
-        // CustomerProfile.latitude_logitude.
+      } else if (
+        (address && !customerProfile.address) ||
+        (latitude_logitude && !customerProfile.latitude_logitude)
+      ) {
+        // Fill only what the profile is missing — each subscription keeps its own
+        // address/location (UserSubscriptions.address / latitude_logitude).
         customerProfile = await this.prisma.customerProfile.update({
           where: { id: customerProfile.id },
           data: {
-            ...(address && { address }),
-            ...(latitude_logitude && { latitude_logitude }),
+            ...(address && !customerProfile.address && { address }),
+            ...(latitude_logitude &&
+              !customerProfile.latitude_logitude && { latitude_logitude }),
           },
         });
       }
@@ -343,48 +347,27 @@ export class CustomerService {
     const appliedDiscount = Math.max(0, Math.min(numericDiscount, totalPrice));
     const discountedPrice = totalPrice - appliedDiscount;
 
-    // 5️⃣ Create the subscription's delivery address (UserAddress) + the subscription.
-    const customer = user;
-    const { userAddress, userSubscription } = await this.prisma.$transaction(
-      async (tx) => {
-        const userAddress = address?.trim()
-          ? await tx.userAddress.create({
-              data: {
-                profileId: customerProfile.id,
-                name: customer.name,
-                phone: customer.phone,
-                street: address.trim(),
-                townOrcity: '',
-                postcode: '',
-                latitudeLogitude: latitude_logitude ?? null,
-                locationLink: latitude_logitude
-                  ? `https://www.google.com/maps?q=${latitude_logitude}`
-                  : null,
-              },
-            })
-          : null;
-        const userSubscription = await tx.userSubscriptions.create({
-          data: {
-            userAddressId: userAddress?.id,
-            customerProfileId: customerProfile.id,
-            start_date: startDate,
-            end_date: endDate,
-            discount: appliedDiscount,
-            totalPrice,
-            discountedPrice,
-            messId: plan.messId,
-            deliveryPartnerProfileId: deliveryPartnerId,
-            planId,
-            scheduleType: normalizedScheduleType,
-            selectedDays:
-              normalizedScheduleType === ScheduleType.CUSTOM
-                ? normalizedSelectedDays
-                : undefined,
-          },
-        });
-        return { userAddress, userSubscription };
+    // 5️⃣ Create subscription — with this subscription's delivery address + location.
+    const userSubscription = await this.prisma.userSubscriptions.create({
+      data: {
+        address: address?.trim() || null,
+        latitude_logitude: latitude_logitude || null,
+        customerProfileId: customerProfile.id,
+        start_date: startDate,
+        end_date: endDate,
+        discount: appliedDiscount,
+        totalPrice,
+        discountedPrice,
+        messId: plan.messId,
+        deliveryPartnerProfileId: deliveryPartnerId,
+        planId,
+        scheduleType: normalizedScheduleType,
+        selectedDays:
+          normalizedScheduleType === ScheduleType.CUSTOM
+            ? normalizedSelectedDays
+            : undefined,
       },
-    );
+    });
 
     // Increment popular-plan counter
     await this.prisma.plans.update({
@@ -500,7 +483,6 @@ export class CustomerService {
         user,
         customerProfile,
         userSubscription,
-        userAddress,
         deliveriesCreated: deliveriesToCreate.length,
         isNewCustomer: !wasExistingUser,
       },

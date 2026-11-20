@@ -46,19 +46,29 @@ const PENDING_DELIVERY: Prisma.DeliveriesWhereInput = {
   OR: [{ status: null }, { status: DeliveryStatus.PENDING }],
 };
 
-/** Customer address as saved by POST /customer/register-user (CustomerProfile). */
-function customerAddress(c: {
-  address: string | null;
-  current_location: string | null;
-  latitude_logitude: string | null;
-}) {
-  if (!c.address && !c.current_location && !c.latitude_logitude) return null;
+/**
+ * Delivery address of a stop: the subscription's own address/location (set by
+ * POST /customer/register-user), each falling back to the customer profile's.
+ */
+function customerAddress(
+  c: {
+    address: string | null;
+    current_location: string | null;
+    latitude_logitude: string | null;
+  },
+  sub?: { address: string | null; latitude_logitude: string | null } | null,
+) {
+  const address = sub?.address?.trim() ? sub.address : c.address;
+  const latLng = sub?.latitude_logitude?.trim()
+    ? sub.latitude_logitude
+    : c.latitude_logitude;
+  if (!address && !c.current_location && !latLng) return null;
   return {
-    address: c.address,
+    address,
     currentLocation: c.current_location,
-    latitudeLongitude: c.latitude_logitude,
+    latitudeLongitude: latLng,
     formatted:
-      [c.address, c.current_location]
+      [address, c.current_location]
         .filter((p) => p && String(p).trim())
         .join(', ') || null,
   };
@@ -609,6 +619,8 @@ export class DeliveryWorkService {
             end_date: true,
             scheduleType: true,
             selectedDays: true,
+            address: true,
+            latitude_logitude: true,
           },
         },
         deliveryVariations: {
@@ -679,7 +691,7 @@ export class DeliveryWorkService {
         email: d.customer.user.email,
         callUrl: phone ? `tel:${phone}` : null,
       },
-      address: customerAddress(d.customer),
+      address: customerAddress(d.customer, d.UserSubscriptions),
       location,
       navigationUrl: navigationUrl(location),
       plan: d.plan,
@@ -882,6 +894,9 @@ export class DeliveryWorkService {
             },
           },
           plan: { select: { id: true, planName: true } },
+          UserSubscriptions: {
+            select: { address: true, latitude_logitude: true },
+          },
           deliveryVariations: {
             where: { variationId: plan.variationId, deletedAt: null },
             select: { id: true, status: true },
@@ -947,7 +962,7 @@ export class DeliveryWorkService {
             phone: d.customer.user.phone,
           },
           plan: d.plan,
-          address: customerAddress(d.customer),
+          address: customerAddress(d.customer, d.UserSubscriptions),
           location,
           routable: s.routable,
           leg:

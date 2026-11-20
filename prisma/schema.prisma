@@ -196,6 +196,10 @@ model UserSubscriptions {
   discountedPrice          Decimal      @default(0.00)
   deliveryPartnerProfileId String?
   userAddressId            String?
+  /// Delivery address for this subscription (set by POST /customer/register-user).
+  address                  String?      @db.LongText
+  /// Delivery location "lat,lng" for this subscription — used for delivery route optimisation.
+  latitude_logitude        String?
   planId                   String
   messId                   String
   is_active                Boolean      @default(true)

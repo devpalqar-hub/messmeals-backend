@@ -64,13 +64,18 @@ export function effectiveStatus(
 }
 
 /**
- * Delivery location of a customer: CustomerProfile.latitude_logitude — the
- * "lat,lng" saved by POST /customer/register-user (and the customer update API).
+ * Delivery location of a stop: the subscription's own "lat,lng"
+ * (UserSubscriptions.latitude_logitude, saved by POST /customer/register-user), else the
+ * customer profile's (CustomerProfile.latitude_logitude).
  */
 export function resolveStopCoords(delivery: {
   customer?: { latitude_logitude: string | null } | null;
+  UserSubscriptions?: { latitude_logitude: string | null } | null;
 }): LatLng | null {
-  return parseLatLng(delivery.customer?.latitude_logitude);
+  return (
+    parseLatLng(delivery.UserSubscriptions?.latitude_logitude) ??
+    parseLatLng(delivery.customer?.latitude_logitude)
+  );
 }
 
 @Injectable()
@@ -289,6 +294,7 @@ export class DeliveryRouteService {
           select: {
             status: true,
             customer: { select: { latitude_logitude: true } },
+            UserSubscriptions: { select: { latitude_logitude: true } },
           },
         },
       },

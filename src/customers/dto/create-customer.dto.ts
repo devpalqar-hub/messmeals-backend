@@ -44,7 +44,7 @@ export class CreateCustomerDto {
   @ApiProperty({
     example: 'test address',
     description:
-      "Delivery address. Saved on the customer profile and as the new subscription's delivery address.",
+      'Delivery address. Saved on the new subscription (UserSubscriptions.address); also on the customer profile if it has none.',
   })
   @IsString()
   @IsNotEmpty({ message: 'address is required' })
@@ -53,8 +53,9 @@ export class CreateCustomerDto {
   @ApiPropertyOptional({
     example: '9.434495,76.35037',
     description:
-      'Delivery location as "latitude,longitude". Saved as the customer\'s latitude_logitude ' +
-      "(used for delivery route optimisation) and on the subscription's delivery address.",
+      'Delivery location as "latitude,longitude". Saved on the new subscription ' +
+      '(UserSubscriptions.latitude_logitude, used for delivery route optimisation); also on the ' +
+      'customer profile if it has none.',
   })
   @Transform(trimToUndefined)
   @IsOptional()
