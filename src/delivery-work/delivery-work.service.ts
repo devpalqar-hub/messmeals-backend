@@ -24,7 +24,7 @@ import {
   RoutePlanWithStops,
   RouteScope,
 } from './delivery-route.service';
-import { formatDay, LatLng, nextDay, parseDay } from './geo.util';
+import { formatDay, LatLng, nextDay, parseDay, toLatLng } from './geo.util';
 import { AdminRoutesQueryDto } from './dto/work-query.dto';
 import {
   OptimizeRoutesDto,
@@ -68,6 +68,69 @@ function navigationUrl(loc: LatLng | null) {
     : null;
 }
 
+/** One map point of a route: the mess (start), then each delivery in visiting order. */
+export interface RoutePoint {
+  /** 0 = the mess (start); 1, 2, 3… = deliveries, same as `stops[].sequence`. */
+  sequence: number;
+  type: 'MESS' | 'DELIVERY';
+  deliveryId: string | null;
+  label: string | null;
+  status: VariationStatus | null;
+  latitude: number;
+  longitude: number;
+}
+
+/**
+ * Mess → first delivery → second delivery → … as plottable lat/lng points. Stops with
+ * no known coordinates are left out (they can't be drawn); the mess point is left out
+ * if the mess has no coordinates.
+ */
+function buildRoutePoints(
+  mess: { id: string; name: string; location: LatLng | null } | null,
+  stops: {
+    sequence: number;
+    deliveryId: string;
+    label: string | null;
+    status: VariationStatus | null;
+    location: LatLng | null;
+  }[],
+): RoutePoint[] {
+  const points: RoutePoint[] = [];
+  if (mess?.location) {
+    points.push({
+      sequence: 0,
+      type: 'MESS',
+      deliveryId: null,
+      label: mess.name,
+      status: null,
+      latitude: mess.location.lat,
+      longitude: mess.location.lng,
+    });
+  }
+  for (const s of stops) {
+    if (!s.location) continue;
+    points.push({
+      sequence: s.sequence,
+      type: 'DELIVERY',
+      deliveryId: s.deliveryId,
+      label: s.label,
+      status: s.status,
+      latitude: s.location.lat,
+      longitude: s.location.lng,
+    });
+  }
+  return points;
+}
+
+function stopLocation(s: {
+  latitude: number | null;
+  longitude: number | null;
+}) {
+  return s.latitude !== null && s.longitude !== null
+    ? { lat: s.latitude, lng: s.longitude }
+    : null;
+}
+
 @Injectable()
 export class DeliveryWorkService {
   constructor(
@@ -97,6 +160,7 @@ export class DeliveryWorkService {
         select: {
           status: true,
           variationId: true,
+          deliveryId: true,
           variation: {
             select: {
               id: true,
@@ -105,7 +169,12 @@ export class DeliveryWorkService {
               createdAt: true,
             },
           },
-          delivery: { select: { status: true } },
+          delivery: {
+            select: {
+              status: true,
+              customer: { select: { user: { select: { name: true } } } },
+            },
+          },
         },
       }),
       this.prisma.deliveryWorkSession.findMany({
@@ -126,6 +195,10 @@ export class DeliveryWorkService {
         counts: ReturnType<typeof emptyCounts>;
       }
     >();
+    const stopInfo = new Map<
+      string,
+      { status: VariationStatus; label: string | null }
+    >();
     for (const r of rows) {
       if (!byVariation.has(r.variationId)) {
         byVariation.set(r.variationId, {
@@ -133,11 +206,37 @@ export class DeliveryWorkService {
           counts: emptyCounts(),
         });
       }
-      addToCounts(
-        byVariation.get(r.variationId)!.counts,
-        effectiveStatus(r.delivery.status, r.status),
-      );
+      const status = effectiveStatus(r.delivery.status, r.status);
+      addToCounts(byVariation.get(r.variationId)!.counts, status);
+      stopInfo.set(`${r.variationId}|${r.deliveryId}`, {
+        status,
+        label: r.delivery.customer?.user?.name ?? null,
+      });
     }
+
+    // Route order per variation (mess → 1st delivery → 2nd → …) with coordinates.
+    // ensureFresh reuses the stored route unless its orders changed.
+    const [mess, plans] = await Promise.all([
+      this.prisma.mess.findUnique({
+        where: { id: partner.messId },
+        select: { id: true, name: true, latitude: true, logitude: true },
+      }),
+      Promise.all(
+        [...byVariation.keys()].map((variationId) =>
+          this.routes.ensureFresh({
+            messId: partner.messId,
+            partnerId: partner.id,
+            variationId,
+            date: day,
+          }),
+        ),
+      ),
+    ]);
+    const messLocation = mess ? toLatLng(mess.latitude, mess.logitude) : null;
+    const routeMess = mess
+      ? { id: mess.id, name: mess.name, location: messLocation }
+      : null;
+    const planByVariation = new Map(plans.map((p) => [p.variationId, p]));
 
     const sessionByVariation = new Map(sessions.map((s) => [s.variationId, s]));
     const variations = [...byVariation.values()]
@@ -155,6 +254,24 @@ export class DeliveryWorkService {
           },
           ...counts,
           completed: counts.totalStops > 0 && counts.pending === 0,
+          /** Mess → 1st delivery → 2nd delivery → … with latitude / longitude. */
+          points: buildRoutePoints(
+            routeMess,
+            (planByVariation.get(variation.id)?.stops ?? []).flatMap((s) => {
+              const info = stopInfo.get(`${variation.id}|${s.deliveryId}`);
+              return info
+                ? [
+                    {
+                      sequence: s.sequence,
+                      deliveryId: s.deliveryId,
+                      label: info.label,
+                      status: info.status,
+                      location: stopLocation(s),
+                    },
+                  ]
+                : [];
+            }),
+          ),
           session: session
             ? {
                 id: session.id,
@@ -173,6 +290,15 @@ export class DeliveryWorkService {
     return {
       message: 'Work variations fetched successfully',
       date: formatDay(day),
+      /** Where every route starts. */
+      mess: mess
+        ? {
+            id: mess.id,
+            name: mess.name,
+            latitude: messLocation?.lat ?? null,
+            longitude: messLocation?.lng ?? null,
+          }
+        : null,
       activeSession: activeSession
         ? {
             id: activeSession.id,
@@ -775,10 +901,18 @@ export class DeliveryWorkService {
         : Promise.resolve(null),
       this.prisma.mess.findUnique({
         where: { id: plan.messId },
-        select: { id: true, name: true, phone: true, address: true },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          address: true,
+          latitude: true,
+          logitude: true,
+        },
       }),
     ]);
 
+    const messLocation = mess ? toLatLng(mess.latitude, mess.logitude) : null;
     const byId = new Map(deliveries.map((d) => [d.id, d]));
     const counts = emptyCounts();
     let currentDeliveryId: string | null = null;
@@ -798,10 +932,7 @@ export class DeliveryWorkService {
         remainingDistanceMeters += s.legDistanceMeters ?? 0;
         remainingDurationSeconds += s.legDurationSeconds ?? 0;
       }
-      const location =
-        s.latitude !== null && s.longitude !== null
-          ? { lat: s.latitude, lng: s.longitude }
-          : null;
+      const location = stopLocation(s);
       const address = d.UserSubscriptions?.UserAddress ?? null;
 
       return [
@@ -838,10 +969,36 @@ export class DeliveryWorkService {
     });
     for (const s of stops) s.isCurrent = s.deliveryId === currentDeliveryId;
 
+    const points = buildRoutePoints(
+      mess ? { id: mess.id, name: mess.name, location: messLocation } : null,
+      stops.map((s) => ({
+        sequence: s.sequence,
+        deliveryId: s.deliveryId,
+        label: s.customer.name,
+        status: s.status,
+        location: s.location,
+      })),
+    );
+
     return {
       routePlanId: plan.id,
       date: formatDay(plan.date),
-      mess,
+      mess: mess
+        ? {
+            id: mess.id,
+            name: mess.name,
+            phone: mess.phone,
+            address: mess.address,
+            latitude: messLocation?.lat ?? null,
+            longitude: messLocation?.lng ?? null,
+          }
+        : null,
+      /** Route start — the mess. */
+      start: messLocation
+        ? { latitude: messLocation.lat, longitude: messLocation.lng }
+        : null,
+      /** Mess → 1st delivery → 2nd delivery → … in route order, for drawing the map. */
+      points,
       partner: partner
         ? { id: partner.id, name: partner.user.name, phone: partner.user.phone }
         : null,
