@@ -29,7 +29,10 @@ import {
   OptimizeRoutesDto,
   TransferDeliveriesDto,
 } from './dto/admin-route.dto';
-import { UpdateStopStatusDto } from './dto/update-stop-status.dto';
+import {
+  STATUSES_REQUIRING_NOTE,
+  UpdateStopStatusDto,
+} from './dto/update-stop-status.dto';
 
 export interface AuthUser {
   id: string;
@@ -72,6 +75,17 @@ function customerAddress(
         .filter((p) => p && String(p).trim())
         .join(', ') || null,
   };
+}
+
+/**
+ * The note only applies while the stop still has the status it was written for — e.g. a
+ * stop the mess admin later marks DELIVERED from another screen shows no stale note.
+ */
+function noteFor(
+  n: { status: VariationStatus; note: string } | undefined,
+  status: VariationStatus,
+) {
+  return n && n.status === status ? n.note : null;
 }
 
 function navigationUrl(loc: LatLng | null) {
@@ -523,6 +537,17 @@ export class DeliveryWorkService {
       { status: dto.status },
       user.id,
     );
+    await this.saveStopNote(
+      plan.stops.find((s) => s.deliveryId === deliveryId)!.deliveryVariationId,
+      {
+        deliveryId,
+        variationId: session.variationId,
+        sessionId: session.id,
+        partnerId: session.partnerId,
+        status: dto.status,
+        note: dto.note,
+      },
+    );
 
     const view = await this.buildRouteView(plan);
     const synced = await this.syncSession(session, view);
@@ -535,6 +560,42 @@ export class DeliveryWorkService {
       updatedStop: view.stops.find((s) => s.deliveryId === deliveryId) ?? null,
       ...payload,
     };
+  }
+
+  /**
+   * Keeps the partner's note for an UNDELIVERED / CANCELLED stop; a stop that ends
+   * up DELIVERED has no note.
+   */
+  private async saveStopNote(
+    deliveryVariationId: string,
+    data: {
+      deliveryId: string;
+      variationId: string;
+      sessionId: string;
+      partnerId: string;
+      status: VariationStatus;
+      note?: string;
+    },
+  ) {
+    if (!STATUSES_REQUIRING_NOTE.includes(data.status) || !data.note) {
+      await this.prisma.deliveryStopNote.deleteMany({
+        where: { deliveryVariationId },
+      });
+      return;
+    }
+    const fields = {
+      deliveryId: data.deliveryId,
+      variationId: data.variationId,
+      sessionId: data.sessionId,
+      partnerId: data.partnerId,
+      status: data.status,
+      note: data.note,
+    };
+    await this.prisma.deliveryStopNote.upsert({
+      where: { deliveryVariationId },
+      create: { deliveryVariationId, ...fields },
+      update: fields,
+    });
   }
 
   /** Completion model for a run (also usable mid-run as a progress report). */
@@ -637,13 +698,20 @@ export class DeliveryWorkService {
     await this.assertDeliveryAccess(user, d);
 
     const location = resolveStopCoords(d);
-    const variations = d.deliveryVariations.map((dv) => ({
-      deliveryVariationId: dv.id,
-      variationId: dv.variation.id,
-      title: dv.variation.title,
-      description: dv.variation.description,
-      status: effectiveStatus(d.status, dv.status),
-    }));
+    const notes = await this.notesByVariation(
+      d.deliveryVariations.map((dv) => dv.id),
+    );
+    const variations = d.deliveryVariations.map((dv) => {
+      const status = effectiveStatus(d.status, dv.status);
+      return {
+        deliveryVariationId: dv.id,
+        variationId: dv.variation.id,
+        title: dv.variation.title,
+        description: dv.variation.description,
+        status,
+        note: noteFor(notes.get(dv.id), status),
+      };
+    });
 
     let route: {
       routePlanId: string;
@@ -928,6 +996,9 @@ export class DeliveryWorkService {
 
     const messLocation = mess ? toLatLng(mess.latitude, mess.logitude) : null;
     const byId = new Map(deliveries.map((d) => [d.id, d]));
+    const notes = await this.notesByVariation(
+      plan.stops.map((s) => s.deliveryVariationId),
+    );
     const counts = emptyCounts();
     let currentDeliveryId: string | null = null;
     let remainingDistanceMeters = 0;
@@ -955,6 +1026,8 @@ export class DeliveryWorkService {
           deliveryVariationId: dv.id,
           status,
           deliveryStatus: d.status,
+          /** Partner's reason when the stop is UNDELIVERED / CANCELLED. */
+          note: noteFor(notes.get(dv.id), status),
           isCurrent: false,
           customer: {
             id: d.customer.id,
@@ -1033,6 +1106,16 @@ export class DeliveryWorkService {
       currentDeliveryId: currentDeliveryId as string | null,
       stops,
     };
+  }
+
+  private async notesByVariation(deliveryVariationIds: string[]) {
+    if (deliveryVariationIds.length === 0)
+      return new Map<string, { status: VariationStatus; note: string }>();
+    const rows = await this.prisma.deliveryStopNote.findMany({
+      where: { deliveryVariationId: { in: deliveryVariationIds } },
+      select: { deliveryVariationId: true, status: true, note: true },
+    });
+    return new Map(rows.map((r) => [r.deliveryVariationId, r]));
   }
 
   // ═══════════════════════════ Session helpers ═══════════════════════════

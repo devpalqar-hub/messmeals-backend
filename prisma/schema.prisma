@@ -1239,3 +1239,21 @@ model DeliveryWorkSession {
   @@index([partnerId, status])
   @@map("delivery_work_sessions")
 }
+
+/// The partner's note for a stop marked UNDELIVERED or CANCELLED (one per meal stop).
+/// Removed again if the stop is later marked DELIVERED.
+model DeliveryStopNote {
+  id                  String          @id @default(uuid())
+  deliveryId          String
+  deliveryVariationId String          @unique
+  variationId         String
+  sessionId           String?
+  partnerId           String?
+  status              VariationStatus
+  note                String          @db.Text
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  @@index([deliveryId])
+  @@map("delivery_stop_notes")
+}

@@ -120,7 +120,8 @@ export class DeliveryWorkController {
       'Partner: update a stop status (DELIVERED / UNDELIVERED / CANCELLED)',
     description:
       'Sets the status of this run’s variation on one delivery, then returns the next ' +
-      'stop automatically. When the last stop is updated the run is completed and the ' +
+      'stop automatically. `note` (the reason) is required for UNDELIVERED and CANCELLED ' +
+      'and is returned on the stop as `note`. When the last stop is updated the run is completed and the ' +
       'response has `jobCompleted: true` and a `completion` summary.',
   })
   @ApiParam({ name: 'sessionId', description: 'Work session UUID' })
