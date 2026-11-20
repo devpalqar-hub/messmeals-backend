@@ -1131,3 +1131,107 @@ model CustomDomain {
   @@map("custom_domains")
 }
 
+// ============================================================
+// DELIVERY PARTNER WORK MODULE – route optimisation + work sessions
+// (src/delivery-work). Additive only: these models reference existing
+// rows (Mess, DeliveryPartnerProfile, Variation, Deliveries,
+// DeliveryVariation) by id, without back-relations, so no existing
+// model above is changed.
+// ============================================================
+
+/// Which engine produced a route's stop order. GOOGLE = every chunk was optimised by
+/// the Google Routes API (TWO_WHEELER); HEURISTIC = local nearest-neighbour + 2-opt on
+/// straight-line distance (no API key / API failure); MIXED = some chunks of each.
+enum RouteProvider {
+  GOOGLE
+  HEURISTIC
+  MIXED
+}
+
+/// IN_PROGRESS = partner has started this variation's run; COMPLETED = every stop
+/// reached a terminal status; ENDED = partner closed the run early.
+enum DeliveryWorkSessionStatus {
+  IN_PROGRESS
+  COMPLETED
+  ENDED
+}
+
+/// One optimised route per (mess, partner-or-unassigned, variation, day). Stale routes are
+/// detected by `fingerprint` (hash of the in-scope delivery ids + coordinates) and rebuilt
+/// on read, so new subscriptions, partner transfers, pauses and cancellations reorder the
+/// affected lists automatically.
+model DeliveryRoutePlan {
+  id                   String        @id @default(uuid())
+  messId               String
+  /// DeliveryPartnerProfile.id, or "UNASSIGNED" for deliveries with no partner.
+  partnerKey           String
+  partnerId            String?
+  variationId          String
+  /// UTC midnight of the delivery day (same convention as Deliveries.date).
+  date                 DateTime
+  fingerprint          String        @db.VarChar(64)
+  provider             RouteProvider
+  originLat            Float?
+  originLng            Float?
+  totalDistanceMeters  Int           @default(0)
+  totalDurationSeconds Int           @default(0)
+  /// string[] of encoded polylines (one per Google request chunk), for drawing on a map.
+  polylines            Json?
+  optimizedAt          DateTime      @default(now())
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  stops DeliveryRouteStop[]
+
+  @@unique([messId, partnerKey, variationId, date])
+  @@index([partnerId, date])
+  @@map("delivery_route_plans")
+}
+
+/// One stop (customer delivery) of a DeliveryRoutePlan, in visiting order.
+model DeliveryRouteStop {
+  id                  String   @id @default(uuid())
+  routePlanId         String
+  deliveryId          String
+  deliveryVariationId String
+  sequence            Int
+  latitude            Float?
+  longitude           Float?
+  /// false when the customer's address has no usable coordinates — listed last.
+  routable            Boolean  @default(true)
+  /// Travel from the previous stop (or the mess for the first pending stop) to this one.
+  legDistanceMeters   Int?
+  legDurationSeconds  Int?
+  createdAt           DateTime @default(now())
+
+  routePlan DeliveryRoutePlan @relation(fields: [routePlanId], references: [id], onDelete: Cascade)
+
+  @@unique([routePlanId, deliveryId])
+  @@index([routePlanId, sequence])
+  @@index([deliveryId])
+  @@map("delivery_route_stops")
+}
+
+/// A delivery partner's run for one variation (e.g. Lunch) on one day. Persists the
+/// partner's stage so the app can resume after a restart.
+model DeliveryWorkSession {
+  id                String                    @id @default(uuid())
+  partnerId         String
+  messId            String
+  variationId       String
+  date              DateTime
+  status            DeliveryWorkSessionStatus @default(IN_PROGRESS)
+  currentDeliveryId String?
+  totalStops        Int                       @default(0)
+  deliveredCount    Int                       @default(0)
+  undeliveredCount  Int                       @default(0)
+  cancelledCount    Int                       @default(0)
+  startedAt         DateTime                  @default(now())
+  completedAt       DateTime?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  @@unique([partnerId, variationId, date])
+  @@index([partnerId, status])
+  @@map("delivery_work_sessions")
+}

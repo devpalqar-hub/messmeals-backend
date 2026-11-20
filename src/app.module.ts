@@ -44,6 +44,7 @@ import { WebsitesModule } from './websites/websites.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { InvoicesModule } from './invoices/invoices.module';
 import { ReportsModule } from './reports/reports.module';
+import { DeliveryWorkModule } from './delivery-work/delivery-work.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { ReportsModule } from './reports/reports.module';
     CustomerModule,
     DeliveriesModule,
     DeliveryAgentModule,
+    DeliveryWorkModule,
     UserSubscriptionsModule,
     PlansModule,
     PrismaModule,
